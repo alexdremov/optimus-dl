@@ -1,0 +1,31 @@
+from dataclasses import dataclass, field
+
+from omegaconf import II
+
+from optimus_dl.core.registry import RegistryConfig
+
+
+@dataclass
+class AmpConfig:
+    enabled: bool = False
+    dtype: str = "torch.bfloat16"
+
+    enable_scaler: bool = '${eval: \'"${.dtype}" == "torch.float16"\'}'
+    init_scale: float = 2**16
+    growth_factor: float = 2.0
+    backoff_factor: float = 0.5
+    growth_interval: int = 2000
+
+
+@dataclass
+class OptimizationConfig:
+    optimizer: RegistryConfig
+
+    iterations: int = field(default=1000, metadata=dict(help="Total train steps"))
+    acc_steps: int = field(
+        default=1, metadata=dict(help="Steps to accumulate gradient")
+    )
+    clip_grad_norm: float | None = field(
+        default=None, metadata=dict(help="Clip gradient norm")
+    )
+    amp: AmpConfig = field(default_factory=AmpConfig)

@@ -1,0 +1,13 @@
+# @package @_global_
+defaults:
+  - _self_
+
+serve:
+  port: 8000
+  host: "127.0.0.1"
+
+common:
+  checkpoint_path: outputs/llama2-shakespeare/llama-shakespeare/metadata_latest.pt
+  tokenizer:
+    _name: char_tokenize
+    add_eos: false

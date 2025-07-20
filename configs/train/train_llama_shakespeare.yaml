@@ -1,0 +1,87 @@
+defaults:
+  - defaults.yaml
+  - lr_scheduler: wsd
+  - model: llama2-x-lite
+  - criterion: cross_entropy
+  - loggers: basic
+  - optimization/amp: bfloat16
+  - _self_
+
+_name: base
+args:
+  name: train-shakespeare
+  iterations: 10000
+  batch_size: 32
+  seq_len: 512
+
+model:
+  vocab_size: 264
+
+model_transforms:
+  - _name: ddp
+  - _name: compile
+    compile_kwargs:
+      disable: false
+
+lr_scheduler:
+  warmup_steps: 300
+  n_warmup_fraction: null
+
+# Experiment configuration
+common:
+  exp_name: llama-shakespeare
+  use_gpu: true
+  log_freq: 100
+  save_freq: 500
+  eval_freq: 200
+  eval_iterations: 32
+  output_path: ${oc.env:SCRATCH_HOME,.}/outputs/llama2-shakespeare/${.exp_name}
+
+# Optimization settings
+optimization:
+  iterations: ${args.iterations}
+  acc_steps: 1          # Gradient accumulation steps
+  clip_grad_norm: 5.0   # Gradient clipping norm
+
+  optimizer:
+    _name: adamw
+    lr: 5e-4            # Base learning rate
+    weight_decay: 1e-1
+    betas: [0.9, 0.99]  # Adam beta parameters
+    eps: 1e-8           # Adam epsilon
+
+# Data configuration
+data:
+  scratch:
+    base_transforms:
+      _name: compose
+      transforms:
+        - _name: tokenize
+          tokenizer_config:
+            _name: char_tokenize
+        - _name: chunk_tokens
+          max_seq_len: ${args.seq_len}
+        - _name: shuffle
+          seed: 42
+          buffer_size: 8096
+        - _name: flat_batcher
+          batch_size: ${args.batch_size}
+          seq_len: ${args.seq_len}
+        - _name: prefetch
+        - _name: to_device
+
+  train_datasets:
+    source:
+      _name: loop
+      inner:
+        _name: preset_tinyshakespeare
+        split: train
+    transform: ${data.scratch.base_transforms}
+
+  # Evaluation datasets (optional)
+  eval_datasets:
+    tinyshakespeare:
+      source:
+        _name: preset_tinyshakespeare
+        split: train
+      transform: ${data.scratch.base_transforms}

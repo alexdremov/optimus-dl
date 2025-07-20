@@ -1,0 +1,4 @@
+_name: wsd
+fract_decay: 0.2
+decay_type: sqrt
+n_warmup_fraction: 0.05

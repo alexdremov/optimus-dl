@@ -1,0 +1,3 @@
+enabled: true
+dtype: torch.float16
+enable_scaler: true

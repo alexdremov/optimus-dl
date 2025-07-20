@@ -1,0 +1,8 @@
+- _name: jsonl
+  output_dir: ${common.output_path}/logs
+  filename: metrics.jsonl
+  enabled: true
+- _name: wandb
+  project: llm-baselines
+  mode: online
+  enabled: true

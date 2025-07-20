@@ -1,0 +1,209 @@
+import math
+from dataclasses import dataclass
+from typing import Any
+
+from torch.optim import Optimizer
+
+from . import register_lr_scheduler
+from .base import BaseLRScheduler, BaseLRSchedulerConfig
+
+
+@dataclass
+class WSDSchedulerConfig(BaseLRSchedulerConfig):
+    """Configuration for WSD (Warmup, Sustain, Decay) learning rate scheduler"""
+
+    final_lr_factor: float = 0.0  # factor by which to reduce max_lr at the end
+    n_warmup: int | None = 300  # number of warmup iterations
+    n_warmup_fraction: float | None = None  # fraction of iterations used for warmup
+    init_div_factor: int = 100  # initial division factor for warmup
+    fract_decay: float = 0.1  # fraction of iterations used for decay
+    decay_type: str = (
+        "linear"  # type of decay: linear, linear_pw, exp, cosine, miror_cosine, square, sqrt
+    )
+    sqrt_power: float = 0.5  # power for sqrt decay type
+    linear_pw_subdivisions: list[float] | None = (
+        None  # subdivisions for linear_pw decay
+    )
+    cooldown_start_lr_factor: float = 1.0  # starting factor for cooldown phase
+
+
+@register_lr_scheduler("wsd", WSDSchedulerConfig)
+class WSDScheduler(BaseLRScheduler):
+    """
+    WSD (Warmup, Sustain, Decay) learning rate scheduler.
+
+    This scheduler has three phases:
+    1. Warmup: Linear warmup from base_lr/init_div_factor to base_lr
+    2. Sustain: Constant learning rate at base_lr
+    3. Decay: Various decay strategies to final_lr_factor * base_lr
+    """
+
+    def __init__(
+        self, cfg: WSDSchedulerConfig, optimizer: Optimizer, iterations: int, **kwargs
+    ):
+        super().__init__(optimizer)
+
+        assert (
+            cfg.n_warmup is not None or cfg.n_warmup_fraction is not None
+        ), "Either n_warmup or n_warmup_fraction must be specified"
+        if cfg.n_warmup is None:
+            assert cfg.n_warmup_fraction is not None
+            cfg.n_warmup = int(cfg.n_warmup_fraction * iterations)
+
+        self.iterations = iterations
+        self.final_lr_factor = cfg.final_lr_factor
+        self.n_warmup = cfg.n_warmup
+        self.init_div_factor = cfg.init_div_factor
+        self.fract_decay = cfg.fract_decay
+        self.decay_type = cfg.decay_type
+        self.sqrt_power = cfg.sqrt_power
+        self.linear_pw_subdivisions = cfg.linear_pw_subdivisions or []
+        self.cooldown_start_lr_factor = cfg.cooldown_start_lr_factor
+
+        # Calculate phase boundaries
+        self.n_anneal_steps = int(self.fract_decay * iterations)
+        self.n_hold = iterations - self.n_anneal_steps
+
+        # Validate decay type
+        valid_decay_types = [
+            "linear",
+            "linear_pw",
+            "exp",
+            "cosine",
+            "miror_cosine",
+            "square",
+            "sqrt",
+        ]
+        if self.decay_type not in valid_decay_types:
+            raise ValueError(
+                f"decay_type {self.decay_type} is not in {valid_decay_types}"
+            )
+
+    def get_lr(self) -> list[float]:
+        """Calculate learning rates using WSD schedule formula"""
+        step = self._step_count
+        lr_factor = self._get_lr_factor(step)
+        return [base_lr * lr_factor for base_lr in self.base_lrs]
+
+    def _get_lr_factor(self, step: int) -> float:
+        """Get the learning rate multiplication factor for the current step"""
+        if step < self.n_warmup:
+            # Warmup phase: linear interpolation from 1/init_div_factor to 1.0
+            return (step / self.n_warmup) + (
+                1 - step / self.n_warmup
+            ) / self.init_div_factor
+        elif step < self.n_hold:
+            # Hold phase: constant at 1.0
+            return 1.0
+        elif step < self.iterations:
+            # Decay phase: various decay strategies
+            return self._get_decay_factor(step)
+        else:
+            # Past end: final learning rate factor
+            return self.final_lr_factor
+
+    def _get_decay_factor(self, step: int) -> float:
+        """Calculate decay factor for the decay phase"""
+        if self.decay_type == "linear":
+            progress = (step - self.n_hold) / self.n_anneal_steps
+            return self.final_lr_factor + (
+                self.cooldown_start_lr_factor - self.final_lr_factor
+            ) * (1 - progress)
+
+        elif self.decay_type == "linear_pw":
+            subdivisions = (
+                [self.cooldown_start_lr_factor]
+                + self.linear_pw_subdivisions
+                + [self.final_lr_factor]
+            )
+            division_step = 1 / (len(subdivisions) - 1)
+
+            cooldown_fraction = (step - self.n_hold) / self.n_anneal_steps
+            now_subdivision = math.floor(cooldown_fraction / division_step)
+            now_subdivision = min(
+                now_subdivision, len(subdivisions) - 2
+            )  # Ensure we don't go out of bounds
+
+            left_frac, right_frac = (
+                subdivisions[now_subdivision],
+                subdivisions[now_subdivision + 1],
+            )
+            local_fraction = (
+                cooldown_fraction - division_step * now_subdivision
+            ) / division_step
+            return left_frac + (right_frac - left_frac) * local_fraction
+
+        elif self.decay_type == "exp":
+            progress = (step - self.n_hold) / self.n_anneal_steps
+            return self.final_lr_factor**progress
+
+        elif self.decay_type == "cosine":
+            progress = (step - self.n_hold) / self.n_anneal_steps
+            return (
+                self.final_lr_factor
+                + (self.cooldown_start_lr_factor - self.final_lr_factor)
+                * (1 + math.cos(math.pi * progress))
+                * 0.5
+            )
+
+        elif self.decay_type == "miror_cosine":
+            progress = (step - self.n_hold) / self.n_anneal_steps
+            cosine_value = (
+                self.final_lr_factor
+                + (self.cooldown_start_lr_factor - self.final_lr_factor)
+                * (1 + math.cos(math.pi * progress))
+                * 0.5
+            )
+            linear_value = self.final_lr_factor + (
+                self.cooldown_start_lr_factor - self.final_lr_factor
+            ) * (1 - progress)
+            return linear_value * 2 - cosine_value
+
+        elif self.decay_type == "square":
+            progress = (step - self.n_hold) / self.n_anneal_steps
+            return self.final_lr_factor + (
+                self.cooldown_start_lr_factor - self.final_lr_factor
+            ) * (1 - progress**2)
+
+        elif self.decay_type == "sqrt":
+            progress = (step - self.n_hold) / self.n_anneal_steps
+            return self.final_lr_factor + (
+                self.cooldown_start_lr_factor - self.final_lr_factor
+            ) * (1 - progress**self.sqrt_power)
+        else:
+            raise ValueError(f"Unknown decay_type: {self.decay_type}")
+
+    def state_dict(self) -> dict[str, Any]:
+        """Return scheduler state"""
+        state = super().state_dict()
+        state.update(
+            {
+                "iterations": self.iterations,
+                "final_lr_factor": self.final_lr_factor,
+                "n_warmup": self.n_warmup,
+                "init_div_factor": self.init_div_factor,
+                "fract_decay": self.fract_decay,
+                "decay_type": self.decay_type,
+                "sqrt_power": self.sqrt_power,
+                "linear_pw_subdivisions": self.linear_pw_subdivisions,
+                "cooldown_start_lr_factor": self.cooldown_start_lr_factor,
+                "n_anneal_steps": self.n_anneal_steps,
+                "n_hold": self.n_hold,
+            }
+        )
+        return state
+
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
+        """Load scheduler state"""
+        super().load_state_dict(state_dict)
+        self.iterations = state_dict["iterations"]
+        self.final_lr_factor = state_dict["final_lr_factor"]
+        self.n_warmup = state_dict["n_warmup"]
+        self.init_div_factor = state_dict["init_div_factor"]
+        self.fract_decay = state_dict["fract_decay"]
+        self.decay_type = state_dict["decay_type"]
+        self.sqrt_power = state_dict["sqrt_power"]
+        self.linear_pw_subdivisions = state_dict["linear_pw_subdivisions"]
+        self.cooldown_start_lr_factor = state_dict["cooldown_start_lr_factor"]
+        self.n_anneal_steps = state_dict["n_anneal_steps"]
+        self.n_hold = state_dict["n_hold"]

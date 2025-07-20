@@ -1,0 +1,391 @@
+import logging
+import time
+
+import torch
+from omegaconf import OmegaConf
+from torch.optim import Optimizer
+from tqdm.auto import trange
+
+from optimus_dl.core.device import setup_device_and_collective
+from optimus_dl.core.log import setup_logging
+from optimus_dl.core.registry import build as build_component
+from optimus_dl.modules.criterion import BaseCriterion
+from optimus_dl.modules.metrics import (
+    compute_metrics,
+    log_event_end,
+    log_event_start,
+    log_summed,
+    metrics_group,
+    reset_metrics,
+    step_metrics,
+)
+from optimus_dl.modules.model.base import BaseModel
+from optimus_dl.recipe.train.builders import (
+    CriterionBuilder,
+    DataBuilder,
+    ModelBuilder,
+    OptimizerBuilder,
+    SchedulerBuilder,
+)
+from optimus_dl.recipe.train.config import TrainConfig
+from optimus_dl.recipe.train.mixins.execution import (
+    TrainingContextMixin,
+    TrainingInterruptionMixin,
+    TrainingIterationMixin,
+)
+from optimus_dl.recipe.train.mixins.managers import (
+    CheckpointManager,
+    Evaluator,
+    LoggerManager,
+)
+
+from . import register_train_recipe
+
+logger = logging.getLogger(__name__)
+
+
+@register_train_recipe("base", TrainConfig)
+class TrainRecipe(
+    TrainingContextMixin,
+    TrainingIterationMixin,
+    TrainingInterruptionMixin,
+):
+    """Main training recipe that orchestrates all training components.
+
+    This class uses composition to coordinate specialized builders and managers:
+    - ModelBuilder: Builds models and applies transforms
+    - OptimizerBuilder: Builds optimizers
+    - CriterionBuilder: Builds loss criteria
+    - DataBuilder: Builds train/eval data pipelines
+    - SchedulerBuilder: Builds learning rate schedulers
+    - LoggerManager: Handles metrics logging setup and operations
+    - CheckpointManager: Manages checkpoint saving and loading
+    - Evaluator: Handles evaluation runs and metrics
+
+    It inherits from training logic mixins for the core loop execution:
+    - TrainingContextMixin: Sets up training context (AMP, scaler, etc.)
+    - TrainingIterationMixin: Orchestrates complete training iterations
+    - TrainingInterruptionMixin: Handles training interruptions and errors
+    """
+
+    cfg: TrainConfig
+
+    def __init__(self, cfg: TrainConfig) -> None:
+        self.cfg = cfg
+
+        # Initialize components via composition using registry for dependency injection
+        self.model_builder = build_component(
+            "model_builder",
+            cfg.model_builder,
+            cast_to=ModelBuilder,
+            model_transforms=cfg.model_transforms,
+        )
+        assert self.model_builder is not None, "Model builder not initialized"
+        self.optimizer_builder = build_component(
+            "optimizer_builder",
+            cfg.optimizer_builder,
+            cast_to=OptimizerBuilder,
+            optimization_config=cfg.optimization,
+        )
+        assert self.optimizer_builder is not None, "Optimizer builder not initialized"
+        self.criterion_builder = build_component(
+            "criterion_builder",
+            cfg.criterion_builder,
+            cast_to=CriterionBuilder,
+            criterion_config=cfg.criterion,
+        )
+        assert self.criterion_builder is not None, "Criterion builder not initialized"
+        self.data_builder = build_component(
+            "data_builder",
+            cfg.data_builder,
+            cast_to=DataBuilder,
+            data_config=cfg.data,
+        )
+        assert self.data_builder is not None, "Data builder not initialized"
+        self.scheduler_builder = build_component(
+            "scheduler_builder",
+            cfg.scheduler_builder,
+            cast_to=SchedulerBuilder,
+            lr_scheduler_config=cfg.lr_scheduler,
+            optimization_config=cfg.optimization,
+        )
+        assert self.scheduler_builder is not None, "Scheduler builder not initialized"
+        self.logger_manager = build_component(
+            "logger_manager",
+            cfg.logger_manager,
+            cast_to=LoggerManager,
+            loggers_config=cfg.loggers,
+        )
+        assert self.logger_manager is not None, "Logger manager not initialized"
+        self.checkpoint_manager = build_component(
+            "checkpoint_manager",
+            cfg.checkpoint_manager,
+            cast_to=CheckpointManager,
+            output_path=cfg.common.output_path,
+            save_freq=cfg.common.save_freq,
+        )
+        assert self.checkpoint_manager is not None, "Checkpoint manager not initialized"
+        self.evaluator = build_component(
+            "evaluator",
+            cfg.evaluator,
+            cast_to=Evaluator,
+            eval_freq=cfg.common.eval_freq,
+            eval_iterations=cfg.common.eval_iterations,
+        )
+        assert self.evaluator is not None, "Evaluator not initialized"
+
+        # Initialize training logic mixins
+        TrainingContextMixin.__init__(self, cfg.optimization)
+        TrainingIterationMixin.__init__(self, cfg.optimization, cfg.common.log_freq)
+        TrainingInterruptionMixin.__init__(
+            self,
+            cfg.common.save_freq,
+            cfg.common.output_path,
+            self.save_checkpoint,  # Pass the checkpoint method as callback
+        )
+
+        self.set_exp_name()
+        self.validate_config()
+
+    # Delegate methods
+    def build_model(self, *args, **kwargs) -> BaseModel:
+        return self.model_builder.build_model(*args, **kwargs)
+
+    def build_optimizer(self, *args, **kwargs) -> Optimizer:
+        return self.optimizer_builder.build_optimizer(*args, **kwargs)
+
+    def build_lr_scheduler(self, *args, **kwargs):
+        return self.scheduler_builder.build_lr_scheduler(*args, **kwargs)
+
+    def build_criterion(self, *args, **kwargs) -> BaseCriterion:
+        return self.criterion_builder.build_criterion(*args, **kwargs)
+
+    def build_train_data(self, *args, **kwargs):
+        return self.data_builder.build_train_data(*args, **kwargs)
+
+    def build_eval_data(self, *args, **kwargs):
+        return self.data_builder.build_eval_data(*args, **kwargs)
+
+    def build_loggers(self, *args, **kwargs):
+        return self.logger_manager.build_loggers(*args, **kwargs)
+
+    def setup_loggers(self, experiment_name: str, full_config: dict | None = None):
+        """Override to pass full config to logger manager."""
+        if full_config is None:
+            full_config = self.cfg if hasattr(self.cfg, "__dict__") else dict(self.cfg)
+        return self.logger_manager.setup_loggers(experiment_name, full_config)
+
+    def log_metrics_to_loggers(self, *args, **kwargs):
+        return self.logger_manager.log_metrics_to_loggers(*args, **kwargs)
+
+    def close_loggers(self, *args, **kwargs):
+        return self.logger_manager.close_loggers(*args, **kwargs)
+
+    def save_checkpoint(self, *args, **kwargs):
+        """Override to pass full config to checkpoint manager."""
+        # Convert config to dict for checkpoint metadata
+        config_dict = self.cfg if hasattr(self.cfg, "__dict__") else dict(self.cfg)
+        kwargs["full_config"] = config_dict
+        return self.checkpoint_manager.save_checkpoint(*args, **kwargs)
+
+    def save_checkpoint_if_needed(self, *args, **kwargs):
+        config_dict = self.cfg if hasattr(self.cfg, "__dict__") else dict(self.cfg)
+        kwargs["full_config"] = config_dict
+        return self.checkpoint_manager.save_checkpoint_if_needed(*args, **kwargs)
+
+    def load_checkpoint_if_exists(self, *args, **kwargs):
+        return self.checkpoint_manager.load_checkpoint_if_exists(*args, **kwargs)
+
+    def run_evaluation_if_needed(self, *args, **kwargs):
+        return self.evaluator.run_evaluation_if_needed(*args, **kwargs)
+
+    def set_exp_name(self):
+        """Set experiment name based on config or environment variables."""
+        if not OmegaConf.is_missing(self.cfg.common, "exp_name"):
+            return
+        exp_name = f"run-{self.cfg.model._name}-{time.strftime('%Y-%m-%d-%H-%M-%S')}"
+        self.cfg.common.exp_name = exp_name
+        logger.info(f"Experiment name set to: {self.cfg.common.exp_name}")
+
+    def validate_config(self) -> None:
+        """Validate configuration before training starts."""
+        # Required fields
+        assert self.cfg.model is not None, "Model configuration is required"
+        assert self.cfg.data is not None, "Data configuration is required"
+        assert self.cfg.criterion is not None, "Criterion configuration is required"
+        assert (
+            self.cfg.optimization is not None
+        ), "Optimization configuration is required"
+
+        # Training parameters
+        assert self.cfg.optimization.iterations > 0, "iterations must be positive"
+        assert self.cfg.optimization.acc_steps > 0, "acc_steps must be positive"
+        assert self.cfg.common.log_freq > 0, "log_freq must be positive"
+
+        if self.cfg.common.save_freq > 0:
+            assert (
+                self.cfg.common.output_path
+            ), "output_path required when save_freq > 0"
+
+        logger.info("Configuration validation passed")
+
+    def setup_context(self):
+        torch.set_float32_matmul_precision("highest")
+        if torch.cuda.is_available():
+            torch.backends.cuda.matmul.fp32_precision = "ieee"
+            if hasattr(torch.backends.cudnn, "conv"):
+                torch.backends.cudnn.conv.fp32_precision = "ieee"
+
+    def run(self):
+        """Run the complete training pipeline."""
+        self.setup_context()
+        with metrics_group("init"):
+            log_event_start("perf/init")
+            logger.info(f"Using output path : {self.cfg.common.output_path}")
+            logger.info(self.cfg)
+
+            # Setup device and distributed collective
+            device, collective = setup_device_and_collective(
+                use_gpu=self.cfg.common.use_gpu
+            )
+
+            if not collective.is_master:
+                setup_logging(logging.WARNING)
+
+            model: BaseModel = self.build_model(
+                model_config=self.cfg.model, collective=collective
+            )
+
+            optimizer: Optimizer = self.build_optimizer(model.make_parameter_groups())
+            lr_scheduler = self.build_lr_scheduler(optimizer)
+            criterion: BaseCriterion = self.build_criterion()
+
+            # Setup training context (AMP, scaler, etc.) using recipe mixin
+            training_context = self.setup_training_context(device)
+
+            try:
+                train_data = self.build_train_data(device=device, collective=collective)
+                eval_data = self.build_eval_data(device=device, collective=collective)
+                data_loaders = dict(
+                    train=train_data,
+                    # eval dataloader may be not restored
+                )
+            except Exception as e:
+                logger.error(f"Failed to build data pipelines: {e}")
+                raise
+
+            model = model.to(device)
+
+            # cannot be after checkpoint load as may erase the start event
+            log_event_end("perf/init")
+
+            # Try to resume from checkpoint
+            start_iteration, _ = self.load_checkpoint_if_exists(
+                model=model,
+                optimizer=optimizer,
+                lr_scheduler=lr_scheduler,
+                data_loaders=data_loaders,
+                collective=collective,
+                logger_manager=self.logger_manager,
+            )
+
+            if collective.is_master:
+                self.build_loggers()
+                self.setup_loggers(self.cfg.common.exp_name)
+
+        init_metrics = compute_metrics(
+            group_name="init",
+            aggregate=True,
+            collective=collective,
+        )
+        if collective.is_local_master:
+            self.log_metrics_to_loggers(init_metrics, start_iteration, "init")
+
+        common_chkp_kwargs = dict(
+            model=model,
+            optimizer=optimizer,
+            collective=collective,
+            lr_scheduler=lr_scheduler,
+            data_loaders=data_loaders,
+            grad_scaler=training_context["scaler"],
+            logger_manager=self.logger_manager,
+        )
+
+        train_data_iter = iter(train_data)
+
+        collective.barrier()
+        logger.info("All ranks are ready")
+
+        pbar = trange(
+            start_iteration,
+            self.cfg.optimization.iterations + 1,
+            initial=start_iteration,
+            total=self.cfg.optimization.iterations,
+            miniters=self.cfg.common.log_freq,
+            maxinterval=1000000,
+            disable=not collective.is_local_master,
+            smoothing=0,
+        )
+        for iteration in pbar:
+            try:
+                # Execute one training iteration using recipe mixin
+                self.run_training_iteration(
+                    model=model,
+                    optimizer=optimizer,
+                    criterion=criterion,
+                    train_data_iter=train_data_iter,
+                    training_context=training_context,
+                    lr_scheduler=lr_scheduler,
+                )
+
+                with metrics_group("train") as should_log:
+                    if should_log:
+                        # Get aggregated metrics for progress bar
+                        current_metrics = compute_metrics(
+                            "train",
+                            aggregate=True,
+                            collective=collective,
+                        )
+                        if collective.is_local_master:
+                            pbar.set_postfix(current_metrics, refresh=False)
+
+                        # Log metrics to all configured loggers
+                        if collective.is_master:
+                            self.log_metrics_to_loggers(
+                                current_metrics, iteration, "train"
+                            )
+
+                step_metrics("train")  # Step the metrics logging iteration counter
+                reset_metrics(
+                    "train"
+                )  # Reset metrics after logging (keep metrics with reset=False)
+                with training_context["amp_ctx"]:
+                    metrics = self.run_evaluation_if_needed(
+                        iteration=iteration,
+                        model=model,
+                        criterion=criterion,
+                        eval_data=eval_data,
+                        collective=collective,
+                    )
+                if metrics and collective.is_master:
+                    for eval_name, eval_metrics in metrics.items():
+                        self.log_metrics_to_loggers(eval_metrics, iteration, eval_name)
+
+                self.save_checkpoint_if_needed(
+                    iteration=iteration,
+                    **common_chkp_kwargs,
+                )
+
+            except KeyboardInterrupt:
+                self.handle_training_interruption(
+                    iteration=iteration,
+                    **common_chkp_kwargs,
+                )
+                break
+            except Exception as e:
+                logger.error(f"Training step failed at iteration {iteration}: {e}")
+                raise
+
+        # Close loggers at the end of training
+        if collective.is_master:
+            self.close_loggers()

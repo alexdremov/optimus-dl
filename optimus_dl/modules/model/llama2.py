@@ -1,0 +1,309 @@
+"""
+Llama style Language Model.
+References:
+1) Llama inference code:
+https://github.com/facebookresearch/llama/blob/main/llama/model.py
+2) Mistral one file ref:
+https://github.com/mistralai/mistral-src/blob/main/one_file_ref.py
+3) Llama paper:
+https://arxiv.org/pdf/2302.13971.pdf
+
+Main differences from GPT2:
+* Uses RMSNorm instead of LayerNorm
+* Uses a slightly different MLP (SwiGLU)
+* rotary embeddings (RoPE)
+"""
+
+import math
+from dataclasses import dataclass, field
+
+import tiktoken
+import torch
+import torch.nn as nn
+from torch.nn import functional as F
+
+from optimus_dl.modules.model import register_model
+from optimus_dl.modules.model.blocks.attention import CausalSelfAttention
+from optimus_dl.modules.model.blocks.layer_norms import RMSNorm
+from optimus_dl.modules.model.gpt2 import GPT, GPTConfig
+
+
+@dataclass
+class LlamaConfig(GPTConfig):
+    sequence_length: int = 16000
+    rmsnorm_eps: float = 1e-5
+    bias: bool = False
+    tie_word_embeddings: bool = True
+    n_kv_head: int | None = None
+    intermediate_size: int | None = None
+    multiple_of: int = field(
+        default=256,
+        metadata=dict(
+            help="make SwiGLU hidden layer size multiple of large power of 2"
+        ),
+    )
+
+
+def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0) -> torch.Tensor:
+    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
+    t = torch.arange(end, device=freqs.device)  # type: ignore
+    freqs = torch.outer(t, freqs).float()  # type: ignore
+    cos_freqs = torch.cos(freqs)
+    sin_freqs = torch.sin(freqs)
+    # Stack the cos and sin parts in the last dimension to simulate complex numbers
+    return torch.stack((cos_freqs, sin_freqs), dim=-1)
+
+
+def _reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+    """
+    freqs_cis: complex - (seq_len, head_dim / 2)
+    x: complex - (bsz, seq_len, head_dim / 2)
+    """
+    ndim = x.ndim
+    assert 1 < ndim
+    assert freqs_cis.shape[:-1] == (x.shape[1], x.shape[-2])
+    # New shape for broadcasting
+    shape = [
+        1 if i != 1 and i != ndim - 2 else d for i, d in enumerate(x.shape[:-1])
+    ] + [2]
+    return freqs_cis.view(*shape)
+
+
+def apply_rotary_emb(q, k, freqs_cis):
+    # q, k: (B, T, nh, hs)
+    # freq_cis: (T, hs)
+    # return: (B, T, nh, hs), (B, T, nh, hs)
+    q = q.float().reshape(*q.shape[:-1], -1, 2)
+    k = k.float().reshape(*k.shape[:-1], -1, 2)
+
+    freqs_cis = _reshape_for_broadcast(freqs_cis, q)
+
+    # Perform manual "complex" multiplication
+    q_cos = q[..., 0] * freqs_cis[..., 0] - q[..., 1] * freqs_cis[..., 1]
+    q_sin = q[..., 0] * freqs_cis[..., 1] + q[..., 1] * freqs_cis[..., 0]
+    k_cos = k[..., 0] * freqs_cis[..., 0] - k[..., 1] * freqs_cis[..., 1]
+    k_sin = k[..., 0] * freqs_cis[..., 1] + k[..., 1] * freqs_cis[..., 0]
+
+    # Combine the results back into the interleaved format expected by q and k
+    q_out = torch.stack((q_cos, q_sin), dim=-1).reshape(q.shape).flatten(3)
+    k_out = torch.stack((k_cos, k_sin), dim=-1).reshape(k.shape).flatten(3)
+
+    return q_out, k_out
+
+
+class LlamaMLP(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+
+        if config.intermediate_size is not None:
+            hidden_dim = config.intermediate_size
+        else:
+            hidden_dim = config.n_embd * 4
+            hidden_dim = int(2 * hidden_dim / 3)
+            hidden_dim = config.multiple_of * (
+                (hidden_dim + config.multiple_of - 1) // config.multiple_of
+            )
+
+        self.w1 = nn.Linear(config.n_embd, hidden_dim, bias=False)
+        self.w2 = nn.Linear(config.n_embd, hidden_dim, bias=False)
+        self.c_proj = nn.Linear(hidden_dim, config.n_embd, bias=False)
+
+    def forward(self, x):
+        return self.c_proj(nn.functional.silu(self.w1(x)) * self.w2(x))
+
+
+class LlamaAttention(CausalSelfAttention):
+    def __init__(self, config: LlamaConfig):
+        super().__init__(config)
+        self.n_head = config.n_head
+        self.n_kv_head = (
+            config.n_kv_head if config.n_kv_head is not None else config.n_head
+        )
+        self.n_rep = self.n_head // self.n_kv_head
+        self.head_dim = config.n_embd // config.n_head
+
+        # We don't use the parent's c_attn/c_proj for Llama with potential GQA
+        # Delete them to avoid confusion/unused parameters
+        del self.c_attn
+        del self.c_proj
+
+        self.wq = nn.Linear(config.n_embd, config.n_head * self.head_dim, bias=False)
+        self.wk = nn.Linear(config.n_embd, self.n_kv_head * self.head_dim, bias=False)
+        self.wv = nn.Linear(config.n_embd, self.n_kv_head * self.head_dim, bias=False)
+        self.wo = nn.Linear(config.n_head * self.head_dim, config.n_embd, bias=False)
+
+        self.attn_dropout = nn.Dropout(config.dropout)
+        self.resid_dropout = nn.Dropout(config.dropout)
+
+    def forward(self, x, freqs_cis):
+        B, T, C = x.size()
+
+        # (B, T, n_head * head_dim)
+        xq = self.wq(x)
+        # (B, T, n_kv_head * head_dim)
+        xk = self.wk(x)
+        xv = self.wv(x)
+
+        # (B, T, n_head, head_dim)
+        xq = xq.view(B, T, self.n_head, self.head_dim)
+        xk = xk.view(B, T, self.n_kv_head, self.head_dim)
+        xv = xv.view(B, T, self.n_kv_head, self.head_dim)
+
+        xq, xk = apply_rotary_emb(xq, xk, freqs_cis)
+
+        # (B, n_head, T, head_dim)
+        xq = xq.transpose(1, 2)
+        xk = xk.transpose(1, 2)
+        xv = xv.transpose(1, 2)
+
+        # Repeat K/V heads if n_kv_head < n_head (GQA)
+        if self.n_rep > 1:
+            xk = (
+                xk[:, :, None, :, :]
+                .expand(B, self.n_kv_head, self.n_rep, T, self.head_dim)
+                .reshape(B, self.n_head, T, self.head_dim)
+            )
+            xv = (
+                xv[:, :, None, :, :]
+                .expand(B, self.n_kv_head, self.n_rep, T, self.head_dim)
+                .reshape(B, self.n_head, T, self.head_dim)
+            )
+
+        if self.flash:
+            # efficient attention using Flash Attention CUDA kernels
+            y = torch.nn.functional.scaled_dot_product_attention(
+                xq, xk, xv, attn_mask=None, dropout_p=self.dropout, is_causal=True
+            )
+        else:
+            # manual implementation of attention
+            att = (xq @ xk.transpose(-2, -1)) * (1.0 / math.sqrt(xk.size(-1)))
+            att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float("-inf"))
+            att = F.softmax(att, dim=-1)
+            att = self.attn_dropout(att)
+            y = att @ xv
+
+        # (B, T, n_head * head_dim)
+        y = y.transpose(1, 2).contiguous().view(B, T, C)
+
+        # output projection
+        y = self.resid_dropout(self.wo(y))
+        return y
+
+
+class LlamaBlock(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.ln_1 = RMSNorm(config.n_embd, eps=config.rmsnorm_eps)
+        self.attn = LlamaAttention(config)
+        self.ln_2 = RMSNorm(config.n_embd, eps=config.rmsnorm_eps)
+        self.mlp = LlamaMLP(config)
+
+    def forward(self, x, freqs_cis):
+        x = x + self.attn(self.ln_1(x), freqs_cis)
+        x = x + self.mlp(self.ln_2(x))
+        return x
+
+
+@register_model("llama2", LlamaConfig)
+class Llama(GPT):
+    def __init__(self, config: LlamaConfig):
+        super().__init__(config)
+        assert config.vocab_size is not None
+        assert config.sequence_length is not None
+        self.config = config
+
+        # create the token and position embeddings
+        self.head_dim = config.n_embd // config.n_head
+        self.freqs_cis = precompute_freqs_cis(self.head_dim, config.sequence_length)
+
+        self.transformer = nn.ModuleDict(
+            dict(
+                wte=nn.Embedding(config.vocab_size, config.n_embd),
+                drop=nn.Dropout(config.dropout),
+                h=nn.ModuleList([LlamaBlock(config) for _ in range(config.n_layer)]),
+                ln_f=RMSNorm(config.n_embd, eps=config.rmsnorm_eps),
+            )
+        )
+        # with weight tying when using torch.compile() some warnings get generated:
+        # "UserWarning: functional_call was passed multiple values for tied weights.
+        # This behavior is deprecated and will be an error in future versions"
+        # not 100% sure what this is, so far seems to be harmless. TODO investigate
+        if config.tie_word_embeddings:
+            self.transformer.wte.weight = (
+                self.lm_head.weight
+            )  # https://paperswithcode.com/method/weight-tying
+
+        # init all weights
+        self.apply(self._init_weights)
+        # apply special scaled init to the residual projections, per GPT-2 paper
+        for pn, p in self.named_parameters():
+            if pn.endswith("c_proj.weight"):
+                torch.nn.init.normal_(
+                    p, mean=0.0, std=0.02 / math.sqrt(2 * config.n_layer)
+                )
+
+    def forward(self, input_ids, **kwargs):
+        idx = input_ids
+        device = idx.device
+        b, t = idx.size()
+        assert (
+            t <= self.config.sequence_length
+        ), f"Cannot forward sequence of length {t}, block size is only {self.config.sequence_length}"
+        # shape (1, t)
+        pos = torch.arange(0, t, dtype=torch.long, device=device)
+
+        # forward the GPT model itself
+        tok_emb = self.transformer.wte(idx)  # token embeddings of shape (b, t, n_embd)
+
+        x = self.transformer.drop(tok_emb)
+        freqs_cis = self.freqs_cis.to(x.device)[pos]
+
+        for block_idx, block in enumerate(self.transformer.h):
+            x = block(x, freqs_cis=freqs_cis)
+        x = self.transformer.ln_f(x)
+
+        logits = self.lm_head(x)
+
+        return {
+            "logits": logits,
+        }
+
+
+@Llama.register_arch("1b")
+def llama_1b():
+    return LlamaConfig(
+        n_layer=18,
+        n_head=32,
+        n_embd=2048,
+        multiple_of=4,
+    )
+
+
+@Llama.register_arch("210M")
+def llama_210M():
+    return LlamaConfig(
+        n_layer=24,
+        n_head=12,
+        n_embd=768,
+        multiple_of=4,
+    )
+
+
+@Llama.register_arch("lite")
+def llama_lite():
+    return LlamaConfig(
+        n_layer=6,
+        n_head=8,
+        n_embd=768,
+        multiple_of=4,
+    )
+
+
+@Llama.register_arch("x-lite")
+def llama_x_lite():
+    return LlamaConfig(
+        n_layer=6,
+        n_head=4,
+        n_embd=256,
+        multiple_of=4,
+    )

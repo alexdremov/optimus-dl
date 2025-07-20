@@ -1,0 +1,14 @@
+common:
+  checkpoint_path: ???  # Must be provided
+  seed: 42
+  tokenizer:
+    _name: char_tokenize
+
+lm_eval:
+  tasks:
+    - hellaswag
+    - arc_easy
+  num_fewshot: 0
+  batch_size: 1
+  limit: 100  # Small limit for quick testing
+  output_path: null

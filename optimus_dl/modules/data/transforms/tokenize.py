@@ -1,0 +1,77 @@
+import logging
+from dataclasses import dataclass, field
+from typing import Any
+
+import numpy as np
+import torchdata.nodes
+from omegaconf import MISSING, OmegaConf
+from torchdata.nodes.base_node import BaseNode
+
+from optimus_dl.core.registry import RegistryConfig
+from optimus_dl.modules.data.transforms import (
+    BaseTransform,
+    MapperConfig,
+    register_transform,
+)
+from optimus_dl.modules.tokenizer import build_tokenizer
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class TokenizeTransformConfig(RegistryConfig):
+    tokenizer_config: Any = MISSING  # CHANGE: use new config
+    debug_samples: int = 0
+    worker_cfg: MapperConfig = field(
+        default_factory=MapperConfig,
+    )
+
+
+@register_transform("tokenize", TokenizeTransformConfig)
+class TokenizeTransform(BaseTransform):
+    def __init__(self, cfg: TokenizeTransformConfig, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tokenizer = build_tokenizer(cfg.tokenizer_config)
+
+        # Convert MapperConfig dataclass to dict for torchdata
+        from dataclasses import asdict
+
+        if hasattr(cfg.worker_cfg, "__dataclass_fields__"):
+            # It's a dataclass
+            self.mapper_cfg = asdict(cfg.worker_cfg)
+        else:
+            # Try OmegaConf conversion for backwards compatibility
+            self.mapper_cfg = OmegaConf.to_container(cfg.worker_cfg)
+
+        self.debug_counter = 0
+        self.debug_samples = cfg.debug_samples
+
+    def _map(self, sample):
+        text = sample["text"]
+        ids = self.tokenizer.encode(text)  # CHANGE
+        if self.debug_counter < self.debug_samples:
+            self.debug_counter += 1
+            tokens_debug = []
+            for (
+                token_id
+            ) in (
+                ids
+            ):  # Renamed 'token' to 'token_id' to avoid confusion with token strings
+                token_decoded = self.tokenizer.decode(
+                    [token_id]
+                )  # CHANGE: decode takes a list, skip_special_tokens should be handled by tokenizer if needed
+                tokens_debug.append(f"{token_id}({token_decoded})")
+
+            tokens_debug = ", ".join(tokens_debug)
+            logger.info(f"Debugging tokenizer sample: \n{tokens_debug}\n=======")
+
+        return dict(
+            input_ids=ids,
+        )
+
+    def build(self, source: BaseNode) -> BaseNode:
+        return torchdata.nodes.ParallelMapper(
+            source=source,
+            map_fn=self._map,
+            **self.mapper_cfg,
+        )

@@ -1,0 +1,87 @@
+defaults:
+  - defaults.yaml
+  - lr_scheduler: wsd
+  - model: llama2
+  - criterion: cross_entropy
+  - loggers: basic
+  - optimization/amp: bfloat16
+  - _self_
+
+_name: base
+args:
+  name: train-210M-slimpajama
+  iterations: 33000
+  batch_size: 100
+  seq_len: 512
+
+model_transforms:
+  - _name: fully_shard
+    reshard_after_forward: false
+  - _name: compile
+    compile_kwargs:
+      disable: false
+
+lr_scheduler:
+  warmup_steps: 300
+  n_warmup_fraction: null
+
+# Experiment configuration
+common:
+  exp_name: ${args.name}
+  use_gpu: true
+  log_freq: 50
+  save_freq: 500
+  eval_freq: 200
+  eval_iterations: 64
+  output_path: ${oc.env:SCRATCH_HOME,.}/outputs/llama2-training/${.exp_name}
+
+# Optimization settings
+optimization:
+  iterations: ${args.iterations}
+  acc_steps: 1          # Gradient accumulation steps
+  clip_grad_norm: 5.0   # Gradient clipping norm
+
+  optimizer:
+    _name: adamw
+    lr: 5e-4            # Base learning rate
+    weight_decay: 1e-1
+    betas: [0.9, 0.99]  # Adam beta parameters
+    eps: 1e-8           # Adam epsilon
+
+# Data configuration
+data:
+  scratch:
+    base_transforms:
+      _name: compose
+      transforms:
+        - _name: tokenize
+          tokenizer_config:
+            _name: tiktoken
+            name: gpt2
+        - _name: chunk_tokens
+          max_seq_len: ${args.seq_len}
+        - _name: shuffle
+          seed: 42
+          buffer_size: 8096
+        - _name: flat_batcher
+          batch_size: ${args.batch_size}
+          seq_len: ${args.seq_len}
+        - _name: prefetch
+        - _name: to_device
+
+  train_datasets:
+    source:
+      _name: loop
+      inner:
+        _name: preset_slimpajama6b
+        split: train
+    transform: ${data.scratch.base_transforms}
+
+  # Evaluation datasets (optional)
+  eval_datasets:
+    slimpajama6b:
+      source:
+        _name: preset_slimpajama6b
+        split: validation
+        # streaming: false
+      transform: ${data.scratch.base_transforms}

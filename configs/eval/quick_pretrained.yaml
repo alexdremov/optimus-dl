@@ -1,0 +1,12 @@
+defaults:
+  - quick
+  - _self_
+
+common:
+  checkpoint_path: null
+  model:
+    _name: preset_hfllama2
+    hf_model_name: TinyLlama/TinyLlama-1.1B-Chat-v1.0
+  tokenizer:
+    _name: transformers
+    name: ${common.model.hf_model_name}
