@@ -305,6 +305,7 @@ class TrainRecipe(
                 lr_scheduler=lr_scheduler,
                 data_loaders=data_loaders,
                 collective=collective,
+                data_sources=train_datapipeline.datasets,
             )
             # cases when training run but did not produce any artifacts is
             # is indistingushable from the case when training is not started at all
@@ -318,6 +319,7 @@ class TrainRecipe(
                     optimizer=optimizer,
                     lr_scheduler=lr_scheduler,
                     data_loaders=data_loaders,
+                    data_sources=train_datapipeline.datasets,
                     collective=collective,
                     load_strategy=self.cfg.common.load_checkpoint_strategy,
                     checkpoint_path=self.cfg.common.load_checkpoint,
@@ -348,6 +350,7 @@ class TrainRecipe(
             collective=collective,
             lr_scheduler=lr_scheduler,
             data_loaders=data_loaders,
+            data_sources=train_datapipeline.datasets,
             grad_scaler=training_context["scaler"],
         )
 

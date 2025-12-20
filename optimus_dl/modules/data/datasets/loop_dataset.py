@@ -8,6 +8,7 @@ from omegaconf import MISSING
 from optimus_dl.core.registry import RegistryConfig
 
 from . import build_dataset, register_dataset
+from .base import BaseDataset
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +19,9 @@ class LoopDatasetConfig(RegistryConfig):
 
 
 @register_dataset("loop", LoopDatasetConfig)
-class LoopDataset(torchdata.nodes.BaseNode):
+class LoopDataset(BaseDataset):
     def __init__(self, cfg: LoopDatasetConfig, rank: int, world_size: int, **kwargs):
-        super().__init__()
-        self.cfg = cfg
+        super().__init__(cfg)
         self.rank = rank
         self.world_size = world_size
         self.kwargs = kwargs
@@ -65,5 +65,5 @@ class LoopDataset(torchdata.nodes.BaseNode):
             "world_size": self.world_size,
         }
         if self.inner_dataset:
-            state["inner_state"] = self.inner_dataset.get_state()
+            state["inner_state"] = self.inner_dataset.state_dict()
         return state

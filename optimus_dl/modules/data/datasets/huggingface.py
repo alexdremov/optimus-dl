@@ -13,6 +13,7 @@ from transformers import AutoTokenizer
 from optimus_dl.core.registry import RegistryConfig
 
 from . import register_dataset
+from .base import BaseDataset
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +24,9 @@ class HuggingFaceDatasetConfig(RegistryConfig):
 
 
 @register_dataset("huggingface_dataset", HuggingFaceDatasetConfig)
-class HuggingFaceDataset(torchdata.nodes.BaseNode):
+class HuggingFaceDataset(BaseDataset):
     def __init__(self, cfg, rank: int, world_size: int, **kwargs):
-        super().__init__()
-        self.cfg = cfg
+        super().__init__(cfg)
         self.rank = rank
         self.world_size = world_size
         self.position = 0

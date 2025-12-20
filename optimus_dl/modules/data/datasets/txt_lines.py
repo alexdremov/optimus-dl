@@ -12,6 +12,7 @@ from omegaconf import MISSING
 from optimus_dl.core.registry import RegistryConfig
 
 from . import register_dataset
+from .base import BaseDataset
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +25,11 @@ class TxtLinesDatasetConfig(RegistryConfig):
 
 
 @register_dataset("txt_lines", TxtLinesDatasetConfig)
-class TxtLinesDataset(torchdata.nodes.BaseNode):
+class TxtLinesDataset(BaseDataset):
     def __init__(
         self, cfg: TxtLinesDatasetConfig, rank: int, world_size: int, **kwargs
     ):
-        super().__init__()
+        super().__init__(cfg)
         self.file_link = cfg.file_link
         self.cache_dir = cfg.cache_dir
         self.skip_empty_lines = cfg.skip_empty_lines

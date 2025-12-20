@@ -9,6 +9,7 @@ from omegaconf import MISSING
 from optimus_dl.core.registry import RegistryConfig
 
 from . import register_dataset
+from .base import BaseDataset
 
 
 @dataclass
@@ -22,11 +23,11 @@ class TokenizedFlatDatasetConfig(RegistryConfig):
 
 
 @register_dataset("tokenized_flat", TokenizedFlatDatasetConfig)
-class TokenizedFlatDataset(torchdata.nodes.BaseNode):
+class TokenizedFlatDataset(BaseDataset):
     def __init__(
         self, cfg: TokenizedFlatDatasetConfig, rank: int, world_size: int, **kwargs
     ):
-        super().__init__()
+        super().__init__(cfg)
         self.files = cfg.files
         self.seq_len = cfg.seq_len
         self.batch_size = cfg.batch_size

@@ -151,7 +151,7 @@ class CheckpointManager:
                 logger.info(f"Saving state for {key}")
                 kwargs_states[key] = value.state_dict()
             else:
-                logger.warning(
+                logger.error(
                     f"Could not save state for {key} as no state_dict() method found"
                 )
         metadata = {
@@ -227,6 +227,7 @@ class CheckpointManager:
         collective: Collective,
         lr_scheduler=None,
         data_loaders: dict | None = None,
+        data_sources=None,
         load_strategy: LoadStrategy | None = None,
         **kwargs,
     ) -> dict:
@@ -247,6 +248,20 @@ class CheckpointManager:
 
         if not load_strategy.load_scheduler:
             lr_scheduler = None
+
+        if load_strategy.load_data_sources and load_strategy.load_dataloaders:
+            load_strategy.load_data_sources = False
+            logger.warning(
+                "Not restoring data sources directly as they will be restored with dataloaders restoration"
+            )
+
+        if not load_strategy.load_data_sources:
+            data_sources = None
+            if load_strategy.load_dataloaders:
+                load_strategy.load_dataloaders = False
+                logger.warning(
+                    "Not restoring dataloaders as data sources are not loaded"
+                )
 
         if not load_strategy.load_dataloaders:
             data_loaders = None
@@ -341,6 +356,12 @@ class CheckpointManager:
                 data_loaders[k].load_state_dict(v)
             else:
                 logger.warning(f"Data loader {k} not found in current configuration")
+
+        if "data_sources" in per_rank_metadata and data_sources is not None:
+            data_sources.load_state_dict(per_rank_metadata["data_sources"])
+            logger.info(
+                "Restoring data sources indipendently (without the full dataloader pipeline)"
+            )
 
         if "metrics" in per_rank_metadata and load_strategy.load_metrics:
             metrics_load_state_dict(per_rank_metadata["metrics"])
