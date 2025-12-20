@@ -9,6 +9,7 @@ from tqdm.auto import trange
 from optimus_dl.core.device import setup_device_and_collective
 from optimus_dl.core.log import setup_logging
 from optimus_dl.core.registry import build as build_component
+from optimus_dl.modules.checkpoint import CheckpointManager
 from optimus_dl.modules.criterion import BaseCriterion
 from optimus_dl.modules.metrics import (
     compute_metrics,
@@ -34,7 +35,6 @@ from optimus_dl.recipe.train.mixins.execution import (
     TrainingIterationMixin,
 )
 from optimus_dl.recipe.train.mixins.managers import (
-    CheckpointManager,
     Evaluator,
     LoggerManager,
 )
@@ -121,8 +121,6 @@ class TrainRecipe(
             "checkpoint_manager",
             cfg.checkpoint_manager,
             cast_to=CheckpointManager,
-            output_path=cfg.common.output_path,
-            save_freq=cfg.common.save_freq,
         )
         assert self.checkpoint_manager is not None, "Checkpoint manager not initialized"
         self.evaluator = build_component(
@@ -181,20 +179,34 @@ class TrainRecipe(
     def close_loggers(self, *args, **kwargs):
         return self.logger_manager.close_loggers(*args, **kwargs)
 
-    def save_checkpoint(self, *args, **kwargs):
-        """Override to pass full config to checkpoint manager."""
-        # Convert config to dict for checkpoint metadata
-        config_dict = self.cfg if hasattr(self.cfg, "__dict__") else dict(self.cfg)
-        kwargs["full_config"] = config_dict
-        return self.checkpoint_manager.save_checkpoint(*args, **kwargs)
-
     def save_checkpoint_if_needed(self, *args, **kwargs):
         config_dict = self.cfg if hasattr(self.cfg, "__dict__") else dict(self.cfg)
         kwargs["full_config"] = config_dict
+        kwargs["checkpoint_dir"] = self.cfg.common.output_path
+        kwargs["save_freq"] = self.cfg.common.save_freq
+        kwargs["logger_manager"] = (self.logger_manager,)
         return self.checkpoint_manager.save_checkpoint_if_needed(*args, **kwargs)
 
+    def save_checkpoint(self, *args, **kwargs):
+        config_dict = self.cfg if hasattr(self.cfg, "__dict__") else dict(self.cfg)
+        kwargs["full_config"] = config_dict
+        if "checkpoint_dir" not in kwargs:
+            kwargs["checkpoint_dir"] = self.cfg.common.output_path
+        if "logger_manager" not in kwargs:
+            kwargs["logger_manager"] = self.logger_manager
+        return self.checkpoint_manager.save_checkpoint(*args, **kwargs)
+
     def load_checkpoint_if_exists(self, *args, **kwargs):
+        if "checkpoint_dir" not in kwargs:
+            kwargs["checkpoint_dir"] = self.cfg.common.output_path
+        if "logger_manager" not in kwargs:
+            kwargs["logger_manager"] = self.logger_manager
         return self.checkpoint_manager.load_checkpoint_if_exists(*args, **kwargs)
+
+    def load_checkpoint(self, *args, **kwargs):
+        if "logger_manager" not in kwargs:
+            kwargs["logger_manager"] = self.logger_manager
+        return self.checkpoint_manager.load_checkpoint(*args, **kwargs)
 
     def run_evaluation_if_needed(self, *args, **kwargs):
         return self.evaluator.run_evaluation_if_needed(*args, **kwargs)
@@ -264,10 +276,17 @@ class TrainRecipe(
             training_context = self.setup_training_context(device)
 
             try:
-                train_data = self.build_train_data(device=device, collective=collective)
-                eval_data = self.build_eval_data(device=device, collective=collective)
+                train_datapipeline = self.build_train_data(
+                    device=device, collective=collective
+                )
+                assert (
+                    train_datapipeline is not None
+                ), "Train data pipeline not initialized"
+                eval_datapipeline = self.build_eval_data(
+                    device=device, collective=collective
+                )
                 data_loaders = dict(
-                    train=train_data,
+                    train=train_datapipeline.dataloader,
                     # eval dataloader may be not restored
                 )
             except Exception as e:
@@ -279,15 +298,37 @@ class TrainRecipe(
             # cannot be after checkpoint load as may erase the start event
             log_event_end("perf/init")
 
-            # Try to resume from checkpoint
-            start_iteration, _ = self.load_checkpoint_if_exists(
+            # Try to resume from checkpoint in output paths
+            start_iteration, metadata = self.load_checkpoint_if_exists(
                 model=model,
                 optimizer=optimizer,
                 lr_scheduler=lr_scheduler,
                 data_loaders=data_loaders,
                 collective=collective,
-                logger_manager=self.logger_manager,
             )
+            # cases when training run but did not produce any artifacts is
+            # is indistingushable from the case when training is not started at all
+            is_restarted = metadata is not None
+            logger.info(f"Considering this run as {is_restarted = }")
+            if not is_restarted and self.cfg.common.load_checkpoint is not None:
+                # if checkpoint from output path was not loaded, we are sure that this launch is not
+                # re-scheduling / preemption re-start, so we can try loading model from load_checkpoint
+                metadata = self.load_checkpoint(
+                    model=model,
+                    optimizer=optimizer,
+                    lr_scheduler=lr_scheduler,
+                    data_loaders=data_loaders,
+                    collective=collective,
+                    load_strategy=self.cfg.common.load_checkpoint_strategy,
+                    checkpoint_path=self.cfg.common.load_checkpoint,
+                )
+                start_iteration = metadata["iteration"] + 1
+                logger.info(
+                    "Loaded checkpoint from "
+                    f"checkpoint_path = {self.cfg.common.load_checkpoint} path with "
+                    f"load_strategy = {self.cfg.common.load_checkpoint_strategy} "
+                    f"with {start_iteration = }"
+                )
 
             if collective.is_master:
                 self.build_loggers()
@@ -308,10 +349,9 @@ class TrainRecipe(
             lr_scheduler=lr_scheduler,
             data_loaders=data_loaders,
             grad_scaler=training_context["scaler"],
-            logger_manager=self.logger_manager,
         )
 
-        train_data_iter = iter(train_data)
+        train_data_iter = iter(train_datapipeline.dataloader)
 
         collective.barrier()
         logger.info("All ranks are ready")
@@ -364,7 +404,11 @@ class TrainRecipe(
                         iteration=iteration,
                         model=model,
                         criterion=criterion,
-                        eval_data=eval_data,
+                        eval_data={
+                            k: v.dataloader
+                            for k, v in eval_datapipeline.items()
+                            if v is not None
+                        },
                         collective=collective,
                     )
                 if metrics and collective.is_master:

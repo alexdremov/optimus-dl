@@ -8,6 +8,7 @@ import torchdata.nodes
 from optimus_dl.core.registry import RegistryConfig, make_registry
 from optimus_dl.modules.data import (
     DataConfig,
+    DataPipeline,
     build_data_pipeline,
     build_data_pipeline_dict,
 )
@@ -27,7 +28,7 @@ class DataBuilder:
     def __init__(self, cfg: DataBuilderConfig, data_config: DataConfig, **kwargs):
         self.data_config = data_config
 
-    def build_train_data(self, collective: Collective, **kwargs):
+    def build_train_data(self, collective: Collective, **kwargs) -> DataPipeline | None:
         """Build training data pipeline."""
         kwargs["rank"] = collective.rank
         kwargs["world_size"] = collective.world_size
@@ -38,7 +39,9 @@ class DataBuilder:
         )
         return train_data
 
-    def build_eval_data(self, collective: Collective, **kwargs):
+    def build_eval_data(
+        self, collective: Collective, **kwargs
+    ) -> dict[str, DataPipeline | None]:
         """Build evaluation data pipelines."""
         kwargs["rank"] = collective.rank
         kwargs["world_size"] = collective.world_size

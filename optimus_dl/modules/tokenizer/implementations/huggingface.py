@@ -15,7 +15,7 @@ class HFTokenizerConfig(BaseTokenizerConfig):
 
 @register_tokenizer("transformers", HFTokenizerConfig)
 class HFTokenizer(BaseTokenizer):
-    def __init__(self, config: HFTokenizerConfig):
+    def __init__(self, config: HFTokenizerConfig, **kwargs):
         super().__init__(config)
         self.tokenizer = AutoTokenizer.from_pretrained(
             config.name, trust_remote_code=config.trust_remote_code
@@ -59,11 +59,7 @@ class HFTokenizer(BaseTokenizer):
             not hasattr(self.tokenizer, "apply_chat_template")
             or not self.tokenizer.chat_template
         ):
-            # Fallback if no chat template defined? Or raise error?
-            # For base models, maybe just concat? But better to be explicit.
-            if not self.tokenizer.chat_template:
-                # Try to use default if available or just error out
-                pass
+            raise ValueError("Tokenizer does not support chat template")
 
         return self.tokenizer.apply_chat_template(
             conversation,

@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from omegaconf import II, MISSING
 
 from optimus_dl.core.registry import RegistryConfig
+from optimus_dl.modules.checkpoint import CheckpointManagerConfig, LoadStrategy
 from optimus_dl.modules.criterion import CriterionConfig
 from optimus_dl.modules.data import DataConfig
 from optimus_dl.modules.loggers import MetricsLoggerConfig
@@ -14,9 +15,6 @@ from optimus_dl.recipe.train.builders.criterion_builder import CriterionBuilderC
 from optimus_dl.recipe.train.builders.data_builder import DataBuilderConfig
 from optimus_dl.recipe.train.builders.optimizer_builder import OptimizerBuilderConfig
 from optimus_dl.recipe.train.builders.scheduler_builder import SchedulerBuilderConfig
-from optimus_dl.recipe.train.mixins.managers.checkpoint_manager import (
-    CheckpointManagerConfig,
-)
 from optimus_dl.recipe.train.mixins.managers.evaluation_manager import EvaluatorConfig
 from optimus_dl.recipe.train.mixins.managers.logger_manager import LoggerManagerConfig
 
@@ -64,6 +62,17 @@ class TrainRecipeConfig:
     output_path: str = field(
         default="${oc.env:PERSISTENT_PATH,'./outputs'}/${.exp_name}",
         metadata=dict(help="Directory to dump checkpoints to"),
+    )
+
+    load_checkpoint: str | None = field(
+        default=None,
+        metadata=dict(
+            help="Path to checkpoint to load from, what to load from it is controlled by load_checkpoint_strategy"
+        ),
+    )
+    load_checkpoint_strategy: LoadStrategy = field(
+        default_factory=LoadStrategy,
+        metadata=dict(help="Strategy what to load from the checkpoint"),
     )
 
     use_gpu: bool = field(

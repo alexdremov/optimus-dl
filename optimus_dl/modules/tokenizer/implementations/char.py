@@ -14,7 +14,7 @@ class CharTokenizerConfig(BaseTokenizerConfig):
 
 @register_tokenizer("char_tokenize", CharTokenizerConfig)
 class CharTokenizer(BaseTokenizer):
-    def __init__(self, config: CharTokenizerConfig):
+    def __init__(self, config: CharTokenizerConfig, **kwargs):
         super().__init__(config)
 
     def encode(self, text: str) -> list[int]:
@@ -53,6 +53,3 @@ class CharTokenizer(BaseTokenizer):
     @property
     def eos_token_id(self):
         return self.config.eos_token_id
-
-    def save_pretrained(self, save_directory: str):
-        pass

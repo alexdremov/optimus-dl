@@ -1,3 +1,5 @@
+from typing import NamedTuple
+
 import torchdata
 import torchdata.nodes
 from omegaconf import DictConfig
@@ -12,9 +14,12 @@ from optimus_dl.modules.data.transforms.composite import (
 from .config import DataConfig, DataPipelineConfig
 
 
-def build_data_pipeline(
-    cfg: DataPipelineConfig | dict | None, **kwargs
-) -> torchdata.nodes.BaseNode:
+class DataPipeline(NamedTuple):
+    dataset: torchdata.nodes.BaseNode
+    dataloader: torchdata.nodes.BaseNode
+
+
+def build_data_pipeline(cfg: DataPipelineConfig, **kwargs) -> DataPipeline | None:
     if cfg is None:
         return None
     dataset = build_dataset(cfg.source, **kwargs)
@@ -23,10 +28,12 @@ def build_data_pipeline(
         transform = build_transform(cfg.transform, **kwargs)
         pipeline = transform.build(dataset)
     assert isinstance(pipeline, torchdata.nodes.BaseNode)
-    return pipeline
+    return DataPipeline(dataset, pipeline)
 
 
-def build_data_pipeline_dict(cfg: DataPipelineConfig | dict | None, **kwargs):
+def build_data_pipeline_dict(
+    cfg: dict[str, DataPipelineConfig], **kwargs
+) -> dict[str, DataPipeline | None]:
     return {k: build_data_pipeline(v, **kwargs) for k, v in cfg.items()}
 
 

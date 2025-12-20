@@ -5,6 +5,7 @@ from pathlib import Path
 
 import torch
 
+from optimus_dl.modules.checkpoint import CheckpointManager
 from optimus_dl.modules.distributed import build_best_collective
 from optimus_dl.modules.distributed.base import Collective
 from optimus_dl.modules.eval import LLMBaselinesModel
@@ -31,6 +32,8 @@ class EvalRecipe:
         # Initialize builders using composition
         # ModelBuilder needs a dummy config, but it won't be used since we use build_model_from_checkpoint
         self.model_builder = ModelBuilder(None, [])
+        self.checkpoint_manager = CheckpointManager(None)
+
         # Direct tokenizer build config
         self.tokenizer_config = cfg.common.tokenizer
 
@@ -50,7 +53,7 @@ class EvalRecipe:
                 logger.info(
                     f"Loading model from checkpoint: {self.cfg.common.checkpoint_path}"
                 )
-                base_model, _ = self.model_builder.build_model_from_checkpoint(
+                base_model, _ = self.ch.build_model_from_checkpoint(
                     checkpoint_path=self.cfg.common.checkpoint_path, device=device
                 )
             else:

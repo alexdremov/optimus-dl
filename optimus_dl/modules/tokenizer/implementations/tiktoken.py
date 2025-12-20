@@ -14,7 +14,7 @@ class TiktokenConfig(BaseTokenizerConfig):
 
 @register_tokenizer("tiktoken", TiktokenConfig)
 class TiktokenTokenizer(BaseTokenizer):
-    def __init__(self, config: TiktokenConfig):
+    def __init__(self, config: TiktokenConfig, **kwargs):
         super().__init__(config)
         self.encoding = tiktoken.get_encoding(config.name)
 
