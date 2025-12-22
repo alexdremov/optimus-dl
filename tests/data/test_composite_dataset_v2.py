@@ -1,20 +1,21 @@
+import os
+import tempfile
 import unittest
 from dataclasses import dataclass
 
 import torch
 from omegaconf import OmegaConf
-from torchdata.nodes import BaseNode
 
 from optimus_dl.core.registry import RegistryConfig
-from optimus_dl.modules.data.datasets import build_dataset, register_dataset
+from optimus_dl.modules.data.datasets import register_dataset
 from optimus_dl.modules.data.datasets.base import BaseDataset
 from optimus_dl.modules.data.datasets.composite import (
     CompositeDataset,
     CompositeDatasetConfig,
     DatasetConfig,
     StopCriteria,
-    _WeightedSampler,
 )
+from optimus_dl.modules.data.datasets.txt_lines import TxtLinesDatasetConfig
 
 
 # Define a mock dataset for testing
@@ -71,6 +72,12 @@ class TestCompositeDataset(unittest.TestCase):
             seed=42,
             strict_load=True,
         )
+        self.temp_files = []
+
+    def tearDown(self):
+        for f in self.temp_files:
+            if os.path.exists(f):
+                os.remove(f)
 
     def test_weighted_sampling_and_exhaustion(self):
         # ds1 has 5 items (0-4), ds2 has 3 items (100-102)
@@ -120,7 +127,7 @@ class TestCompositeDataset(unittest.TestCase):
         # Expect ds2 to exhaust after 2 items.
         # ds1 might yield more than 2 items due to cycling.
 
-        ds1_items = [i for i in items if i < 100]
+        [i for i in items if i < 100]
         ds2_items = [i for i in items if i >= 100]
 
         self.assertEqual(len(ds2_items), 2)
@@ -161,7 +168,7 @@ class TestCompositeDataset(unittest.TestCase):
         dataset.reset()
 
         # Run N steps
-        pre_state_items = [dataset.next() for _ in range(3)]
+        [dataset.next() for _ in range(3)]
 
         # Save state
         state = dataset.get_state()
@@ -256,7 +263,7 @@ class TestCompositeDataset(unittest.TestCase):
         dataset2.reset(state)
 
         # Continue
-        item_next = dataset2.next()
+        dataset2.next()
 
         # Verify continuity?
         # Hard to verify strictly without knowing exact sequence, but it shouldn't crash.
@@ -416,6 +423,156 @@ class TestCompositeDataset(unittest.TestCase):
             abs(ratio_ds1 - expected_ratio) < 0.05,
             f"Expected ratio ~0.8, got {ratio_ds1:.3f} (ds1={count_ds1}, ds2={count_ds2})",
         )
+
+    def test_real_txt_dataset(self):
+        # Create temp files
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f1:
+            f1.write("A1\nA2\nA3\n")
+            f1_path = f1.name
+            self.temp_files.append(f1_path)
+
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f2:
+            f2.write("B1\nB2\n")
+            f2_path = f2.name
+            self.temp_files.append(f2_path)
+
+        # Configure datasets
+        txt_cfg1 = OmegaConf.structured(
+            TxtLinesDatasetConfig(file_link=f1_path, _name="txt_lines")
+        )
+        txt_cfg2 = OmegaConf.structured(
+            TxtLinesDatasetConfig(file_link=f2_path, _name="txt_lines")
+        )
+
+        cfg = CompositeDatasetConfig(
+            datasets={
+                "txt1": DatasetConfig(dataset=txt_cfg1, weight=1.0, cycle=False),
+                "txt2": DatasetConfig(dataset=txt_cfg2, weight=1.0, cycle=False),
+            },
+            stop_criteria=StopCriteria.ALL_DATASETS_EXHAUSTED,
+            seed=42,
+            strict_load=True,
+        )
+
+        dataset = CompositeDataset(cfg, rank=0, world_size=1)
+        dataset.reset()
+
+        items = []
+        try:
+            while True:
+                item = dataset.next()
+                items.append(item["text"])
+        except StopIteration:
+            pass
+
+        # Verify
+        expected = sorted(["A1", "A2", "A3", "B1", "B2"])
+        actual = sorted(items)
+        self.assertEqual(actual, expected)
+
+    def test_mixed_cycling_first_exhausted(self):
+        # ds1 cycles (size 2), ds2 no cycle (size 2).
+        # StopCriteria: FIRST_DATASET_EXHAUSTED.
+        # Should stop when ds2 exhausts (after 2 items).
+
+        self.comp_cfg.datasets["ds1"].cycle = True
+        self.comp_cfg.datasets["ds1"].dataset.size = 2
+        self.comp_cfg.datasets["ds2"].cycle = False
+        self.comp_cfg.datasets["ds2"].dataset.size = 2
+        self.comp_cfg.stop_criteria = StopCriteria.FIRST_DATASET_EXHAUSTED
+
+        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset.reset()
+
+        items = []
+        try:
+            for _ in range(20):
+                items.append(dataset.next())
+        except StopIteration:
+            pass
+
+        ds2_items = [i for i in items if i >= 100]
+        self.assertEqual(
+            len(ds2_items),
+            2,
+            "ds2 should yield exactly 2 items before exhaustion triggers stop",
+        )
+
+        # ds1 might have yielded > 2 if it was picked often before ds2 exhausted
+        # But crucially, we shouldn't infinite loop.
+
+    def test_mixed_cycling_all_exhausted(self):
+        # ds1 cycles (size 2), ds2 no cycle (size 2).
+        # StopCriteria: ALL_DATASETS_EXHAUSTED.
+        # Since ds1 cycles, it never exhausts in the sense of stopping the loop.
+        # ds2 should exhaust and stop yielding.
+        # Loop should continue indefinitely (we break manually).
+
+        self.comp_cfg.datasets["ds1"].cycle = True
+        self.comp_cfg.datasets["ds1"].dataset.size = 2
+        self.comp_cfg.datasets["ds2"].cycle = False
+        self.comp_cfg.datasets["ds2"].dataset.size = 2
+        self.comp_cfg.stop_criteria = StopCriteria.ALL_DATASETS_EXHAUSTED
+
+        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset.reset()
+
+        items = []
+        # Consume enough to ensure ds2 exhausts and ds1 cycles multiple times
+        for _ in range(50):
+            items.append(dataset.next())
+
+        ds2_items = [i for i in items if i >= 100]
+        self.assertEqual(len(ds2_items), 2, "ds2 should stop yielding after 2 items")
+
+        ds1_items = [i for i in items if i < 100]
+        self.assertEqual(len(ds1_items), 48, "ds1 should continue yielding")
+        # ds1 size 2 -> items 0,1. 48 items means cycled 24 times.
+
+    def test_mixed_cycling_state_restoration(self):
+        # ds1 cycles (size 2), ds2 no cycle (size 2).
+        # Run until ds2 exhausted. Save state. Restore.
+        # Ensure ds2 remains exhausted and ds1 continues.
+
+        self.comp_cfg.datasets["ds1"].cycle = True
+        self.comp_cfg.datasets["ds1"].dataset.size = 2
+        self.comp_cfg.datasets["ds2"].cycle = False
+        self.comp_cfg.datasets["ds2"].dataset.size = 2
+        self.comp_cfg.stop_criteria = StopCriteria.ALL_DATASETS_EXHAUSTED
+
+        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset.reset()
+
+        # Consume until ds2 exhausted (seen 2 items)
+        count_ds2 = 0
+        while count_ds2 < 2:
+            item = dataset.next()
+            if item >= 100:
+                count_ds2 += 1
+
+        for _ in range(10):
+            item = dataset.next()
+            self.assertTrue(
+                item < 100, "Should only yield ds1 items after ds2 exhausted"
+            )
+
+        # Save state
+        state = dataset.get_state()
+
+        # Restore
+        dataset2 = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset2.reset(state)
+
+        # Check weights immediately
+        sampler = dataset2._weighted_sampler
+        # ds1 (idx 0) should be > 0. ds2 (idx 1) should be 0.
+        self.assertTrue(sampler.weights[0] > 0, "ds1 weight should be active")
+        self.assertTrue(sampler.weights[1] == 0, "ds2 weight should be 0 (exhausted)")
+
+        # Verify continued execution
+        for _ in range(10):
+            item = dataset2.next()
+            self.assertTrue(item < 100, "Restored dataset should only yield ds1 items")
 
 
 if __name__ == "__main__":

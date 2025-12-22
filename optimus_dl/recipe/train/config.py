@@ -22,61 +22,61 @@ from optimus_dl.recipe.train.mixins.managers.logger_manager import LoggerManager
 @dataclass
 class TrainRecipeConfig:
     # Exp metadata
-    exp_name: str = field(default=MISSING, metadata=dict(help="Experiment name"))
+    exp_name: str = field(default=MISSING, metadata={"help": "Experiment name"})
     exp_description: str | None = field(
-        default=None, metadata=dict(help="Experiment description")
+        default=None, metadata={"help": "Experiment description"}
     )
     exp_tags: list[str] = field(
-        default_factory=list, metadata=dict(help="Experiment tags")
+        default_factory=list, metadata={"help": "Experiment tags"}
     )
     log_freq: int = field(
-        default=16, metadata=dict(help="Frequency of train metrics logging")
+        default=16, metadata={"help": "Frequency of train metrics logging"}
     )
 
     # Reproducibility
     seed: int = field(
-        default=42, metadata=dict(help="Seed to seed everything that's possible")
+        default=42, metadata={"help": "Seed to seed everything that's possible"}
     )
     data_seed: int = field(
         default=42,
-        metadata=dict(
-            help="Seed to seed everything data-related. Will be different on each rank."
-        ),
+        metadata={
+            "help": "Seed to seed everything data-related. Will be different on each rank."
+        },
     )
 
     # Evaluation
     eval_iterations: int | None = field(
         default=None,
-        metadata=dict(
-            help="Max number of iterations of validation data for every subset"
-        ),
+        metadata={
+            "help": "Max number of iterations of validation data for every subset"
+        },
     )
     eval_freq: int = field(
-        default=100, metadata=dict(help="Frequency of evaluations. Zero disables")
+        default=100, metadata={"help": "Frequency of evaluations. Zero disables"}
     )
     # Checkpointing
     save_freq: int = field(
         default=II(".eval_freq"),
-        metadata=dict(help="Frequency of checkpoint savings. As eval_freq by default"),
+        metadata={"help": "Frequency of checkpoint savings. As eval_freq by default"},
     )
     output_path: str = field(
         default="${oc.env:PERSISTENT_PATH,'./outputs'}/${.exp_name}",
-        metadata=dict(help="Directory to dump checkpoints to"),
+        metadata={"help": "Directory to dump checkpoints to"},
     )
 
     load_checkpoint: str | None = field(
         default=None,
-        metadata=dict(
-            help="Path to checkpoint to load from, what to load from it is controlled by load_checkpoint_strategy"
-        ),
+        metadata={
+            "help": "Path to checkpoint to load from, what to load from it is controlled by load_checkpoint_strategy"
+        },
     )
     load_checkpoint_strategy: LoadStrategy = field(
         default_factory=LoadStrategy,
-        metadata=dict(help="Strategy what to load from the checkpoint"),
+        metadata={"help": "Strategy what to load from the checkpoint"},
     )
 
     use_gpu: bool = field(
-        default=True, metadata=dict(help="Use GPU (CUDA / MPS) if available")
+        default=True, metadata={"help": "Use GPU (CUDA / MPS) if available"}
     )
 
 
@@ -93,13 +93,13 @@ class TrainConfig(RegistryConfig):
 
     # Metrics logging configuration
     loggers: list[MetricsLoggerConfig] | None = field(
-        default=None, metadata=dict(help="List of metrics logger configurations")
+        default=None, metadata={"help": "List of metrics logger configurations"}
     )
 
     # Model transforms configuration
     model_transforms: list[ModelTransformConfig] = field(
         default_factory=list,
-        metadata=dict(help="List of model transforms to apply after model building"),
+        metadata={"help": "List of model transforms to apply after model building"},
     )
 
     # Dependency Injection Configs

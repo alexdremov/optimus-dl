@@ -15,24 +15,24 @@ class Config(RegistryConfig):
 
 
 @register_dataset("preset_slimpajama6b", Config)
-def make_dataset_6b(cfg, rank: int, world_size: int, **kwargs):
+def make_dataset_6b(cfg, rank: int, world_size: int, **_):
     config = HuggingFaceDatasetConfig(
-        dataset_load_kwargs=dict(
-            path="DKYoon/SlimPajama-6B",
-            split=cfg.split,
-            streaming=cfg.streaming,
-        )
+        dataset_load_kwargs={
+            "path": "DKYoon/SlimPajama-6B",
+            "split": cfg.split,
+            "streaming": cfg.streaming,
+        }
     )
     return HuggingFaceDataset(config, rank=rank, world_size=world_size)
 
 
 @register_dataset("preset_slimpajama", Config)
-def make_dataset_full(cfg, rank: int, world_size: int, **kwargs):
+def make_dataset_full(cfg, rank: int, world_size: int, **_):
     config = HuggingFaceDatasetConfig(
-        dataset_load_kwargs=dict(
-            path="cerebras/SlimPajama-627B",
-            split=cfg.split,
-            streaming=cfg.streaming,
-        )
+        dataset_load_kwargs={
+            "path": "cerebras/SlimPajama-627B",
+            "split": cfg.split,
+            "streaming": cfg.streaming,
+        }
     )
     return HuggingFaceDataset(config, rank=rank, world_size=world_size)

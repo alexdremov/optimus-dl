@@ -7,7 +7,7 @@ backends must implement to integrate with the existing metrics system.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class BaseMetricsLogger(ABC):
             logger.info(f"{self.__class__.__name__} disabled via configuration")
 
     @abstractmethod
-    def setup(self, experiment_name: str, config: Dict[str, Any]) -> None:
+    def setup(self, experiment_name: str, config: dict[str, Any]) -> None:
         """Setup the logger with experiment configuration.
 
         Called once at the beginning of training with full experiment context.
@@ -49,7 +49,7 @@ class BaseMetricsLogger(ABC):
 
     @abstractmethod
     def log_metrics(
-        self, metrics: Dict[str, Any], step: int, group: str = "train"
+        self, metrics: dict[str, Any], step: int, group: str = "train"
     ) -> None:
         """Log metrics for a specific training step.
 

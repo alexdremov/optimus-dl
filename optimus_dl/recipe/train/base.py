@@ -15,7 +15,6 @@ from optimus_dl.modules.metrics import (
     compute_metrics,
     log_event_end,
     log_event_start,
-    log_summed,
     metrics_group,
     reset_metrics,
     step_metrics,
@@ -285,10 +284,10 @@ class TrainRecipe(
                 eval_datapipeline = self.build_eval_data(
                     device=device, collective=collective
                 )
-                data_loaders = dict(
-                    train=train_datapipeline.dataloader,
+                data_loaders = {
+                    "train": train_datapipeline.dataloader,
                     # eval dataloader may be not restored
-                )
+                }
             except Exception as e:
                 logger.error(f"Failed to build data pipelines: {e}")
                 raise
@@ -344,15 +343,15 @@ class TrainRecipe(
         if collective.is_local_master:
             self.log_metrics_to_loggers(init_metrics, start_iteration, "init")
 
-        common_chkp_kwargs = dict(
-            model=model,
-            optimizer=optimizer,
-            collective=collective,
-            lr_scheduler=lr_scheduler,
-            data_loaders=data_loaders,
-            data_sources=train_datapipeline.datasets,
-            grad_scaler=training_context["scaler"],
-        )
+        common_chkp_kwargs = {
+            "model": model,
+            "optimizer": optimizer,
+            "collective": collective,
+            "lr_scheduler": lr_scheduler,
+            "data_loaders": data_loaders,
+            "data_sources": train_datapipeline.datasets,
+            "grad_scaler": training_context["scaler"],
+        }
 
         train_data_iter = iter(train_datapipeline.dataloader)
 

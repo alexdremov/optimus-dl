@@ -14,12 +14,12 @@ class MetricEntry:
     priority: int = 0
 
     def state_dict(self) -> dict[str, Any]:
-        return dict(
-            metric=self.metric.state_dict(),
-            reset=self.reset,
-            priority=self.priority,
-            metric_class=self.metric.__class__.__name__,
-        )
+        return {
+            "metric": self.metric.state_dict(),
+            "reset": self.reset,
+            "priority": self.priority,
+            "metric_class": self.metric.__class__.__name__,
+        }
 
     def load_state_dict(self, state_dict: dict[str, Any]):
         import optimus_dl.modules.metrics as metrics

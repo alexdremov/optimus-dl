@@ -1,7 +1,6 @@
 import logging
 from dataclasses import dataclass
 
-import numpy as np
 from omegaconf import MISSING
 from torchdata.nodes.base_node import BaseNode
 
@@ -39,11 +38,11 @@ class ChunkTransformNode(BaseNode):
             self.node.reset()
 
     def get_state(self):
-        return dict(
-            buffer=self.buffer,
-            cfg=self.cfg,
-            source_state=self.node.state_dict(),
-        )
+        return {
+            "buffer": self.buffer,
+            "cfg": self.cfg,
+            "source_state": self.node.state_dict(),
+        }
 
     def next(self):
         if not self.buffer:
@@ -55,7 +54,7 @@ class ChunkTransformNode(BaseNode):
         )
         return_buff = self.buffer[:taken]
         self.buffer = self.buffer[taken:]
-        return dict(input_ids=return_buff)
+        return {"input_ids": return_buff}
 
 
 @register_transform("chunk_tokens", ChunkTransformConfig)

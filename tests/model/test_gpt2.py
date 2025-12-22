@@ -1,5 +1,4 @@
 import math
-from unittest.mock import Mock, patch
 
 import pytest
 import torch
@@ -57,7 +56,7 @@ class TestGPTConfig:
         ]
 
         for n_embd, n_head in valid_configs:
-            config = GPTConfig(n_embd=n_embd, n_head=n_head)
+            GPTConfig(n_embd=n_embd, n_head=n_head)
             assert n_embd % n_head == 0
 
 
@@ -246,7 +245,7 @@ class TestGPT:
         for name, param in model.named_parameters():
             if name.endswith("c_proj.weight"):
                 # Should be initialized with smaller std
-                expected_std = 0.02 / math.sqrt(2 * config.n_layer)
+                0.02 / math.sqrt(2 * config.n_layer)
                 # We can't check exact values due to randomness, but can check the shape
                 assert param.shape[0] == config.n_embd
                 assert param.requires_grad

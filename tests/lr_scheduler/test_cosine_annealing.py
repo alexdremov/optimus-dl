@@ -1,7 +1,5 @@
 import math
-from unittest.mock import Mock
 
-import pytest
 import torch
 import torch.nn as nn
 
@@ -173,7 +171,7 @@ class TestCosineAnnealingLR:
         models = [nn.Linear(10, 5) for _ in range(3)]
         param_groups = [
             {"params": model.parameters(), "lr": lr}
-            for model, lr in zip(models, base_lrs)
+            for model, lr in zip(models, base_lrs, strict=True)
         ]
         optimizer = torch.optim.SGD(param_groups)
 
@@ -187,7 +185,7 @@ class TestCosineAnnealingLR:
         assert len(lrs) == 3
 
         # All should be less than their base LRs after first step
-        for lr, base_lr in zip(lrs, base_lrs):
+        for lr, base_lr in zip(lrs, base_lrs, strict=True):
             assert lr < base_lr
 
     def test_state_dict(self):

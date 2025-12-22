@@ -161,7 +161,7 @@ class TestLinearWarmupLR:
         models = [nn.Linear(10, 5) for _ in range(3)]
         param_groups = [
             {"params": model.parameters(), "lr": lr}
-            for model, lr in zip(models, base_lrs)
+            for model, lr in zip(models, base_lrs, strict=True)
         ]
         optimizer = torch.optim.SGD(param_groups)
 
@@ -178,7 +178,7 @@ class TestLinearWarmupLR:
         assert len(lrs) == 3
         expected_lrs = [0.0 + (base_lr - 0.0) * 0.5 for base_lr in base_lrs]
 
-        for lr, expected_lr in zip(lrs, expected_lrs):
+        for lr, expected_lr in zip(lrs, expected_lrs, strict=True):
             assert abs(lr - expected_lr) < 1e-8
 
     def test_multiple_param_groups_with_target_lr(self):
@@ -187,7 +187,7 @@ class TestLinearWarmupLR:
         models = [nn.Linear(10, 5) for _ in range(3)]
         param_groups = [
             {"params": model.parameters(), "lr": lr}
-            for model, lr in zip(models, base_lrs)
+            for model, lr in zip(models, base_lrs, strict=True)
         ]
         optimizer = torch.optim.SGD(param_groups)
 

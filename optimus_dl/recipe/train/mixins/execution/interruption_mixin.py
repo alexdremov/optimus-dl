@@ -1,7 +1,8 @@
 """Training interruption mixin for handling errors and keyboard interrupts."""
 
 import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from optimus_dl.modules.distributed import Collective
 

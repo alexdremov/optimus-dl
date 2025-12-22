@@ -1,7 +1,6 @@
-import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any
 
 from torch.optim import Optimizer
 
@@ -24,7 +23,7 @@ class BaseLRScheduler(ABC):
         self.base_lrs = [group["lr"] for group in optimizer.param_groups]
 
     @abstractmethod
-    def get_lr(self) -> List[float]:
+    def get_lr(self) -> list[float]:
         """Calculate learning rates for current step"""
         pass
 
@@ -32,21 +31,21 @@ class BaseLRScheduler(ABC):
         """Update learning rates"""
         self._step_count += 1
         values = self.get_lr()
-        for param_group, lr in zip(self.optimizer.param_groups, values):
+        for param_group, lr in zip(self.optimizer.param_groups, values, strict=True):
             param_group["lr"] = lr
 
-    def get_last_lr(self) -> List[float]:
+    def get_last_lr(self) -> list[float]:
         """Get the last computed learning rates"""
         return [group["lr"] for group in self.optimizer.param_groups]
 
-    def state_dict(self) -> Dict[str, Any]:
+    def state_dict(self) -> dict[str, Any]:
         """Return scheduler state"""
         return {
             "step_count": self._step_count,
             "base_lrs": self.base_lrs,
         }
 
-    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Load scheduler state"""
         self._step_count = state_dict["step_count"]
         self.base_lrs = state_dict["base_lrs"]

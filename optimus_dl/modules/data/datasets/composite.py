@@ -2,10 +2,9 @@ import copy
 import logging
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Dict, Optional
+from typing import Any
 
 import torch
-import torchdata.nodes
 from omegaconf import MISSING
 
 from optimus_dl.core.registry import RegistryConfig
@@ -25,36 +24,34 @@ class StopCriteria(StrEnum):
 @dataclass
 class DatasetConfig:
     dataset: RegistryConfig = field(
-        default=MISSING, metadata=dict(help="Dataset config to load")
+        default=MISSING, metadata={"help": "Dataset config to load"}
     )
     weight: float = field(
-        default=1.0, metadata=dict(help="Weight of the dataset for sampling")
+        default=1.0, metadata={"help": "Weight of the dataset for sampling"}
     )
     cycle: bool = field(
         default=True,
-        metadata=dict(
-            help="Whether to cycle through the dataset after it is exhausted"
-        ),
+        metadata={"help": "Whether to cycle through the dataset after it is exhausted"},
     )
 
 
 @dataclass
 class CompositeDatasetConfig(RegistryConfig):
     datasets: dict[str, DatasetConfig] = field(
-        default_factory=dict, metadata=dict(help="Datasets to load: name -> config")
+        default_factory=dict, metadata={"help": "Datasets to load: name -> config"}
     )
     strict_load: bool = field(
         default=True,
-        metadata=dict(
-            help="Whether to raise an error if state dict does not contain all required keys"
-        ),
+        metadata={
+            "help": "Whether to raise an error if state dict does not contain all required keys"
+        },
     )
     seed: int | None = field(
-        default=None, metadata=dict(help="Random seed for sampling from datasets")
+        default=None, metadata={"help": "Random seed for sampling from datasets"}
     )
     stop_criteria: StopCriteria = field(
         default=StopCriteria.CYCLE_FOREVER,
-        metadata=dict(help="Stop criteria for the composite dataset"),
+        metadata={"help": "Stop criteria for the composite dataset"},
     )
 
 
@@ -75,13 +72,13 @@ class _WeightedSampler:
 
     def __init__(
         self,
-        weights: Dict[str, float],
+        weights: dict[str, float],
         seed: int,
         rank: int,
         world_size: int,
         epoch: int,
         random_tensor_batch_size: int = 1000,
-        initial_state: Optional[Dict[str, Any]] = None,
+        initial_state: dict[str, Any] | None = None,
     ):
         _names, _weights = [], []
         for name, weight in weights.items():
@@ -209,7 +206,7 @@ class CompositeDataset(BaseDataset):
             if weight < 0:
                 raise ValueError("Weights must be non-negative")
 
-    def reset(self, initial_state: Optional[Dict[str, Any]] = None):
+    def reset(self, initial_state: dict[str, Any] | None = None):
         super().reset(initial_state)
 
         config_datasets = self.datasets.keys()
@@ -291,10 +288,12 @@ class CompositeDataset(BaseDataset):
             # Get next dataset to sample from
             try:
                 ds_name = next(self._weighted_sampler)
-            except StopIteration:
+            except StopIteration as err:
                 # If sampler is empty (all weights 0), we should have caught it in check_for_stop_iteration
                 # unless there's a sync issue. Treat as end of data.
-                raise RuntimeError("Exhausted all datasets and cannot cycle throug")
+                raise RuntimeError(
+                    "Exhausted all datasets and cannot cycle throug"
+                ) from err
             try:
                 assert not self._datasets_exhausted[ds_name]
                 item = next(self.datasets[ds_name])
@@ -313,17 +312,17 @@ class CompositeDataset(BaseDataset):
                         item = next(self.datasets[ds_name])
                         self._num_yielded += 1
                         return item
-                    except StopIteration:
+                    except StopIteration as err:
                         raise RuntimeError(
                             "Cannot yield at least one item from dataset after resetting and trying to cycle"
-                        )
+                        ) from err
                 else:
                     # Not cycling: Disable this dataset in sampler to avoid polling it again
                     self._weighted_sampler.set_active(ds_name, False)
 
                 self._check_for_stop_iteration()
 
-    def get_state(self) -> Dict[str, Any]:
+    def get_state(self) -> dict[str, Any]:
         return {
             self.DATASETS_EXHAUSTED_KEY: copy.deepcopy(self._datasets_exhausted),
             self.DATASET_NODE_STATES_KEY: {

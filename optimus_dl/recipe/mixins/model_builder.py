@@ -1,11 +1,7 @@
 """Model builder mixin for building and transforming models with checkpoint loading."""
 
 import logging
-import tempfile
 from dataclasses import dataclass
-from pathlib import Path
-
-import torch
 
 from optimus_dl.core.model_utils import get_num_parameters
 from optimus_dl.core.registry import RegistryConfig, build, make_registry

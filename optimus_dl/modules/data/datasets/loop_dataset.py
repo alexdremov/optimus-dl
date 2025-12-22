@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any
 
 import torchdata.nodes
 from omegaconf import MISSING
@@ -44,7 +44,7 @@ class LoopDataset(BaseDataset):
             self._build_inner()
             return self.inner_dataset.next()
 
-    def reset(self, initial_state: Dict | None = None):
+    def reset(self, initial_state: dict | None = None):
         super().reset(initial_state)
 
         inner_state = None

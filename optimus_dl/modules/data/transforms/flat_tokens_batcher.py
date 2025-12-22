@@ -48,9 +48,11 @@ class FlatTokensBatcherNode(BaseNode):
             self.node.reset()
 
     def get_state(self) -> dict[str, Any]:
-        return dict(
-            buffer=self.buffer, cfg=self.cfg, source_state=self.node.state_dict()
-        )
+        return {
+            "buffer": self.buffer,
+            "cfg": self.cfg,
+            "source_state": self.node.state_dict(),
+        }
 
     def next(self) -> Any:
         while len(self.buffer) < self.target_size:
@@ -58,11 +60,11 @@ class FlatTokensBatcherNode(BaseNode):
 
         return_buff = self.buffer[: self.target_size]
         self.buffer = self.buffer[self.target_size :]
-        return dict(
-            input_ids=np.array(return_buff, dtype=np.int64).reshape(
+        return {
+            "input_ids": np.array(return_buff, dtype=np.int64).reshape(
                 self.cfg.batch_size, -1
             )
-        )
+        }
 
 
 @register_transform("flat_batcher", FlatTokensBatcherConfig)

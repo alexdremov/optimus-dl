@@ -1,7 +1,5 @@
-import pytest
 import torch
 import torch.nn as nn
-from torch.nn import functional as F
 
 from optimus_dl.modules.model.blocks.layer_norms import LayerNorm, RMSNorm
 

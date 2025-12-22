@@ -7,7 +7,6 @@ https://github.com/openai/gpt-2/blob/master/src/model.py
 https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt2/modeling_gpt2.py
 """
 
-import inspect
 import logging
 import math
 from dataclasses import dataclass
@@ -90,13 +89,13 @@ class GPT(BaseModel):
         self.config = config
 
         self.transformer = nn.ModuleDict(
-            dict(
-                wte=nn.Embedding(config.vocab_size, config.n_embd),
-                wpe=nn.Embedding(config.block_size, config.n_embd),
-                drop=nn.Dropout(config.dropout),
-                h=nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
-                ln_f=LayerNorm(config.n_embd, bias=config.bias),
-            )
+            {
+                "wte": nn.Embedding(config.vocab_size, config.n_embd),
+                "wpe": nn.Embedding(config.block_size, config.n_embd),
+                "drop": nn.Dropout(config.dropout),
+                "h": nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
+                "ln_f": LayerNorm(config.n_embd, bias=config.bias),
+            }
         )
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         # with weight tying when using torch.compile() some warnings get generated:
@@ -161,8 +160,8 @@ class GPT(BaseModel):
         whitelist_weight_modules = (torch.nn.Linear,)
 
         for mn, m in self.named_modules():
-            for pn, p in m.named_parameters():
-                fpn = "%s.%s" % (mn, pn) if mn else pn  # full param name
+            for pn, _p in m.named_parameters():
+                fpn = f"{mn}.{pn}" if mn else pn  # full param name
                 # random note: because named_modules and named_parameters are recursive
                 # we will see the same tensors p many many times. but doing it this way
                 # allows us to know which parent module any tensor p belongs to...
@@ -190,15 +189,15 @@ class GPT(BaseModel):
             no_decay.add("lm_head.weight")
 
         # validate that we considered every parameter
-        param_dict = {pn: p for pn, p in self.named_parameters()}
+        param_dict = dict(self.named_parameters())
         inter_params = decay & no_decay
         union_params = decay | no_decay
         assert (
             len(inter_params) == 0
-        ), "parameters %s made it into both decay/no_decay sets!" % (str(inter_params),)
+        ), f"parameters {str(inter_params)} made it into both decay/no_decay sets!"
         assert (
             len(param_dict.keys() - union_params) == 0
-        ), "parameters %s were not separated into either decay/no_decay set!" % (
+        ), "parameters {} were not separated into either decay/no_decay set!".format(
             str(param_dict.keys() - union_params),
         )
 
@@ -254,5 +253,5 @@ class GPT(BaseModel):
                 reshard_after_forward &= False
             fully_shard(
                 module,
-                **(fsdp_kwargs | dict(reshard_after_forward=reshard_after_forward)),
+                **(fsdp_kwargs | {"reshard_after_forward": reshard_after_forward}),
             )

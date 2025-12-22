@@ -1,9 +1,7 @@
 import math
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
-import pytest
 import torch
-import torch.nn.functional as F
 
 from optimus_dl.modules.criterion.cross_entropy import (
     CrossEntropyCriterion,
@@ -299,7 +297,7 @@ class TestCrossEntropyCriterion:
         logits = torch.zeros(batch_size, seq_len - 1, vocab_size)
 
         # Set up for specific loss value
-        targets = torch.tensor([[5, 7]])  # Target tokens
+        torch.tensor([[5, 7]])  # Target tokens
 
         # Logits that will produce a specific cross-entropy loss
         logits[0, 0, 5] = 1.0  # Some prediction strength for token 5
@@ -340,7 +338,7 @@ class TestCrossEntropyCriterion:
         mock_model.return_value = {"logits": logits}
 
         input_ids = torch.tensor([[1, 2, 3, 4, 5]])
-        original_input_ids = input_ids.clone()
+        input_ids.clone()
         batch = {"input_ids": input_ids, "other_key": "value"}
 
         with (

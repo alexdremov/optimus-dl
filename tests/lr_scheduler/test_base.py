@@ -1,6 +1,3 @@
-import math
-from unittest.mock import Mock
-
 import pytest
 import torch
 import torch.nn as nn
@@ -151,7 +148,7 @@ class TestBaseLRScheduler:
         expected_lrs = [1e-3, 1e-4, 1e-4, 1e-4, 1e-4]
 
         for i, (expected_step, expected_lr) in enumerate(
-            zip(expected_step_counts, expected_lrs)
+            zip(expected_step_counts, expected_lrs, strict=True)
         ):
             assert scheduler._step_count == expected_step
             assert optimizer.param_groups[0]["lr"] == expected_lr

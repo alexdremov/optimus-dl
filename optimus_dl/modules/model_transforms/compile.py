@@ -1,6 +1,5 @@
 import logging
 from dataclasses import dataclass, field
-from typing import Any
 
 import torch
 
@@ -18,9 +17,9 @@ class CompileTransformConfig(ModelTransformConfig):
 
     compile_kwargs: dict = field(
         default_factory=dict,
-        metadata=dict(
-            help="Arguments for torch.compile. See https://pytorch.org/docs/stable/generated/torch.compile.html"
-        ),
+        metadata={
+            "help": "Arguments for torch.compile. See https://pytorch.org/docs/stable/generated/torch.compile.html"
+        },
     )
 
 

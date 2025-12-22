@@ -4,7 +4,6 @@ import logging
 from dataclasses import dataclass
 
 import torch
-import torch.nn as nn
 from transformers import AutoConfig, AutoModelForCausalLM
 
 from optimus_dl.modules.model import register_model
@@ -22,7 +21,7 @@ class HFLlamaConfig(LlamaConfig):
 
 
 @register_model("preset_hfllama2", HFLlamaConfig)
-def make_hf_llama_model(cfg: HFLlamaConfig, **kwargs):
+def make_hf_llama_model(cfg: HFLlamaConfig, **_):
     """Create a Llama model loaded with weights from Hugging Face."""
     logger.info(f"Loading HF model: {cfg.hf_model_name}")
 
@@ -67,7 +66,7 @@ def make_hf_llama_model(cfg: HFLlamaConfig, **kwargs):
 
     # Map weights
     sd = model.state_dict()
-    keys_to_ignore = [k for k in hf_sd.keys() if k.endswith(".rotary_emb.inv_freq")]
+    [k for k in hf_sd.keys() if k.endswith(".rotary_emb.inv_freq")]
 
     # Helper to permute weights for RoPE (HF half-half -> Local interleaved)
     def permute_rope(w, n_heads, head_dim):
@@ -86,6 +85,7 @@ def make_hf_llama_model(cfg: HFLlamaConfig, **kwargs):
     def copy_weight(
         src_key, dest_key, transpose=False, permute=False, n_heads=None, head_dim=None
     ):
+        nonlocal hf_sd
         if src_key not in hf_sd:
             logger.warning(f"Missing key in HF model: {src_key}")
             return

@@ -1,5 +1,4 @@
-import math
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 import torch
@@ -399,10 +398,7 @@ class TestLlamaConfig:
 class TestLlama:
     """Tests for main Llama model"""
 
-    @patch("optimus_dl.modules.model.llama2.tiktoken")
-    def test_init(self, mock_tiktoken):
-        mock_tiktoken.get_encoding.return_value = Mock()
-
+    def test_init(self):
         config = LlamaConfig(
             vocab_size=1000, sequence_length=2048, n_layer=2, n_head=4, n_embd=256
         )
@@ -426,10 +422,7 @@ class TestLlama:
         for block in model.transformer.h:
             assert isinstance(block, LlamaBlock)
 
-    @patch("optimus_dl.modules.model.llama2.tiktoken")
-    def test_freqs_cis_precomputation(self, mock_tiktoken):
-        mock_tiktoken.get_encoding.return_value = Mock()
-
+    def test_freqs_cis_precomputation(self):
         config = LlamaConfig(sequence_length=1024, n_head=8, n_embd=512)
         model = Llama(config)
 
@@ -438,11 +431,8 @@ class TestLlama:
         assert model.freqs_cis.shape == (1024, head_dim // 2, 2)
         assert model.freqs_cis.dtype == torch.float32
 
-    @patch("optimus_dl.modules.model.llama2.tiktoken")
-    def test_forward_no_position_embeddings(self, mock_tiktoken):
+    def test_forward_no_position_embeddings(self):
         """Test that LLaMA doesn't use position embeddings (uses RoPE instead)"""
-        mock_tiktoken.get_encoding.return_value = Mock()
-
         config = LlamaConfig(
             vocab_size=1000, sequence_length=512, n_layer=2, n_head=4, n_embd=256
         )
@@ -459,11 +449,8 @@ class TestLlama:
         assert "logits" in output
         assert output["logits"].shape == (batch_size, seq_len, config.vocab_size)
 
-    @patch("optimus_dl.modules.model.llama2.tiktoken")
-    def test_forward_freqs_cis_slicing(self, mock_tiktoken):
+    def test_forward_freqs_cis_slicing(self):
         """Test that freqs_cis is properly sliced for different sequence lengths"""
-        mock_tiktoken.get_encoding.return_value = Mock()
-
         config = LlamaConfig(
             vocab_size=1000, sequence_length=1024, n_layer=2, n_head=4, n_embd=256
         )
@@ -479,11 +466,8 @@ class TestLlama:
 
             assert output["logits"].shape == (1, seq_len, config.vocab_size)
 
-    @patch("optimus_dl.modules.model.llama2.tiktoken")
-    def test_sequence_length_assertion(self, mock_tiktoken):
+    def test_sequence_length_assertion(self):
         """Test sequence length limit enforcement"""
-        mock_tiktoken.get_encoding.return_value = Mock()
-
         config = LlamaConfig(sequence_length=100)
         model = Llama(config)
 
@@ -493,22 +477,16 @@ class TestLlama:
         with pytest.raises(AssertionError):
             model(long_input)
 
-    @patch("optimus_dl.modules.model.llama2.tiktoken")
-    def test_weight_tying(self, mock_tiktoken):
+    def test_weight_tying(self):
         """Test weight tying between token embeddings and output head"""
-        mock_tiktoken.get_encoding.return_value = Mock()
-
         # Explicitly set tie_word_embeddings=True
         config = LlamaConfig(tie_word_embeddings=True)
         model = Llama(config)
 
         assert model.transformer.wte.weight is model.lm_head.weight
 
-    @patch("optimus_dl.modules.model.llama2.tiktoken")
-    def test_gradient_flow(self, mock_tiktoken):
+    def test_gradient_flow(self):
         """Test gradient flow through the entire model"""
-        mock_tiktoken.get_encoding.return_value = Mock()
-
         config = LlamaConfig(
             vocab_size=100, sequence_length=512, n_layer=2, n_head=4, n_embd=256
         )
@@ -527,18 +505,15 @@ class TestLlama:
             assert block.attn.wq.weight.grad is not None
             assert block.mlp.w1.weight.grad is not None
 
-    @patch("optimus_dl.modules.model.llama2.tiktoken")
-    def test_device_handling(self, mock_tiktoken):
+    def test_device_handling(self):
         """Test that freqs_cis is moved to the correct device"""
-        mock_tiktoken.get_encoding.return_value = Mock()
-
         config = LlamaConfig(
             vocab_size=100, sequence_length=512, n_layer=1, n_head=4, n_embd=256
         )
         model = Llama(config)
 
         input_ids = torch.randint(0, config.vocab_size, (1, 10))
-        output = model(input_ids)
+        model(input_ids)
 
         # freqs_cis should be on the same device as input
         assert model.freqs_cis.device.type == input_ids.device.type
@@ -547,10 +522,7 @@ class TestLlama:
 class TestLlamaLiteArch:
     """Tests for llama_lite architecture preset"""
 
-    @patch("optimus_dl.modules.model.llama2.tiktoken")
-    def test_llama_lite_model_creation(self, mock_tiktoken):
-        mock_tiktoken.get_encoding.return_value = Mock()
-
+    def test_llama_lite_model_creation(self):
         config = llama_lite()
         model = Llama(config)
 
@@ -564,11 +536,8 @@ class TestLlamaLiteArch:
 class TestLlamaIntegration:
     """Integration tests for LLaMA model components"""
 
-    @patch("optimus_dl.modules.model.llama2.tiktoken")
-    def test_rope_consistency_across_layers(self, mock_tiktoken):
+    def test_rope_consistency_across_layers(self):
         """Test that RoPE is applied consistently across all layers"""
-        mock_tiktoken.get_encoding.return_value = Mock()
-
         config = LlamaConfig(
             vocab_size=100, sequence_length=512, n_layer=3, n_head=4, n_embd=256
         )
@@ -595,7 +564,7 @@ class TestLlamaIntegration:
             block.forward = capture_freqs_cis(block.forward)
 
         try:
-            output = model(input_ids)
+            model(input_ids)
 
             # All blocks should receive the same freqs_cis
             assert len(received_freqs_cis) == config.n_layer
@@ -607,11 +576,8 @@ class TestLlamaIntegration:
             for i, block in enumerate(model.transformer.h):
                 block.forward = original_forwards[i]
 
-    @patch("optimus_dl.modules.model.llama2.tiktoken")
-    def test_memory_efficiency(self, mock_tiktoken):
+    def test_memory_efficiency(self):
         """Test memory usage with different sequence lengths"""
-        mock_tiktoken.get_encoding.return_value = Mock()
-
         config = LlamaConfig(
             vocab_size=1000, sequence_length=2048, n_layer=2, n_head=8, n_embd=512
         )

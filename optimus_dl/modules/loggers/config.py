@@ -1,7 +1,7 @@
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
-from omegaconf import II, MISSING
+from omegaconf import II
 
 from optimus_dl.core.registry import RegistryConfig
 

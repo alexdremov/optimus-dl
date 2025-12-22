@@ -17,7 +17,6 @@ Main differences from GPT2:
 import math
 from dataclasses import dataclass, field
 
-import tiktoken
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -38,9 +37,7 @@ class LlamaConfig(GPTConfig):
     intermediate_size: int | None = None
     multiple_of: int = field(
         default=256,
-        metadata=dict(
-            help="make SwiGLU hidden layer size multiple of large power of 2"
-        ),
+        metadata={"help": "make SwiGLU hidden layer size multiple of large power of 2"},
     )
 
 
@@ -217,12 +214,12 @@ class Llama(GPT):
         self.freqs_cis = precompute_freqs_cis(self.head_dim, config.sequence_length)
 
         self.transformer = nn.ModuleDict(
-            dict(
-                wte=nn.Embedding(config.vocab_size, config.n_embd),
-                drop=nn.Dropout(config.dropout),
-                h=nn.ModuleList([LlamaBlock(config) for _ in range(config.n_layer)]),
-                ln_f=RMSNorm(config.n_embd, eps=config.rmsnorm_eps),
-            )
+            {
+                "wte": nn.Embedding(config.vocab_size, config.n_embd),
+                "drop": nn.Dropout(config.dropout),
+                "h": nn.ModuleList([LlamaBlock(config) for _ in range(config.n_layer)]),
+                "ln_f": RMSNorm(config.n_embd, eps=config.rmsnorm_eps),
+            }
         )
         # with weight tying when using torch.compile() some warnings get generated:
         # "UserWarning: functional_call was passed multiple values for tied weights.
@@ -258,7 +255,7 @@ class Llama(GPT):
         x = self.transformer.drop(tok_emb)
         freqs_cis = self.freqs_cis.to(x.device)[pos]
 
-        for block_idx, block in enumerate(self.transformer.h):
+        for _block_idx, block in enumerate(self.transformer.h):
             x = block(x, freqs_cis=freqs_cis)
         x = self.transformer.ln_f(x)
 

@@ -1,9 +1,8 @@
 import functools
 from dataclasses import dataclass
-from typing import Any, TypeVar, cast, overload
+from typing import Any, TypeVar, overload
 
 import omegaconf
-from omegaconf import base
 
 registries = {}
 
@@ -98,6 +97,8 @@ def make_registry(registry_name: str, base_class: type | None = None):
         registered_class, structured_cfg = registry[name]
         if type(structured_cfg) is type:
             structured_cfg = omegaconf.OmegaConf.structured(structured_cfg())
+        if not omegaconf.OmegaConf.is_config(cfg):
+            cfg = omegaconf.OmegaConf.structured(cfg)
         if structured_cfg is not None:
             cfg = omegaconf.OmegaConf.merge(
                 structured_cfg, omegaconf.OmegaConf.to_container(cfg=cfg, resolve=True)

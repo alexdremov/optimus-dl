@@ -219,6 +219,8 @@ ignore = [
     "B008", # do not perform function calls in argument defaults
     "C901", # too complex
     "W191", # indentation contains tabs
+    "E402", # module level import not at top of file
+    "I001", # import sorts
 ]
 line-length = 88
 target-version = "py310"

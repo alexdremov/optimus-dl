@@ -14,5 +14,5 @@ class Config(TxtLinesDatasetConfig):
 
 
 @register_dataset("preset_tinyshakespeare", Config)
-def make_dataset(cfg, rank=0, world_size=1, **kwargs):
+def make_dataset(cfg, rank=0, world_size=1, **_):
     return TxtLinesDataset(cfg, rank=rank, world_size=world_size)

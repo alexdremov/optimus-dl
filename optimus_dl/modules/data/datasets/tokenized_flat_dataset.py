@@ -1,9 +1,7 @@
 import math
 from dataclasses import dataclass, field
-from typing import Dict
 
 import numpy as np
-import torchdata.nodes
 from omegaconf import MISSING
 
 from optimus_dl.core.registry import RegistryConfig
@@ -78,7 +76,7 @@ class TokenizedFlatDataset(BaseDataset):
             return None
         return np.min(np.arange(len(self.files_mapped))[self.index < self.cumlens])
 
-    def reset(self, initial_state: Dict | None = None):
+    def reset(self, initial_state: dict | None = None):
         super().reset(initial_state)
 
         initial_state = initial_state or {}
@@ -98,15 +96,15 @@ class TokenizedFlatDataset(BaseDataset):
         self.limit = initial_state.get("limit", self.limit)
 
     def get_state(self):
-        return dict(
-            files=self.files,
-            index=self.index,
-            limit=self.limit,
-            seq_len=self.seq_len,
-            batch_size=self.batch_size,
-            rank=self.rank,
-            world_size=self.world_size,
-        )
+        return {
+            "files": self.files,
+            "index": self.index,
+            "limit": self.limit,
+            "seq_len": self.seq_len,
+            "batch_size": self.batch_size,
+            "rank": self.rank,
+            "world_size": self.world_size,
+        }
 
     def _take_at_most(self, size):
         file_index = self.file_index
@@ -133,4 +131,4 @@ class TokenizedFlatDataset(BaseDataset):
         if self.index > self.limit:
             raise StopIteration
 
-        return dict(input_ids=result.reshape(self.batch_size, self.seq_len))
+        return {"input_ids": result.reshape(self.batch_size, self.seq_len)}

@@ -21,7 +21,7 @@ class AdamWConfig(RegistryConfig):
 
 
 @register_optimizer("adamw", AdamWConfig)
-def make_adamw(cfg, params, **kwargs):
+def make_adamw(cfg, params, **_):
     return torch.optim.AdamW(
         params=params,
         lr=cfg.lr,

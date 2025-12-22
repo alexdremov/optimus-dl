@@ -3,7 +3,6 @@ from collections.abc import Callable
 from typing import Any
 
 import torch.nn
-from omegaconf import DictConfig  # Import for tokenizer_config type hint
 
 logger = logging.getLogger(__name__)
 

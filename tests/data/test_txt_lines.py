@@ -2,7 +2,6 @@ import os
 import tempfile
 from unittest.mock import MagicMock, patch
 
-import pytest
 import torchdata.nodes
 
 from optimus_dl.modules.data.datasets.txt_lines import (

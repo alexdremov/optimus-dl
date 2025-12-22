@@ -1,8 +1,6 @@
-import tempfile
 from unittest.mock import Mock, patch
 
 import datasets
-import pytest
 
 from optimus_dl.modules.data.datasets.huggingface import (
     HuggingFaceDataset,

@@ -1,5 +1,5 @@
 import math
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 import torch
@@ -222,7 +222,7 @@ class TestCausalSelfAttention:
         x = torch.randn(1, 10, config.n_embd)
 
         # Run multiple times to see if outputs differ due to dropout
-        outputs = [attention(x) for _ in range(3)]
+        [attention(x) for _ in range(3)]
 
         # In training mode with dropout, outputs should potentially differ
         # (though not guaranteed with random seeds)
@@ -282,7 +282,7 @@ class TestCausalSelfAttention:
 
             # The scaling factor should be 1 / sqrt(head_size)
             head_size = config.n_embd // config.n_head
-            expected_scale = 1.0 / math.sqrt(head_size)
+            1.0 / math.sqrt(head_size)
 
             # We can't directly access the scaling, but we can verify it's applied correctly
             # by checking the manual attention computation path

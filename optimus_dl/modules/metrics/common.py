@@ -1,5 +1,6 @@
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 import torch
@@ -95,7 +96,7 @@ class StopwatchMeter(BaseMetric):
         elif mode == "end":
             self.end()
         else:
-            assert False, "Unknown mode"
+            raise AssertionError("Unknown mode")
 
     def start(self):
         self._start = time.perf_counter_ns()
@@ -139,10 +140,10 @@ class AveragedExponentMeter(BaseMetric):
         self.round = state_dict["round"]
 
     def state_dict(self):
-        return dict(
-            internal=self._internal.state_dict(),
-            round=self.round,
-        )
+        return {
+            "internal": self._internal.state_dict(),
+            "round": self.round,
+        }
 
 
 DelayedValue = Any | Callable[[], Any]

@@ -14,12 +14,12 @@ class Config(RegistryConfig):
 
 
 @register_dataset("preset_fineweb_edu", Config)
-def make_dataset(cfg, rank=0, world_size=1, **kwargs):
+def make_dataset(cfg, rank=0, world_size=1, **_):
     config = HuggingFaceDatasetConfig(
-        dataset_load_kwargs=dict(
-            path="HuggingFaceFW/fineweb-edu",
-            split="train",
-            name=cfg.subset,
-        )
+        dataset_load_kwargs={
+            "path": "HuggingFaceFW/fineweb-edu",
+            "split": "train",
+            "name": cfg.subset,
+        }
     )
     return HuggingFaceDataset(config, rank=rank, world_size=world_size)

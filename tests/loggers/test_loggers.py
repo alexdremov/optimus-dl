@@ -1,7 +1,4 @@
-import tempfile
 from unittest.mock import Mock, patch
-
-import pytest
 
 from optimus_dl.modules.loggers.base import BaseMetricsLogger
 from optimus_dl.modules.loggers.jsonl import JsonlLogger, JsonlLoggerConfig

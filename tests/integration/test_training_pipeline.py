@@ -4,7 +4,6 @@ import os
 import tempfile
 from unittest.mock import Mock, patch
 
-import pytest
 import torch
 import torch.nn as nn
 
@@ -17,7 +16,7 @@ from optimus_dl.modules.lr_scheduler.linear_warmup import (
     LinearWarmupLR,
     LinearWarmupLRConfig,
 )
-from optimus_dl.modules.metrics.common import AverageMetric, log_averaged
+from optimus_dl.modules.metrics.common import AverageMetric
 from optimus_dl.modules.optim.adamw import AdamWConfig, make_adamw
 
 
@@ -43,7 +42,7 @@ class TestTrainingPipelineIntegration:
         losses = []
         learning_rates = []
 
-        for step in range(10):
+        for _step in range(10):
             # Forward pass
             x = torch.randn(32, 10)
             target = torch.randn(32, 5)
@@ -138,7 +137,7 @@ class TestTrainingPipelineIntegration:
 
         # Simulate warmup phase
         warmup_lrs = []
-        for step in range(10):
+        for _step in range(10):
             warmup_scheduler.step()
             warmup_lrs.append(optimizer.param_groups[0]["lr"])
 
@@ -153,7 +152,7 @@ class TestTrainingPipelineIntegration:
 
         # Continue with cosine annealing
         cosine_lrs = []
-        for step in range(20):
+        for _step in range(20):
             cosine_scheduler.step()
             cosine_lrs.append(optimizer.param_groups[0]["lr"])
 
@@ -189,7 +188,7 @@ class TestTrainingPipelineIntegration:
             schedulers.append(scheduler)
 
         # Simulate distributed training steps
-        for step in range(5):
+        for _step in range(5):
             for rank in range(world_size):
                 # Each rank processes different data
                 x = torch.randn(16, 10)  # Different batch per rank
@@ -224,7 +223,7 @@ class TestTrainingPipelineIntegration:
         scheduler = CosineAnnealingLR(scheduler_config, optimizer, iterations=20)
 
         # Train for a few steps
-        for step in range(5):
+        for _step in range(5):
             x = torch.randn(8, 10)
             target = torch.randn(8, 5)
 
@@ -257,11 +256,11 @@ class TestTrainingPipelineIntegration:
         new_scheduler.load_state_dict(checkpoint["scheduler_state"])
 
         # Verify states match
-        for p1, p2 in zip(model.parameters(), new_model.parameters()):
+        for p1, p2 in zip(model.parameters(), new_model.parameters(), strict=True):
             assert torch.allclose(p1, p2)
 
         # Continue training should work
-        for step in range(3):
+        for _step in range(3):
             x = torch.randn(8, 10)
             target = torch.randn(8, 5)
 

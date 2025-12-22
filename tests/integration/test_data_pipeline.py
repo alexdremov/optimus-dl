@@ -1,12 +1,6 @@
 """Integration tests for data pipeline components."""
 
-import os
-import tempfile
 from unittest.mock import MagicMock, Mock, patch
-
-import numpy as np
-import pytest
-import torch
 
 from optimus_dl.modules.data.transforms.tokenize import (
     TokenizeTransform,

@@ -31,19 +31,6 @@ def make_simple_config(max_elem):
         batch_size=1,
     )
 
-    def test_basic():
-        """Test basic functionality of TokenizedFlatDataset with concatenated input sequences."""
-        config = make_simple_config(18)
-        dataset = TokenizedFlatDataset(config, rank=0, world_size=1)
-        dataset = torchdata.nodes.Loader(dataset)
-
-    results = list(dataset)
-
-    assert (
-        np.concatenate([i["input_ids"].reshape(-1) for i in results])
-        == np.arange(15, dtype=np.uint8)
-    ).all()
-
 
 def test_multiworld():
     """Test distributed training setup with multiple workers accessing different data shards."""

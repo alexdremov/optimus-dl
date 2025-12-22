@@ -1,8 +1,9 @@
 """Training iteration mixin for orchestrating complete training iterations."""
 
 import logging
-from contextlib import contextmanager, nullcontext
-from typing import Any, Iterator, NamedTuple
+from collections.abc import Iterator
+from contextlib import nullcontext
+from typing import Any, NamedTuple
 
 import torch
 from torch.optim import Optimizer

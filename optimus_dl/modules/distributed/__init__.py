@@ -32,7 +32,7 @@ def build_best_collective(device: torch.device | None = None) -> Collective:
         single_rank = int(os.environ["WORLD_SIZE"]) <= 1
         if single_rank:
             distr = False
-            logger.info(f"Single rank detected, building not distributed collective")
+            logger.info("Single rank detected, building not distributed collective")
 
     if distr:
         device_type = "cpu"

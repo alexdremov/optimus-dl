@@ -49,14 +49,14 @@ class ShuffleTransformNode(BaseNode):
             self.node.reset()
 
     def get_state(self):
-        return dict(
-            buffer=self.buffer,
-            cfg=self.cfg,
-            source_state=self.node.state_dict(),
-            rng_state=self.rng.bit_generator.state,
-            terminated=self.terminated,
-            rank=self.rank,
-        )
+        return {
+            "buffer": self.buffer,
+            "cfg": self.cfg,
+            "source_state": self.node.state_dict(),
+            "rng_state": self.rng.bit_generator.state,
+            "terminated": self.terminated,
+            "rank": self.rank,
+        }
 
     def next(self):
         while len(self.buffer) < self.cfg.buffer_size and not self.terminated:

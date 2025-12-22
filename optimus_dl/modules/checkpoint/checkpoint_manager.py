@@ -1,6 +1,7 @@
 """Checkpoint mixin for save/load functionality."""
 
 import logging
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -15,13 +16,12 @@ from torch.distributed.checkpoint.state_dict_loader import load as dcp_load
 from torch.distributed.checkpoint.state_dict_saver import save as dcp_save
 from torch.optim import Optimizer
 
-from optimus_dl.core.registry import RegistryConfig, make_registry
+from optimus_dl.core.registry import RegistryConfig, build, make_registry
 from optimus_dl.modules.distributed import Collective
 from optimus_dl.modules.metrics import (
     load_state_dict as metrics_load_state_dict,
     state_dict as metrics_state_dict,
 )
-from optimus_dl.modules.metrics.common import log_event_end, log_event_start
 from optimus_dl.modules.model.base import BaseModel
 
 from .load_strategy import LoadStrategy
@@ -135,9 +135,9 @@ class CheckpointManager:
             model, options=dcp_state_dict.StateDictOptions()
         )
 
-        state_dict = dict(
-            model=model_state_dict,
-        )
+        state_dict = {
+            "model": model_state_dict,
+        }
         if optimizer is not None:
             state_dict["optimizer"] = dcp_state_dict.get_optimizer_state_dict(
                 model, optimizer, options=dcp_state_dict.StateDictOptions()
@@ -272,7 +272,7 @@ class CheckpointManager:
         logger.info(f"Loading checkpoint from {checkpoint_path}")
 
         # Get state dicts for loading
-        state_dict = dict()
+        state_dict = {}
         if model is not None:
             state_dict["model"] = dcp_state_dict.get_model_state_dict(
                 model, options=dcp_state_dict.StateDictOptions()

@@ -1,23 +1,15 @@
 # @package @_global_
-# Default evaluation configuration
-# Usage: python scripts/evaluate.py checkpoint_path=path/to/checkpoint
-
-# Common configuration
 common:
   checkpoint_path: ???  # Must be provided
   seed: 42
   # Tokenizer configuration
-  tokenizer:
-    _name: tiktoken  # New registry format
-    name: gpt2      # Tokenizer name/identifier
+  tokenizer: ???
 
 # lm_eval harness configuration
 lm_eval:
   tasks:
-    - hellaswag
+    - mmlu
     - arc_easy
-    - arc_challenge
-    - winogrande
   num_fewshot: 0
   batch_size: 1
   limit: null  # No limit (evaluate on full dataset)

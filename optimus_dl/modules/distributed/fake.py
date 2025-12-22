@@ -1,7 +1,6 @@
 import torch
 from torch import Tensor
 from torch.distributed import ProcessGroup, ReduceOp
-from torch.types import Device
 from typing_extensions import override
 
 from optimus_dl.modules.distributed.base import Collective

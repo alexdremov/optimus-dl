@@ -57,7 +57,7 @@ class EvalRecipe:
                     checkpoint_path=self.cfg.common.checkpoint_path, device=device
                 )
             else:
-                logger.info(f"Building model from config")
+                logger.info("Building model from config")
                 base_model = self.model_builder.build_model(
                     model_config=self.cfg.common.model,
                     collective=collective,
@@ -85,10 +85,10 @@ class EvalRecipe:
         """
         try:
             from lm_eval import evaluator
-        except ImportError:
+        except ImportError as err:
             raise ImportError(
                 "lm_eval is required for evaluation. Install with: pip install lm_eval"
-            )
+            ) from err
 
         # Build model
         collective = build_best_collective(

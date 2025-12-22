@@ -7,7 +7,7 @@ supporting both online and offline modes.
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 from omegaconf import OmegaConf
 
@@ -31,15 +31,15 @@ class WandbLoggerConfig(MetricsLoggerConfig):
     """Configuration for Weights & Biases logger."""
 
     # WandB specific settings
-    project: Optional[str] = None
-    entity: Optional[str] = None
+    project: str | None = None
+    entity: str | None = None
     mode: str = "online"  # "online", "offline", or "disabled"
     save_code: bool = True
 
     # Run configuration
-    group: Optional[str] = None
-    job_type: Optional[str] = "train"
-    name: Optional[str] = None
+    group: str | None = None
+    job_type: str | None = "train"
+    name: str | None = None
 
     # Logging settings
     log_model: bool = False
@@ -76,7 +76,7 @@ class WandbLogger(BaseMetricsLogger):
         self.run_id = (state_dict or {}).get("run_id")
         self.run = None
 
-    def setup(self, experiment_name: str, config: Dict[str, Any]) -> None:
+    def setup(self, experiment_name: str, config: dict[str, Any]) -> None:
         """Setup WandB run with experiment configuration."""
         if not self.enabled:
             return

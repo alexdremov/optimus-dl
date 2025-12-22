@@ -30,7 +30,7 @@ def pretty_print_results(results: dict) -> None:
             print("-" * 40)
 
             for metric_name, metric_value in task_results.items():
-                if isinstance(metric_value, (int, float)):
+                if isinstance(metric_value, int | float):
                     print(f"  {metric_name}: {metric_value:.4f}")
                 else:
                     print(f"  {metric_name}: {metric_value}")
@@ -40,7 +40,7 @@ def pretty_print_results(results: dict) -> None:
         print(f"Task Versions: {results['versions']}")
 
     if "config" in results:
-        print(f"Evaluation Config:")
+        print("Evaluation Config:")
         for key, value in results["config"].items():
             if key != "model_args":  # Skip verbose model args
                 print(f"  {key}: {value}")

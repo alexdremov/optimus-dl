@@ -1,14 +1,10 @@
 import logging
-from dataclasses import dataclass, field
-from typing import Dict
+from dataclasses import dataclass
 
 import datasets
 import datasets.distributed
-import numpy as np
-import torchdata.nodes
 from datasets import load_dataset
 from omegaconf import MISSING, OmegaConf
-from transformers import AutoTokenizer
 
 from optimus_dl.core.registry import RegistryConfig
 
@@ -32,19 +28,19 @@ class HuggingFaceDataset(BaseDataset):
         self.position = 0
 
     def get_state(self):
-        return dict(
-            cfg=self.cfg,
-            dataset_state=(
+        return {
+            "cfg": self.cfg,
+            "dataset_state": (
                 self.dataset.state_dict()
                 if hasattr(self.dataset, "state_dict")
                 else None
             ),
-            world_size=self.world_size,
-            rank=self.rank,
-            position=self.position,
-        )
+            "world_size": self.world_size,
+            "rank": self.rank,
+            "position": self.position,
+        }
 
-    def reset(self, initial_state: Dict | None = None):
+    def reset(self, initial_state: dict | None = None):
         super().reset(initial_state)
         if initial_state is not None:
             self.cfg = initial_state.get("cfg", self.cfg)

@@ -1,12 +1,10 @@
 import hashlib
 import logging
-import math
 import os
 import tempfile
 from dataclasses import dataclass, field
 
 import requests
-import torchdata.nodes
 from omegaconf import MISSING
 
 from optimus_dl.core.registry import RegistryConfig
@@ -77,14 +75,14 @@ class TxtLinesDataset(BaseDataset):
 
         # 2. Read and filter
         logger.info(f"Loading data from {local_path}")
-        with open(local_path, "r", encoding="utf-8") as f:
+        with open(local_path, encoding="utf-8") as f:
             raw_lines = f.readlines()
 
         # Strip trailing newlines
-        self.lines = [l.rstrip("\n") for l in raw_lines]
+        self.lines = [i.rstrip("\n") for i in raw_lines]
 
         if self.skip_empty_lines:
-            self.lines = [l for l in self.lines if l.strip()]
+            self.lines = [i for i in self.lines if i.strip()]
 
         # 3. Shard
         total_lines = len(self.lines)

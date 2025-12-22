@@ -1,5 +1,3 @@
-from unittest.mock import Mock, patch
-
 import pytest
 import torch
 import torch.nn as nn
@@ -165,7 +163,7 @@ class TestMakeAdamW:
 
         # Perform a few optimization steps
         initial_loss = None
-        for step in range(5):
+        for _step in range(5):
             optimizer.zero_grad()
             output = model(x)
             loss = criterion(output, target)
@@ -262,7 +260,7 @@ class TestMakeAdamW:
 
         # Copy weights
         with torch.no_grad():
-            for p1, p2 in zip(model1.parameters(), model2.parameters()):
+            for p1, p2 in zip(model1.parameters(), model2.parameters(), strict=True):
                 p2.data.copy_(p1.data)
 
         config = AdamWConfig(lr=1e-2)
@@ -288,5 +286,5 @@ class TestMakeAdamW:
             opt2.step()
 
         # Parameters should be identical
-        for p1, p2 in zip(model1.parameters(), model2.parameters()):
+        for p1, p2 in zip(model1.parameters(), model2.parameters(), strict=True):
             assert torch.allclose(p1, p2, atol=1e-6)

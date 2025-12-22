@@ -1,36 +1,36 @@
-from typing import List, Literal, Optional, Union
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 
 class ChatMessage(BaseModel):
-    role: Optional[str] = None
-    content: Optional[str] = None
+    role: str | None = None
+    content: str | None = None
 
 
 class ChatCompletionRequest(BaseModel):
     model: str = "optimus-dl-model"
-    messages: List[dict]  # Use dict to allow flexibility or define strict message model
+    messages: list[dict]  # Use dict to allow flexibility or define strict message model
     max_tokens: int = Field(default=50, ge=1)
     temperature: float = Field(default=1.0, ge=0.0)
-    top_k: Optional[int] = Field(default=None, ge=1)
+    top_k: int | None = Field(default=None, ge=1)
     stream: bool = False
 
 
 class CompletionRequest(BaseModel):
     model: str = "optimus-dl-model"
-    prompt: Union[str, List[str]]
+    prompt: str | list[str]
     max_tokens: int = Field(default=50, ge=1)
     temperature: float = Field(default=1.0, ge=0.0)
-    top_k: Optional[int] = Field(default=None, ge=1)
+    top_k: int | None = Field(default=None, ge=1)
     stream: bool = False
 
 
 class Choice(BaseModel):
     index: int
     text: str
-    logprobs: Optional[dict] = None
-    finish_reason: Optional[str] = None
+    logprobs: dict | None = None
+    finish_reason: str | None = None
 
 
 class CompletionResponse(BaseModel):
@@ -38,14 +38,14 @@ class CompletionResponse(BaseModel):
     object: Literal["text_completion"]
     created: int
     model: str
-    choices: List[Choice]
-    usage: Optional[dict] = None
+    choices: list[Choice]
+    usage: dict | None = None
 
 
 class ChatChoice(BaseModel):
     index: int
     message: ChatMessage
-    finish_reason: Optional[str] = None
+    finish_reason: str | None = None
 
 
 class ChatCompletionResponse(BaseModel):
@@ -53,22 +53,22 @@ class ChatCompletionResponse(BaseModel):
     object: Literal["chat.completion"]
     created: int
     model: str
-    choices: List[ChatChoice]
-    usage: Optional[dict] = None
+    choices: list[ChatChoice]
+    usage: dict | None = None
 
 
 # Streaming Models
 
 
 class Delta(BaseModel):
-    role: Optional[str] = None
-    content: Optional[str] = None
+    role: str | None = None
+    content: str | None = None
 
 
 class ChatChunkChoice(BaseModel):
     index: int
     delta: Delta
-    finish_reason: Optional[str] = None
+    finish_reason: str | None = None
 
 
 class ChatCompletionChunk(BaseModel):
@@ -76,14 +76,14 @@ class ChatCompletionChunk(BaseModel):
     object: Literal["chat.completion.chunk"]
     created: int
     model: str
-    choices: List[ChatChunkChoice]
+    choices: list[ChatChunkChoice]
 
 
 class CompletionChunkChoice(BaseModel):
     index: int
     text: str
-    logprobs: Optional[dict] = None
-    finish_reason: Optional[str] = None
+    logprobs: dict | None = None
+    finish_reason: str | None = None
 
 
 class CompletionChunk(BaseModel):
@@ -91,4 +91,4 @@ class CompletionChunk(BaseModel):
     object: Literal["text_completion"]
     created: int
     model: str
-    choices: List[CompletionChunkChoice]
+    choices: list[CompletionChunkChoice]

@@ -48,12 +48,12 @@ class RequestHandler(BaseHTTPRequestHandler):
         try:
             data = json.loads(post_data)
             return model_class(**data)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as err:
             self._send_error(400, "Invalid JSON")
-            raise ValueError
-        except ValidationError as e:
-            self._send_error(422, str(e))
-            raise ValueError
+            raise ValueError from err
+        except ValidationError as err:
+            self._send_error(422, str(err))
+            raise ValueError from err
 
     def do_POST(self):
         routes = {
@@ -140,9 +140,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                     model=request.model,
                     choices=[ChatChunkChoice(index=0, delta=Delta(content=chunk_text))],
                 )
-                self.wfile.write(
-                    f"data: {chunk_resp.model_dump_json()}\n\n".encode("utf-8")
-                )
+                self.wfile.write(f"data: {chunk_resp.model_dump_json()}\n\n".encode())
                 self.wfile.flush()
 
             # Finish chunk
@@ -153,9 +151,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 model=request.model,
                 choices=[ChatChunkChoice(index=0, delta=Delta(), finish_reason="stop")],
             )
-            self.wfile.write(
-                f"data: {finish_resp.model_dump_json()}\n\n".encode("utf-8")
-            )
+            self.wfile.write(f"data: {finish_resp.model_dump_json()}\n\n".encode())
             self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
 
@@ -227,7 +223,7 @@ class ServeRecipe:
                 checkpoint_path=self.cfg.common.checkpoint_path, device=self.device
             )
         else:
-            logger.info(f"Building model from config")
+            logger.info("Building model from config")
             self.model = self.model_builder.build_model(
                 model_config=self.cfg.common.model,
                 collective=collective,
@@ -348,26 +344,26 @@ class ServeRecipe:
 
         # Example payloads
         text_completion_ex = json.dumps(
-            dict(
-                prompt="Once upon a time",
-                max_tokens=20,
-                temperature=0.8,
-            )
+            {
+                "prompt": "Once upon a time",
+                "max_tokens": 20,
+                "temperature": 0.8,
+            }
         )
         logger.info(
             f"Text Completion Example:\ncurl -X POST http://{self.cfg.serve.host}:{self.cfg.serve.port}/v1/completions -d '{text_completion_ex}'"
         )
 
         chat_completion_ex = json.dumps(
-            dict(
-                messages=[
+            {
+                "messages": [
                     {"role": "system", "content": "You are a helpful assistant."},
                     {"role": "user", "content": "Hello!"},
                 ],
-                max_tokens=20,
-                temperature=0.8,
-                stream=True,
-            )
+                "max_tokens": 20,
+                "temperature": 0.8,
+                "stream": True,
+            }
         )
         logger.info(
             f"Chat Streaming Example:\ncurl -X POST http://{self.cfg.serve.host}:{self.cfg.serve.port}/v1/chat/completions -d '{chat_completion_ex}'"

@@ -85,10 +85,7 @@ class MeshCollective(Collective):
         group_type = "local" if is_local else "global"
 
         # Get list of ranks in this group
-        try:
-            ranks = dist.get_process_group_ranks(self._process_group)
-        except:
-            ranks = ["unknown"]
+        ranks = dist.get_process_group_ranks(self._process_group)
 
         return f"MeshCollective(rank={self.rank}/{self.world_size}, {group_type}_group={group_rank}/{group_size}, local_rank={self._local_rank}/{self._local_world_size}, ranks={ranks})"
 

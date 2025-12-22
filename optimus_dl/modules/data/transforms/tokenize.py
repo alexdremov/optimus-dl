@@ -2,7 +2,6 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-import numpy as np
 import torchdata.nodes
 from omegaconf import MISSING, OmegaConf
 from torchdata.nodes.base_node import BaseNode
@@ -65,9 +64,9 @@ class TokenizeTransform(BaseTransform):
             tokens_debug = ", ".join(tokens_debug)
             logger.info(f"Debugging tokenizer sample: \n{tokens_debug}\n=======")
 
-        return dict(
-            input_ids=ids,
-        )
+        return {
+            "input_ids": ids,
+        }
 
     def build(self, source: BaseNode) -> BaseNode:
         return torchdata.nodes.ParallelMapper(

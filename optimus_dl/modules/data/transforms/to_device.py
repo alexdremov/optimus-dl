@@ -5,7 +5,6 @@ import torch
 import torchdata.nodes
 from torchdata.nodes.base_node import BaseNode
 
-from optimus_dl.core.device import get_best_device
 from optimus_dl.core.registry import RegistryConfig
 from optimus_dl.modules.data.transforms import (
     BaseTransform,

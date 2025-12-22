@@ -1,5 +1,7 @@
+import pathlib
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Union
+
+import yaml
 
 from .config import BaseTokenizerConfig
 
@@ -9,11 +11,11 @@ class BaseTokenizer(ABC):
         self.config = config
 
     @abstractmethod
-    def encode(self, text: str) -> List[int]:
+    def encode(self, text: str) -> list[int]:
         pass
 
     @abstractmethod
-    def decode(self, ids: List[int]) -> str:
+    def decode(self, ids: list[int]) -> str:
         pass
 
     @property
@@ -31,7 +33,10 @@ class BaseTokenizer(ABC):
 
     def save_pretrained(self, save_directory: str):
         """Save tokenizer artifacts to directory."""
-        pass
+        save_directory_path = pathlib.Path(save_directory)
+        save_directory_path.mkdir(parents=True, exist_ok=True)
+        with open(save_directory_path / "tokenizer_config.json", "w") as f:
+            yaml.dump(self.config, f)
 
     def apply_chat_template(
         self,

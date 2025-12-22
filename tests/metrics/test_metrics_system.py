@@ -1,5 +1,3 @@
-import contextlib
-import time
 from unittest.mock import Mock, patch
 
 import numpy as np
@@ -677,7 +675,7 @@ class TestMetricsGroupContext:
     def test_metrics_group_context_cleanup(self):
         self.setUp()
 
-        with metrics_group("test_group") as should_log:
+        with metrics_group("test_group"):
             assert "test_group" in _active_metric_groups
 
         assert "test_group" not in _active_metric_groups
@@ -685,10 +683,10 @@ class TestMetricsGroupContext:
     def test_metrics_group_context_nested(self):
         self.setUp()
 
-        with metrics_group("test_group") as should_log1:
+        with metrics_group("test_group"):
             assert _active_metric_groups["test_group"] == 1
 
-            with metrics_group("test_group") as should_log2:
+            with metrics_group("test_group"):
                 assert _active_metric_groups["test_group"] == 2
 
             assert _active_metric_groups["test_group"] == 1
@@ -927,7 +925,7 @@ class TestMetricsIntegration:
         num_epochs = 3
         steps_per_epoch = 5
 
-        for epoch in range(num_epochs):
+        for _epoch in range(num_epochs):
             with metrics_group("train", log_freq=2) as should_log:
                 for step in range(steps_per_epoch):
                     # Log some training metrics
