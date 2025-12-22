@@ -66,7 +66,6 @@ def make_hf_llama_model(cfg: HFLlamaConfig, **_):
 
     # Map weights
     sd = model.state_dict()
-    [k for k in hf_sd.keys() if k.endswith(".rotary_emb.inv_freq")]
 
     # Helper to permute weights for RoPE (HF half-half -> Local interleaved)
     def permute_rope(w, n_heads, head_dim):

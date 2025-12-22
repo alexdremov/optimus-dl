@@ -225,7 +225,7 @@ class CompositeDataset(BaseDataset):
             self._num_yielded = initial_state.get(self.NUM_YIELDED_KEY, 0)
             self._epoch = initial_state.get(self.EPOCH_KEY, 0)
             self._datasets_exhausted = initial_state.get(
-                self.DATASETS_EXHAUSTED_KEY, {k: False for k in config_datasets}
+                self.DATASETS_EXHAUSTED_KEY, dict.fromkeys(config_datasets, False)
             )
 
             # If config matches state datasets, we can load sampler state
@@ -255,7 +255,7 @@ class CompositeDataset(BaseDataset):
             self._epoch = 0
 
             self._weighted_sampler = self._get_new_weighted_sampler()
-            self._datasets_exhausted = {key: False for key in self.datasets}
+            self._datasets_exhausted = dict.fromkeys(self.datasets, False)
             for dataset in self.datasets.values():
                 dataset.reset()
 

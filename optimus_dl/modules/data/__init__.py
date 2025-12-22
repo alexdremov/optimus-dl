@@ -16,7 +16,7 @@ from .config import DataConfig, DataPipelineConfig
 
 class DataPipeline(NamedTuple):
     datasets: torchdata.nodes.BaseNode
-    dataloader: torchdata.nodes.BaseNode
+    dataloader: torchdata.nodes.BaseNode | torchdata.nodes.Loader
 
 
 def build_data_pipeline(cfg: DataPipelineConfig, **kwargs) -> DataPipeline | None:

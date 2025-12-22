@@ -258,7 +258,7 @@ pytest
 # Format code
 black .
 isort .
-ruff . --fix
+ruff check --fix .
 ```
 
 ## License

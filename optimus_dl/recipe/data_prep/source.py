@@ -1,0 +1,210 @@
+"""Handles finding and reading data from various sources."""
+
+import fnmatch
+import json
+import logging
+import random
+from collections.abc import Generator
+from pathlib import Path
+
+import pandas as pd
+import yaml
+from huggingface_hub import hf_hub_download, list_repo_files
+
+from .config import DatasetConfig, ProcessingConfig
+
+logger = logging.getLogger(__name__)
+
+
+class FileFinder:
+    """Discovers files from a Hugging Face Hub dataset repository."""
+
+    def __init__(self, config: DatasetConfig, seed: int):
+        self.config = config
+        self.seed = seed
+
+    def get_files(self) -> list[str]:
+        """
+        Retrieves and filters the list of files to process from the Hugging Face hub.
+        """
+        logger.info(
+            f"Listing files for {self.config.repo_id} split={self.config.split}"
+        )
+        try:
+            all_files = list_repo_files(
+                repo_id=self.config.repo_id, repo_type="dataset"
+            )
+            logger.info(f"Found {len(all_files)} files before filtering.")
+        except Exception as e:
+            logger.error(f"Could not list files for repo {self.config.repo_id}: {e}")
+            return []
+
+        if self.config.file_pattern is not None:
+            logger.info(f"Filtering files based on pattern: {self.config.file_pattern}")
+            files = self._filter_files(all_files, pattern=self.config.file_pattern)
+        else:
+            logger.info(
+                f"Filtering files based on metadata for split '{self.config.split}' and config_name '{self.config.config_name}'"
+            )
+            files = self._get_files_from_metadata(all_files)
+
+            if not files:
+                logger.info(
+                    "No metadata file found. Falling back to simple file name filtering."
+                )
+                assert (
+                    self.config.config_name is None
+                ), "config_name is not supported without metadata file"
+
+                pattern = "data/*"
+                if self.config.split and self.config.split != "all":
+                    pattern = f"data/{self.config.split}-*"
+
+                files = self._filter_files(all_files, pattern=pattern)
+
+            if not files:
+                logger.warning(
+                    f"No files found after filtering for split '{self.config.split}'. {all_files = }"
+                )
+                return []
+
+        # Shuffle the files for better distribution in the shuffle buffer
+        random.seed(self.seed)
+        random.shuffle(files)
+
+        logger.info(f"Found {len(files)} files for processing.")
+        return files
+
+    def _get_files_from_metadata(self, all_files: list[str]) -> list[str] | None:
+        if "README.md" not in all_files:
+            return None
+
+        try:
+            readme_path = hf_hub_download(
+                repo_id=self.config.repo_id,
+                filename="README.md",
+                repo_type="dataset",
+                cache_dir=self.config.cache_dir,
+            )
+            with open(readme_path, encoding="utf-8") as f:
+                content = f.read()
+        except Exception as e:
+            logger.warning(f"Could not download or read README.md: {e}")
+            return None
+
+        # Extract YAML front matter
+        if not content.startswith("---"):
+            return None
+
+        parts = content.split("---")
+        if len(parts) < 3:
+            return None
+
+        yaml_content = parts[1]
+        try:
+            metadata = yaml.safe_load(yaml_content)
+        except yaml.YAMLError as e:
+            logger.warning(f"Failed to parse YAML from README.md: {e}")
+            return None
+
+        if not isinstance(metadata, dict) or "configs" not in metadata:
+            return None
+
+        split_info = next(
+            (
+                s
+                for s in metadata["configs"]
+                if s.get("config_name") == self.config.config_name
+            ),
+            None,
+        )
+
+        if not split_info:
+            return None
+
+        patterns = [
+            pattern["path"]
+            for pattern in split_info["data_files"]
+            if pattern["split"] == self.config.split or pattern["split"] == "all"
+        ]
+
+        matched_files = []
+        for pattern in patterns:
+            for f in all_files:
+                if fnmatch.fnmatch(f, pattern):
+                    matched_files.append(f)
+
+        return matched_files
+
+    def _filter_files(self, all_files: list[str], pattern=None) -> list[str]:
+        """Filters files based on extension, split, and pattern."""
+        filtered = []
+
+        for f in all_files:
+            if not f.endswith((".parquet", ".jsonl", ".json")):
+                continue
+            if pattern and not fnmatch.fnmatch(f, pattern):
+                continue
+            filtered.append(f)
+
+        filtered.sort()  # Sort for deterministic order before shuffling
+        return filtered
+
+
+class FileReader:
+    """Reads raw text documents from different file formats."""
+
+    def __init__(self, config: ProcessingConfig, dataset_config: DatasetConfig):
+        self.text_column = config.text_column
+        self.dataset_config = dataset_config
+
+    def read_texts(self, file_path: str) -> Generator[str, None, None]:
+        """
+        Downloads a file from the Hub and yields text documents from it.
+        """
+        try:
+            local_path = hf_hub_download(
+                repo_id=self.dataset_config.repo_id,
+                filename=file_path,
+                repo_type="dataset",
+                cache_dir=self.dataset_config.cache_dir,
+            )
+        except Exception as e:
+            logger.error(f"Failed to download {file_path}: {e}")
+            return
+
+        if file_path.endswith(".parquet"):
+            yield from self._read_parquet(local_path)
+        elif file_path.endswith((".jsonl", ".json")):
+            yield from self._read_jsonl(local_path)
+
+    def _read_parquet(self, local_path: Path) -> Generator[str, None, None]:
+        """Reads texts from a Parquet file."""
+        try:
+            df = pd.read_parquet(local_path)
+            if self.text_column in df.columns:
+                for text in df[self.text_column]:
+                    if isinstance(text, str) and text:
+                        yield text
+        except Exception as e:
+            logger.warning(f"Could not read Parquet file {local_path}: {e}")
+
+    def _read_jsonl(self, local_path: Path) -> Generator[str, None, None]:
+        """Reads texts from a JSONL file."""
+        with open(local_path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                if isinstance(item, dict):
+                    text = item.get(self.text_column, "")
+                    if isinstance(text, str) and text:
+                        yield text
+                elif isinstance(item, list):
+                    for sub_item in item:
+                        if isinstance(sub_item, dict):
+                            text = sub_item.get(self.text_column, "")
+                            if isinstance(text, str) and text:
+                                yield text

@@ -92,13 +92,13 @@ def make_registry(registry_name: str, base_class: type | None = None):
         if isinstance(cfg, str):
             name = cfg
         else:
+            if not omegaconf.OmegaConf.is_config(cfg):
+                cfg = omegaconf.OmegaConf.structured(cfg)
             name = cfg._name
         assert name in registry, f"Unknown {name} in {registry_name} registry"
         registered_class, structured_cfg = registry[name]
         if type(structured_cfg) is type:
             structured_cfg = omegaconf.OmegaConf.structured(structured_cfg())
-        if not omegaconf.OmegaConf.is_config(cfg):
-            cfg = omegaconf.OmegaConf.structured(cfg)
         if structured_cfg is not None:
             cfg = omegaconf.OmegaConf.merge(
                 structured_cfg, omegaconf.OmegaConf.to_container(cfg=cfg, resolve=True)

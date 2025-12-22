@@ -45,7 +45,7 @@ class ChunkTransformNode(BaseNode):
         }
 
     def next(self):
-        if not self.buffer:
+        if len(self.buffer) == 0:
             self.buffer = self.node.next()["input_ids"]
 
         taken = min(

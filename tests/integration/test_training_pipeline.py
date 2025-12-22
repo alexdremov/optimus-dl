@@ -25,6 +25,7 @@ class TestTrainingPipelineIntegration:
 
     def test_optimizer_scheduler_integration(self):
         """Test optimizer and scheduler working together in training loop."""
+        torch.manual_seed(0)
         # Create a simple model
         model = nn.Sequential(nn.Linear(10, 20), nn.ReLU(), nn.Linear(20, 5))
 

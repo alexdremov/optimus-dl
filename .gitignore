@@ -174,3 +174,6 @@ GEMINI.md
 uv.lock
 
 _version.py
+.ruff_cache
+
+cache/

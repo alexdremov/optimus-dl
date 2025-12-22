@@ -243,7 +243,7 @@ class ServeRecipe:
         for token in input_ids.cpu().reshape(-1):
             token = token.item()
             tokens.append(f"{token}:'{self.tokenizer.decode([token])}'")
-        logger.info(f"Input tokens: {' '.join(tokens)}")
+        logger.debug(f"Input tokens: {' '.join(tokens)}")
 
     @torch.no_grad()
     def generate_stream(

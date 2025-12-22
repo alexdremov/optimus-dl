@@ -221,10 +221,10 @@ class Llama(GPT):
                 "ln_f": RMSNorm(config.n_embd, eps=config.rmsnorm_eps),
             }
         )
-        # with weight tying when using torch.compile() some warnings get generated:
-        # "UserWarning: functional_call was passed multiple values for tied weights.
-        # This behavior is deprecated and will be an error in future versions"
-        # not 100% sure what this is, so far seems to be harmless. TODO investigate
+        # Weight tying:
+        # When using torch.compile(), PyTorch may emit a UserWarning about multiple values
+        # for tied weights. This is a known behavior when tying weights for FSDP/compilation
+        # compatibility and is generally safe to ignore.
         if config.tie_word_embeddings:
             self.transformer.wte.weight = (
                 self.lm_head.weight

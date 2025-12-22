@@ -33,11 +33,16 @@ class DataBuilder:
         kwargs["rank"] = collective.rank
         kwargs["world_size"] = collective.world_size
         train_data = build_data_pipeline(self.data_config.train_datasets, **kwargs)
-        train_data = torchdata.nodes.Loader(
-            root=train_data,
+        if train_data is None:
+            return None
+        dataloader = torchdata.nodes.Loader(
+            root=train_data.dataloader,
             restart_on_stop_iteration=True,
         )
-        return train_data
+        return DataPipeline(
+            datasets=train_data.datasets,
+            dataloader=dataloader,
+        )
 
     def build_eval_data(
         self, collective: Collective, **kwargs
@@ -47,9 +52,16 @@ class DataBuilder:
         kwargs["world_size"] = collective.world_size
         eval_data = build_data_pipeline_dict(self.data_config.eval_datasets, **kwargs)
         eval_data = {
-            k: LoaderIterResettable(
-                root=v,
-                restart_on_stop_iteration=False,
+            k: (
+                DataPipeline(
+                    datasets=v.datasets,
+                    dataloader=LoaderIterResettable(
+                        root=v.dataloader,
+                        restart_on_stop_iteration=False,
+                    ),
+                )
+                if v is not None
+                else None
             )
             for k, v in eval_data.items()
         }

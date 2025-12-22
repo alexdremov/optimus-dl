@@ -98,7 +98,9 @@ class Evaluator:
                 eval_iter = iter(eval_data)
                 iterations = 0
                 try:
-                    # todo consistent iterations across workers
+                    # Note: We assume consistent number of batches across workers.
+                    # If workers have different number of batches, they might hang waiting for each other
+                    # during distributed metric aggregation if not handled correctly.
                     while max_iterations is None or iterations < max_iterations:
                         log_event_occurence("perf/full_iteration")
 

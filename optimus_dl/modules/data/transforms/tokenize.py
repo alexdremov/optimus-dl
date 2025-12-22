@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TokenizeTransformConfig(RegistryConfig):
-    tokenizer_config: Any = MISSING  # CHANGE: use new config
+    tokenizer_config: Any = MISSING
     debug_samples: int = 0
     worker_cfg: MapperConfig = field(
         default_factory=MapperConfig,
@@ -47,7 +47,7 @@ class TokenizeTransform(BaseTransform):
 
     def _map(self, sample):
         text = sample["text"]
-        ids = self.tokenizer.encode(text)  # CHANGE
+        ids = self.tokenizer.encode(text)
         if self.debug_counter < self.debug_samples:
             self.debug_counter += 1
             tokens_debug = []
@@ -56,9 +56,7 @@ class TokenizeTransform(BaseTransform):
             ) in (
                 ids
             ):  # Renamed 'token' to 'token_id' to avoid confusion with token strings
-                token_decoded = self.tokenizer.decode(
-                    [token_id]
-                )  # CHANGE: decode takes a list, skip_special_tokens should be handled by tokenizer if needed
+                token_decoded = self.tokenizer.decode([token_id])
                 tokens_debug.append(f"{token_id}({token_decoded})")
 
             tokens_debug = ", ".join(tokens_debug)

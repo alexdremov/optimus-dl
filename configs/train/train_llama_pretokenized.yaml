@@ -1,0 +1,38 @@
+defaults:
+  - train_llama
+  - _self_
+
+args:
+  name: train-210M-pretok
+
+data:
+  scratch:
+    base_transforms:
+      _name: compose
+      transforms:
+        - _name: chunk_tokens
+          max_seq_len: ${args.seq_len}
+        - _name: shuffle
+          seed: 42
+          buffer_size: 8096
+        - _name: flat_batcher
+          batch_size: ${args.batch_size}
+          seq_len: ${args.seq_len}
+        - _name: prefetch
+        - _name: to_device
+
+  train_datasets:
+    source:
+      _name: loop
+      inner:
+        _name: tokenized_dataset
+        data_dir: outputs/data/DKYoon/SlimPajama-6B/train/
+    transform: ${data.scratch.base_transforms}
+
+  # Evaluation datasets (optional)
+  eval_datasets:
+    slimpajama6b:
+      source:
+        _name: tokenized_dataset
+        data_dir: outputs/data/DKYoon/SlimPajama-6B/validation/
+      transform: ${data.scratch.base_transforms}

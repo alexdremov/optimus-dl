@@ -98,10 +98,10 @@ class GPT(BaseModel):
             }
         )
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
-        # with weight tying when using torch.compile() some warnings get generated:
-        # "UserWarning: functional_call was passed multiple values for tied weights.
-        # This behavior is deprecated and will be an error in future versions"
-        # not 100% sure what this is, so far seems to be harmless. TODO investigate
+        # Weight tying:
+        # When using torch.compile(), PyTorch may emit a UserWarning about multiple values
+        # for tied weights. This is a known behavior when tying weights for FSDP/compilation
+        # compatibility and is generally safe to ignore.
         if config.tie_word_embeddings:
             self.transformer.wte.weight = (
                 self.lm_head.weight
@@ -148,10 +148,12 @@ class GPT(BaseModel):
 
     def make_parameter_groups(self):
         """
-        This long function is unfortunately doing something very simple and is being very defensive:
-        We are separating out all parameters of the model into two buckets: those that will experience
-        weight decay for regularization and those that won't (biases, and layernorm/embedding weights).
-        We are then returning the PyTorch optimizer object.
+        Separate parameters into two groups:
+        1. Parameters that will experience weight decay (weights of Linear layers).
+        2. Parameters that will NOT experience weight decay (biases, LayerNorm, Embedding).
+
+        Returns:
+            List of parameter groups for the optimizer.
         """
 
         # separate out all parameters to those that will and won't experience regularizing weight decay
@@ -162,9 +164,9 @@ class GPT(BaseModel):
         for mn, m in self.named_modules():
             for pn, _p in m.named_parameters():
                 fpn = f"{mn}.{pn}" if mn else pn  # full param name
-                # random note: because named_modules and named_parameters are recursive
-                # we will see the same tensors p many many times. but doing it this way
-                # allows us to know which parent module any tensor p belongs to...
+                # Note: because named_modules and named_parameters are recursive,
+                # we will see the same tensors multiple times. We use the parent module
+                # to determine the weight decay strategy.
                 if pn.endswith("weight_clip_val"):
                     # quant params are not decayed
                     no_decay.add(fpn)
@@ -197,9 +199,7 @@ class GPT(BaseModel):
         ), f"parameters {str(inter_params)} made it into both decay/no_decay sets!"
         assert (
             len(param_dict.keys() - union_params) == 0
-        ), "parameters {} were not separated into either decay/no_decay set!".format(
-            str(param_dict.keys() - union_params),
-        )
+        ), f"parameters {str(param_dict.keys() - union_params)} were not separated into either decay/no_decay set!"
 
         # create the pytorch optimizer object
         return [

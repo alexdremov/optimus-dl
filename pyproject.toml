@@ -40,6 +40,7 @@ dependencies = [
     "lm-eval>=0.4.9",
     "omegaconf>=2.3.0",
     "pydantic>=2.12.5",
+    "pyyaml>=6.0.3",
     "rich>=13.7.0",
     "tiktoken>=0.9.0",
     "torch>=2.7.0",
@@ -61,15 +62,6 @@ Documentation = "https://github.com/alexdremov/optimus-dl#readme"
 llm-train = "optimus_dl.scripts.train:main"
 
 [project.optional-dependencies]
-dev = [
-    "black>=25.1.0",
-    "isort>=6.0.1",
-    "pytest>=8.4.1",
-    "pytest-cov>=6.0.0",
-    "pytest-xdist>=3.8.0",
-    "mypy>=1.13.0",
-    "pre-commit>=4.0.0",
-]
 docs = [
     "sphinx>=8.1.0",
     "sphinx-rtd-theme>=3.0.0",
@@ -102,6 +94,7 @@ dev = [
     "ipython>=8.37.0",
     "isort>=6.0.1",
     "pytest>=8.4.1",
+    "ruff>=0.14.10",
 ]
 
 # Black configuration
@@ -178,6 +171,7 @@ module = [
     "colorlog.*",
     "pytest.*",
     "lm_eval.*",
+    "yaml.*",
 ]
 ignore_missing_imports = true
 
@@ -204,7 +198,7 @@ exclude_lines = [
 
 # Ruff configuration (modern linter/formatter)
 [tool.ruff]
-select = [
+lint.select = [
     "E", # pycodestyle errors
     "W", # pycodestyle warnings
     "F", # pyflakes
@@ -214,7 +208,7 @@ select = [
     "UP", # pyupgrade
     "ARG001", # unused arguments in functions
 ]
-ignore = [
+lint.ignore = [
     "E501", # line too long, handled by black
     "B008", # do not perform function calls in argument defaults
     "C901", # too complex
@@ -225,7 +219,7 @@ ignore = [
 line-length = 88
 target-version = "py310"
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "tests/**/*.py" = [
     "ARG001", # Unused function args -> fixtures nevertheless are functionally relevant
