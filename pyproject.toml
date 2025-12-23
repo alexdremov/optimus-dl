@@ -37,6 +37,7 @@ dependencies = [
     "colorlog>=6.9.0",
     "datasets>=4.0.0",
     "hydra-core>=1.3.2",
+    "liger-kernel>=0.6.4 ; sys_platform == 'linux'",
     "lm-eval>=0.4.9",
     "omegaconf>=2.3.0",
     "pydantic>=2.12.5",

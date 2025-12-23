@@ -1,0 +1,25 @@
+defaults:
+  - train_llama.yaml
+  - _self_
+
+args:
+  name: train-llama-efficient
+
+criterion:
+  use_liger_kernel: true
+
+# Add activation checkpointing to the model transforms
+# This wraps LlamaBlock modules with a checkpointing wrapper to reduce memory usage
+# allowing for larger batch sizes or training larger models (up to ~8B on single node A100s)
+model_transforms:
+  - _name: activation_checkpoint
+    layer_classes: ["LlamaBlock"]
+    use_reentrant: false
+  - _name: fully_shard
+    reshard_after_forward: true
+    mixed_precision:
+      param_dtype: bfloat16
+      reduce_dtype: float32
+  - _name: compile
+    compile_kwargs:
+      disable: false

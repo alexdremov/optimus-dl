@@ -14,6 +14,7 @@ Main differences from GPT2:
 * rotary embeddings (RoPE)
 """
 
+import logging
 import math
 from dataclasses import dataclass, field
 
@@ -25,6 +26,17 @@ from optimus_dl.modules.model import register_model
 from optimus_dl.modules.model.blocks.attention import CausalSelfAttention
 from optimus_dl.modules.model.blocks.layer_norms import RMSNorm
 from optimus_dl.modules.model.gpt2 import GPT, GPTConfig
+
+logger = logging.getLogger(__name__)
+
+try:
+    from liger_kernel.transformers.functional import liger_rotary_pos_emb, liger_swiglu
+
+    LIGER_AVAILABLE = True
+except ImportError:
+    LIGER_AVAILABLE = False
+    liger_swiglu = None
+    liger_rotary_pos_emb = None
 
 
 @dataclass
@@ -39,6 +51,10 @@ class LlamaConfig(GPTConfig):
         default=256,
         metadata={"help": "make SwiGLU hidden layer size multiple of large power of 2"},
     )
+    # Liger Kernel flags (None = auto-enable if available)
+    use_liger_rmsnorm: bool | None = None
+    use_liger_swiglu: bool | None = None
+    use_liger_rope: bool | None = None
 
 
 def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0) -> torch.Tensor:
@@ -89,7 +105,7 @@ def apply_rotary_emb(q, k, freqs_cis):
 
 
 class LlamaMLP(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config: LlamaConfig):
         super().__init__()
 
         if config.intermediate_size is not None:
@@ -105,7 +121,28 @@ class LlamaMLP(nn.Module):
         self.w2 = nn.Linear(config.n_embd, hidden_dim, bias=False)
         self.c_proj = nn.Linear(hidden_dim, config.n_embd, bias=False)
 
+        if config.use_liger_swiglu is None:
+            self.use_liger = LIGER_AVAILABLE
+        else:
+            self.use_liger = config.use_liger_swiglu
+
+        if self.use_liger and not LIGER_AVAILABLE:
+            logger.warning(
+                "Liger SwiGLU requested but not installed. Fallback to PyTorch."
+            )
+            self.use_liger = False
+
     def forward(self, x):
+        if self.use_liger and x.device.type != "cpu":
+            # liger_swiglu(x, w1, w2) computes silu(x @ w1) * (x @ w2)
+            # We need to pass the weights. w1 is gate (inside silu), w2 is up.
+            # LlamaMLP init: w1 is first, w2 is second.
+            # Standard SwiGLU: SiLU(xW_g) * (xW_u).
+            # In our implementation: silu(self.w1(x)) * self.w2(x)
+            # So w1 is gate, w2 is up.
+            x_swiglu = liger_swiglu(x, self.w1.weight, self.w2.weight)
+            return self.c_proj(x_swiglu)
+
         return self.c_proj(nn.functional.silu(self.w1(x)) * self.w2(x))
 
 
@@ -118,6 +155,17 @@ class LlamaAttention(CausalSelfAttention):
         )
         self.n_rep = self.n_head // self.n_kv_head
         self.head_dim = config.n_embd // config.n_head
+
+        if config.use_liger_rope is None:
+            self.use_liger_rope = LIGER_AVAILABLE
+        else:
+            self.use_liger_rope = config.use_liger_rope
+
+        if self.use_liger_rope and not LIGER_AVAILABLE:
+            logger.warning(
+                "Liger RoPE requested but not installed. Fallback to PyTorch."
+            )
+            self.use_liger_rope = False
 
         # We don't use the parent's c_attn/c_proj for Llama with potential GQA
         # Delete them to avoid confusion/unused parameters
@@ -146,7 +194,13 @@ class LlamaAttention(CausalSelfAttention):
         xk = xk.view(B, T, self.n_kv_head, self.head_dim)
         xv = xv.view(B, T, self.n_kv_head, self.head_dim)
 
-        xq, xk = apply_rotary_emb(xq, xk, freqs_cis)
+        if self.use_liger_rope and xq.device.type != "cpu":
+            cos = freqs_cis[..., 0]  # (T, head_dim/2)
+            sin = freqs_cis[..., 1]  # (T, head_dim/2)
+
+            xq, xk = liger_rotary_pos_emb(xq, xk, cos, sin)
+        else:
+            xq, xk = apply_rotary_emb(xq, xk, freqs_cis)
 
         # (B, n_head, T, head_dim)
         xq = xq.transpose(1, 2)
@@ -190,9 +244,13 @@ class LlamaAttention(CausalSelfAttention):
 class LlamaBlock(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.ln_1 = RMSNorm(config.n_embd, eps=config.rmsnorm_eps)
+        self.ln_1 = RMSNorm(
+            config.n_embd, eps=config.rmsnorm_eps, use_liger=config.use_liger_rmsnorm
+        )
         self.attn = LlamaAttention(config)
-        self.ln_2 = RMSNorm(config.n_embd, eps=config.rmsnorm_eps)
+        self.ln_2 = RMSNorm(
+            config.n_embd, eps=config.rmsnorm_eps, use_liger=config.use_liger_rmsnorm
+        )
         self.mlp = LlamaMLP(config)
 
     def forward(self, x, freqs_cis):
@@ -218,7 +276,11 @@ class Llama(GPT):
                 "wte": nn.Embedding(config.vocab_size, config.n_embd),
                 "drop": nn.Dropout(config.dropout),
                 "h": nn.ModuleList([LlamaBlock(config) for _ in range(config.n_layer)]),
-                "ln_f": RMSNorm(config.n_embd, eps=config.rmsnorm_eps),
+                "ln_f": RMSNorm(
+                    config.n_embd,
+                    eps=config.rmsnorm_eps,
+                    use_liger=config.use_liger_rmsnorm,
+                ),
             }
         )
         # Weight tying:

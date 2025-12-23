@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 
 import torch
@@ -11,16 +12,33 @@ from optimus_dl.modules.metrics import (
     log_summed,
 )
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class CrossEntropyCriterionConfig(RegistryConfig):
     label_smoothing: float = 0.0
+    use_liger_kernel: bool | None = None
 
 
 @register_criterion("cross_entropy", CrossEntropyCriterionConfig)
 class CrossEntropyCriterion(BaseCriterion):
     def __init__(self, cfg: CrossEntropyCriterionConfig, **kwargs):
         self.cfg = cfg
+        self._liger_available = False
+        if self.cfg.use_liger_kernel or self.cfg.use_liger_kernel is None:
+            try:
+                from liger_kernel.transformers.functional import liger_cross_entropy
+
+                self._liger_cross_entropy = liger_cross_entropy
+                self._liger_available = True
+                if self.cfg.use_liger_kernel is None:
+                    logger.info("Using liger-kernel for cross-entropy.")
+            except ImportError:
+                if self.cfg.use_liger_kernel is not None:
+                    logger.warning(
+                        "use_liger_kernel=True but liger-kernel is not installed. Falling back to PyTorch."
+                    )
 
     def __call__(self, model, batch):
         input_ids = batch.pop("input_ids")
@@ -49,13 +67,23 @@ class CrossEntropyCriterion(BaseCriterion):
         )
 
         targets = targets.reshape(-1)
-        with torch.autocast(targets.device.type, enabled=False):
-            loss = torch.nn.functional.cross_entropy(
-                input=logits.view(-1, logits.size(-1)).float(),
+
+        if self._liger_available and targets.device.type != "cpu":
+            # Liger kernel handles mixed precision internally, no need to cast to float
+            loss = self._liger_cross_entropy(
+                input=logits.view(-1, logits.size(-1)),
                 target=targets,
                 label_smoothing=self.cfg.label_smoothing,
                 ignore_index=-100,
             )
+        else:
+            with torch.autocast(targets.device.type, enabled=False):
+                loss = torch.nn.functional.cross_entropy(
+                    input=logits.view(-1, logits.size(-1)).float(),
+                    target=targets,
+                    label_smoothing=self.cfg.label_smoothing,
+                    ignore_index=-100,
+                )
 
         log_averaged(
             "loss",
