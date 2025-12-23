@@ -123,6 +123,8 @@ class LlamaMLP(nn.Module):
 
         if config.use_liger_swiglu is None:
             self.use_liger = LIGER_AVAILABLE
+            if self.use_liger:
+                logger.info("Using liger-kernel for SwiGLU.")
         else:
             self.use_liger = config.use_liger_swiglu
 
@@ -158,6 +160,8 @@ class LlamaAttention(CausalSelfAttention):
 
         if config.use_liger_rope is None:
             self.use_liger_rope = LIGER_AVAILABLE
+            if self.use_liger_rope:
+                logger.info("Using liger-kernel for RoPE.")
         else:
             self.use_liger_rope = config.use_liger_rope
 

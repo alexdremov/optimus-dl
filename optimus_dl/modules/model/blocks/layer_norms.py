@@ -35,6 +35,8 @@ class RMSNorm(nn.Module):
 
         if use_liger is None:
             self.use_liger = LIGER_AVAILABLE
+            if self.use_liger:
+                logger.info("Using liger-kernel for RMSNorm.")
         else:
             self.use_liger = use_liger
 

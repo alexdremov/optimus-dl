@@ -74,6 +74,13 @@ notebook = [
     "matplotlib>=3.9.0",
     "seaborn>=0.13.0",
 ]
+dev = [
+    "black>=25.1.0",
+    "ipython>=8.37.0",
+    "isort>=6.0.1",
+    "pytest>=8.4.1",
+    "ruff>=0.14.10",
+]
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel", "setuptools_scm[toml]>=6.2"]
@@ -88,15 +95,6 @@ optimus_dl = ["py.typed"]
 [tool.setuptools_scm]
 write_to = "optimus_dl/_version.py"
 local_scheme = "no-local-version"
-
-[dependency-groups]
-dev = [
-    "black>=25.1.0",
-    "ipython>=8.37.0",
-    "isort>=6.0.1",
-    "pytest>=8.4.1",
-    "ruff>=0.14.10",
-]
 
 # Black configuration
 [tool.black]

@@ -152,7 +152,7 @@ class CheckpointManager:
                 kwargs_states[key] = value.state_dict()
             else:
                 logger.error(
-                    f"Could not save state for {key} as no state_dict() method found"
+                    f"Could not save state for {key} ({value}) as no state_dict() method found"
                 )
         metadata = {
             "iteration": iteration,

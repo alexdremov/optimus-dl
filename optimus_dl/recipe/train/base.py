@@ -183,7 +183,7 @@ class TrainRecipe(
         kwargs["full_config"] = config_dict
         kwargs["checkpoint_dir"] = self.cfg.common.output_path
         kwargs["save_freq"] = self.cfg.common.save_freq
-        kwargs["logger_manager"] = (self.logger_manager,)
+        kwargs["logger_manager"] = self.logger_manager
         return self.checkpoint_manager.save_checkpoint_if_needed(*args, **kwargs)
 
     def save_checkpoint(self, *args, **kwargs):
