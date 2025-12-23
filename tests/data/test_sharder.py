@@ -8,8 +8,8 @@ from pathlib import Path
 
 import numpy as np
 
-from optimus_dl.recipe.data_prep.config import OutputConfig, ProcessingConfig
-from optimus_dl.recipe.data_prep.sharder import Sharder
+from optimus_dl.recipe.pretokenize.config import OutputConfig, ProcessingConfig
+from optimus_dl.recipe.pretokenize.sharder import Sharder
 
 
 class TestSharder(unittest.TestCase):

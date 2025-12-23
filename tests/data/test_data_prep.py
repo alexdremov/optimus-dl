@@ -8,13 +8,13 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 
 from optimus_dl.modules.tokenizer.base import BaseTokenizer
-from optimus_dl.recipe.data_prep.config import (
+from optimus_dl.recipe.pretokenize.config import (
     DataPrepConfig,
     DatasetConfig,
     OutputConfig,
     ProcessingConfig,
 )
-from optimus_dl.recipe.data_prep.recipe import DataPrepRecipe
+from optimus_dl.recipe.pretokenize.recipe import DataPrepRecipe
 
 
 class MockTokenizer(BaseTokenizer):
@@ -73,9 +73,9 @@ class TestDataPrep(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.temp_dir)
 
-    @patch("optimus_dl.recipe.data_prep.recipe.build")
-    @patch("optimus_dl.recipe.data_prep.source.list_repo_files")
-    @patch("optimus_dl.recipe.data_prep.source.hf_hub_download")
+    @patch("optimus_dl.recipe.pretokenize.recipe.build")
+    @patch("optimus_dl.recipe.pretokenize.source.list_repo_files")
+    @patch("optimus_dl.recipe.pretokenize.source.hf_hub_download")
     def test_basic_processing(self, mock_download, mock_list_files, mock_build):
         # Mock dependencies
         try:
@@ -136,9 +136,9 @@ class TestDataPrep(unittest.TestCase):
         assert len(tokens) == 9
         assert len(lens) == 3  # 3 documents
 
-    @patch("optimus_dl.recipe.data_prep.recipe.build")
-    @patch("optimus_dl.recipe.data_prep.source.list_repo_files")
-    @patch("optimus_dl.recipe.data_prep.source.hf_hub_download")
+    @patch("optimus_dl.recipe.pretokenize.recipe.build")
+    @patch("optimus_dl.recipe.pretokenize.source.list_repo_files")
+    @patch("optimus_dl.recipe.pretokenize.source.hf_hub_download")
     def test_resumption(self, mock_download, mock_list_files, mock_build):
         # Mock dependencies
         try:
@@ -214,9 +214,9 @@ class TestDataPrep(unittest.TestCase):
         # Clean up
         assert not (self.output_dir / "checkpoint.pkl").exists()
 
-    @patch("optimus_dl.recipe.data_prep.source.list_repo_files")
-    @patch("optimus_dl.recipe.data_prep.source.hf_hub_download")
-    @patch("optimus_dl.recipe.data_prep.processor.multiprocessing.get_context")
+    @patch("optimus_dl.recipe.pretokenize.source.list_repo_files")
+    @patch("optimus_dl.recipe.pretokenize.source.hf_hub_download")
+    @patch("optimus_dl.recipe.pretokenize.processor.multiprocessing.get_context")
     def test_parallel_processing(
         self, mock_get_context, mock_download, mock_list_files
     ):

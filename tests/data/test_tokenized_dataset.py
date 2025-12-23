@@ -19,12 +19,12 @@ def create_mock_data(
     docs_per_shard: list[int],
     avg_doc_len: int,
     vocab_size: int = 100,
-    dtype: np.dtype = np.uint16,
-    doc_dtype: np.dtype = np.uint32,
 ) -> int:
     """Creates mock tokenized data and lens files, and an index.json."""
     total_docs = sum(docs_per_shard)
     total_tokens = 0
+    dtype: np.dtype = np.uint16
+    doc_dtype: np.dtype = np.uint32
 
     files_meta = []
 
@@ -61,7 +61,9 @@ def create_mock_data(
     index_data = {
         "files": files_meta,
         "total_tokens": total_tokens,
-        "config": {},  # Simplified config
+        "config": {
+            "dtype": "np.uint16",
+        },
     }
 
     with open(data_dir / "index.json", "w") as f:
@@ -90,8 +92,6 @@ class TestTokenizedDataset(unittest.TestCase):
 
         self.config = TokenizedDatasetConfig(
             data_dir=str(self.data_dir),
-            dtype="np.uint16",
-            doc_dtype="np.uint32",
             index_file="index.json",
         )
 
@@ -302,10 +302,10 @@ class TestTokenizedDataset(unittest.TestCase):
     def test_load_config_type_coercion(self):
         # Test that dtype and doc_dtype are correctly resolved from string
         config_str = TokenizedDatasetConfig(
-            data_dir=str(self.data_dir), dtype="int32", doc_dtype="int64"
+            data_dir=str(self.data_dir),
         )
         dataset = TokenizedDataset(config_str, rank=0, world_size=1)
         dataset.reset()
 
         item = dataset.next()
-        assert item["input_ids"].dtype == np.int32
+        assert item["input_ids"].dtype == np.uint16

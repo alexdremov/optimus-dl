@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from optimus_dl.recipe.data_prep.checkpoint import (
+from optimus_dl.recipe.pretokenize.checkpoint import (
     CheckpointManager,
     CheckpointState,
 )

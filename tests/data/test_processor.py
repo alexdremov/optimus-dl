@@ -6,8 +6,8 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from optimus_dl.modules.tokenizer.base import BaseTokenizer
-from optimus_dl.recipe.data_prep.config import DataPrepConfig
-from optimus_dl.recipe.data_prep.processor import TokenProcessor
+from optimus_dl.recipe.pretokenize.config import DataPrepConfig
+from optimus_dl.recipe.pretokenize.processor import TokenProcessor
 
 
 class MockTokenizer(BaseTokenizer):
@@ -36,8 +36,8 @@ class TestTokenProcessor(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.temp_dir)
 
-    @patch("optimus_dl.recipe.data_prep.processor.FileReader")
-    @patch("optimus_dl.recipe.data_prep.processor.build")
+    @patch("optimus_dl.recipe.pretokenize.processor.FileReader")
+    @patch("optimus_dl.recipe.pretokenize.processor.build")
     def test_single_process_iteration(self, mock_build, mock_file_reader_cls):
         """Test the processor in single-process mode."""
         self.config.processing.num_proc = 1
@@ -62,8 +62,8 @@ class TestTokenProcessor(unittest.TestCase):
         # self.assertEqual(all_tokens[0], [ord(c) for c in "doc1"])
         self.assertEqual(processor.progress, 3)
 
-    @patch("optimus_dl.recipe.data_prep.processor.multiprocessing.get_context")
-    @patch("optimus_dl.recipe.data_prep.processor._tokenize_file_worker")
+    @patch("optimus_dl.recipe.pretokenize.processor.multiprocessing.get_context")
+    @patch("optimus_dl.recipe.pretokenize.processor._tokenize_file_worker")
     def test_multi_process_iteration(self, mock_worker, mock_get_context):
         """Test that the processor correctly uses a multiprocessing pool."""
         self.config.processing.num_proc = 2

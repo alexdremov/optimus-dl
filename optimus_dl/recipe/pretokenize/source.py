@@ -56,11 +56,16 @@ class FileFinder:
                     self.config.config_name is None
                 ), "config_name is not supported without metadata file"
 
-                pattern = "data/*"
+                patterns = ["data/*"]
                 if self.config.split and self.config.split != "all":
-                    pattern = f"data/{self.config.split}-*"
-
-                files = self._filter_files(all_files, pattern=pattern)
+                    patterns = [
+                        f"data/{self.config.split}-*",
+                        f"data/{self.config.split}_*",
+                        f"data/{self.config.split}/*",
+                    ]
+                files = []
+                for pattern in patterns:
+                    files += self._filter_files(all_files, pattern=pattern)
 
             if not files:
                 logger.warning(

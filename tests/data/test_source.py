@@ -9,8 +9,8 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from optimus_dl.recipe.data_prep.config import DatasetConfig, ProcessingConfig
-from optimus_dl.recipe.data_prep.source import FileFinder, FileReader
+from optimus_dl.recipe.pretokenize.config import DatasetConfig, ProcessingConfig
+from optimus_dl.recipe.pretokenize.source import FileFinder, FileReader
 
 
 class TestFileFinder(unittest.TestCase):
@@ -23,7 +23,7 @@ class TestFileFinder(unittest.TestCase):
             "config.json",
         ]
 
-    @patch("optimus_dl.recipe.data_prep.source.list_repo_files")
+    @patch("optimus_dl.recipe.pretokenize.source.list_repo_files")
     def test_get_all_files(self, mock_list_repo_files):
         """Test that all supported file types are returned when split is 'all'."""
         mock_list_repo_files.return_value = self.all_files
@@ -34,7 +34,7 @@ class TestFileFinder(unittest.TestCase):
         self.assertIn("data/train/0001.jsonl", files)
         self.assertIn("data/validation/0001.jsonl", files)
 
-    @patch("optimus_dl.recipe.data_prep.source.list_repo_files")
+    @patch("optimus_dl.recipe.pretokenize.source.list_repo_files")
     def test_filter_by_split(self, mock_list_repo_files):
         """Test filtering files by a specific split name."""
         mock_list_repo_files.return_value = self.all_files
@@ -44,7 +44,7 @@ class TestFileFinder(unittest.TestCase):
         self.assertEqual(len(files), 1)
         self.assertEqual(files[0], "data/validation/0001.jsonl")
 
-    @patch("optimus_dl.recipe.data_prep.source.list_repo_files")
+    @patch("optimus_dl.recipe.pretokenize.source.list_repo_files")
     def test_filter_by_pattern(self, mock_list_repo_files):
         """Test filtering files using a glob pattern."""
         mock_list_repo_files.return_value = self.all_files
@@ -56,7 +56,7 @@ class TestFileFinder(unittest.TestCase):
         self.assertEqual(len(files), 1)
         self.assertEqual(files[0], "data/train/0002.parquet")
 
-    @patch("optimus_dl.recipe.data_prep.source.list_repo_files")
+    @patch("optimus_dl.recipe.pretokenize.source.list_repo_files")
     def test_shuffling_is_deterministic(self, mock_list_repo_files):
         """Test that shuffling with the same seed produces the same order."""
         mock_list_repo_files.return_value = self.all_files
@@ -87,7 +87,7 @@ class TestFileReader(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.temp_dir)
 
-    @patch("optimus_dl.recipe.data_prep.source.hf_hub_download")
+    @patch("optimus_dl.recipe.pretokenize.source.hf_hub_download")
     def test_read_jsonl(self, mock_download):
         """Test reading texts from a JSONL file."""
         # Create a dummy jsonl file
@@ -104,7 +104,7 @@ class TestFileReader(unittest.TestCase):
         self.assertEqual(texts[0], "Hello world")
         self.assertEqual(texts[1], "This is a test.")
 
-    @patch("optimus_dl.recipe.data_prep.source.hf_hub_download")
+    @patch("optimus_dl.recipe.pretokenize.source.hf_hub_download")
     def test_read_parquet(self, mock_download):
         """Test reading texts from a Parquet file."""
         # Create a dummy parquet file
@@ -119,7 +119,7 @@ class TestFileReader(unittest.TestCase):
         self.assertEqual(texts[0], "Alpha")
         self.assertEqual(texts[1], "Bravo")
 
-    @patch("optimus_dl.recipe.data_prep.source.hf_hub_download")
+    @patch("optimus_dl.recipe.pretokenize.source.hf_hub_download")
     def test_download_failure(self, mock_download):
         """Test that the reader handles download errors gracefully."""
         mock_download.side_effect = Exception("Download failed!")
