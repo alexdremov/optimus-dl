@@ -332,6 +332,16 @@ class Llama(GPT):
         }
 
 
+@Llama.register_arch("7b")
+def llama_7b():
+    return LlamaConfig(
+        n_layer=32,
+        n_head=32,
+        n_embd=4096,
+        multiple_of=256,
+    )
+
+
 @Llama.register_arch("1b")
 def llama_1b():
     return LlamaConfig(

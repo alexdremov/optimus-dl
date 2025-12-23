@@ -1,5 +1,6 @@
 defaults:
   - train_llama.yaml
+  - override model: llama2-7b
   - _self_
 
 args:
