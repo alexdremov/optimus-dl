@@ -257,7 +257,8 @@ class TrainRecipe(
 
             # Setup device and distributed collective
             device, collective = setup_device_and_collective(
-                use_gpu=self.cfg.common.use_gpu
+                use_gpu=self.cfg.common.distributed.use_gpu,
+                tp_size=self.cfg.common.distributed.tp_size,
             )
 
             if not collective.is_master:

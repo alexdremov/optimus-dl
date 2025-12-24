@@ -25,3 +25,14 @@ class BaseModel(torch.nn.Module):
         logger.warning(
             "Model does not support fully sharding. Define this method or performance will be impacted."
         )
+
+    def apply_tp(self, mesh):
+        """
+        Returns the Tensor Parallelism plan for this model.
+
+        Args:
+            mesh: The DeviceMesh for TP.
+
+        Returns:
+            dict: A mapping from FQN (regex) to ParallelStyle (e.g. ColwiseParallel).
+        """

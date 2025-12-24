@@ -305,6 +305,54 @@ class Llama(GPT):
                     p, mean=0.0, std=0.02 / math.sqrt(2 * config.n_layer)
                 )
 
+    def apply_tp(self, mesh):
+        from torch.distributed.tensor.parallel import (
+            ColwiseParallel,
+            PrepareModuleInput,
+            RowwiseParallel,
+            SequenceParallel,
+            parallelize_module,
+        )
+        from torch.distributed.tensor.placement_types import Replicate, Shard
+
+        layer_plan = {
+            "transformer.h.*.ln_1": SequenceParallel(),
+            "transformer.h.*.ln_2": SequenceParallel(),
+            "transformer.h.*.attn": PrepareModuleInput(
+                input_layouts=(Shard(1), Replicate()),
+                desired_input_layouts=(Replicate(), Replicate()),
+            ),
+            "transformer.h.*.attn.wq": ColwiseParallel(use_local_output=False),
+            "transformer.h.*.attn.wk": ColwiseParallel(use_local_output=False),
+            "transformer.h.*.attn.wv": ColwiseParallel(use_local_output=False),
+            "transformer.h.*.attn.wo": RowwiseParallel(),
+            "transformer.h.*.mlp": PrepareModuleInput(
+                input_layouts=(Shard(1),),
+                desired_input_layouts=(Replicate(),),
+            ),
+            "transformer.h.*.mlp.w1": ColwiseParallel(),
+            "transformer.h.*.mlp.w2": ColwiseParallel(),
+            "transformer.h.*.mlp.c_proj": RowwiseParallel(),
+            "transformer.ln_f": SequenceParallel(),
+            "transformer.wte": RowwiseParallel(
+                input_layouts=Replicate(),
+                output_layouts=Shard(1),  # shard vocab dim
+            ),
+        }
+        parallelize_module(self, mesh, layer_plan)
+
+        if not self.config.tie_word_embeddings:
+            parallelize_module(
+                self.lm_head,
+                mesh,
+                {
+                    "lm_head": ColwiseParallel(
+                        input_layouts=Shard(1),
+                        output_layouts=Replicate(),  # or Shard(-1) if doing loss parallel
+                    )
+                },
+            )
+
     def forward(self, input_ids, **kwargs):
         idx = input_ids
         device = idx.device

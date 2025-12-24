@@ -13,7 +13,9 @@ logger = logging.getLogger(__name__)
 _collective: Collective | None = None
 
 
-def build_best_collective(device: torch.device | None = None) -> Collective:
+def build_best_collective(
+    device: torch.device | None = None, tp_size: int = 1
+) -> Collective:
     global _collective
     if _collective is not None:
         return _collective
@@ -47,6 +49,7 @@ def build_best_collective(device: torch.device | None = None) -> Collective:
             local_world_size=int(os.environ["LOCAL_WORLD_SIZE"]),
             local_rank=int(os.environ["LOCAL_RANK"]),
             device_type=device_type,
+            tp_size=tp_size,
         )
     else:
         # Pass device_type to FakeCollective as well

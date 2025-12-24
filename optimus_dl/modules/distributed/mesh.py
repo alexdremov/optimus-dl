@@ -1,15 +1,21 @@
 import logging
+from typing import NamedTuple
 
 import torch
 import torch.distributed as dist
 from torch import Tensor
 from torch.distributed import ProcessGroup, ReduceOp, init_process_group
-from torch.distributed.device_mesh import init_device_mesh
+from torch.distributed.device_mesh import DeviceMesh, init_device_mesh
 from typing_extensions import override
 
 from optimus_dl.modules.distributed.base import Collective
 
 logger = logging.getLogger(__name__)
+
+
+class Meshes(NamedTuple):
+    parallel_mesh: DeviceMesh
+    physical_mesh: DeviceMesh
 
 
 class MeshCollective(Collective):
@@ -20,8 +26,9 @@ class MeshCollective(Collective):
         local_world_size,
         local_rank,
         device_type,
-        mesh=None,
+        mesh: Meshes | None = None,
         process_group=None,
+        tp_size: int = 1,
     ) -> None:
         super().__init__(rank, world_size)
         assert world_size % local_world_size == 0
@@ -29,21 +36,48 @@ class MeshCollective(Collective):
         self._device_type = device_type
         self._local_rank = local_rank
         self._local_world_size = local_world_size
-
-        mesh_shape = (
-            world_size // local_world_size,
-            local_world_size,
-        )
-        mesh_dim_names = ("dp_replicate", "dp_shard")
+        self._tp_size = tp_size
 
         if mesh is None:
-            logger.info(f"Initialized mesh with {mesh_shape = }")
+            if world_size % tp_size != 0:
+                raise ValueError(
+                    f"World size ({world_size}) must be divisible by tp_size ({tp_size})"
+                )
+
+            # Determine mesh structure
+            # Goal: (dp_replicate, dp_shard, tp)
+            # tp_size: innermost dim
+            # dp_shard: intra-node data parallelism
+            # dp_replicate: inter-node data parallelism
+
+            if tp_size > local_world_size:
+                # TP spans across nodes. This is rare and usually slow, but valid.
+                # Fallback to simple (dp, tp) mesh.
+                logger.warning(
+                    f"TP size ({tp_size}) > Local World Size ({local_world_size}). Using 2D (dp, tp) mesh."
+                )
+                mesh_dims = (world_size // tp_size, tp_size)
+                mesh_names = ("dp", "tp")
+            elif local_world_size % tp_size != 0:
+                raise ValueError(
+                    f"Local world size ({local_world_size}) must be divisible by tp_size ({tp_size}) for efficient intra-node TP."
+                )
+            else:
+                # Standard Case: TP is within node.
+                # Calculate dimension sizes
+                replicate_size = world_size // local_world_size  # Number of nodes
+                shard_size = local_world_size // tp_size  # DP groups per node
+
+                mesh_dims = (replicate_size, shard_size, tp_size)
+                mesh_names = ("dp_replicate", "dp_shard", "tp")
+
             mesh_device_type = "cpu"
             if device_type == "cuda":
                 mesh_device_type = "cuda"
             if device_type == "mps":
                 logger.warning("MPS distributed training uses cpu collective")
                 mesh_device_type = "cpu"
+
             if not dist.is_initialized():
                 backend = "nccl" if mesh_device_type == "cuda" else "gloo"
                 logger.info(f"Initializing default PG with {backend = }")
@@ -57,15 +91,23 @@ class MeshCollective(Collective):
                     world_size=world_size,
                     device_id=device_id,
                 )
-            logger.info(f"Initializing mesh with {mesh_device_type = }")
-            mesh = init_device_mesh(
-                device_type=mesh_device_type,
-                mesh_shape=mesh_shape,
-                mesh_dim_names=mesh_dim_names,
-            )
-        self._mesh = mesh
 
-        # Default to global group (world group)
+            logger.info(
+                f"Initializing mesh with {mesh_device_type=}, shape={mesh_dims}, names={mesh_names}"
+            )
+            parallel_mesh = init_device_mesh(
+                device_type=mesh_device_type,
+                mesh_shape=mesh_dims,
+                mesh_dim_names=mesh_names,
+            )
+            physical_mesh = init_device_mesh(
+                device_type=mesh_device_type,
+                mesh_shape=(world_size // local_world_size, local_world_size),
+                mesh_dim_names=("nodes", "local_ranks"),
+            )
+            mesh = Meshes(parallel_mesh, physical_mesh)
+
+        self._mesh: Meshes = mesh
         self._process_group = (
             process_group if process_group is not None else dist.group.WORLD
         )
@@ -87,13 +129,23 @@ class MeshCollective(Collective):
         # Get list of ranks in this group
         ranks = dist.get_process_group_ranks(self._process_group)
 
-        return f"MeshCollective(rank={self.rank}/{self.world_size}, {group_type}_group={group_rank}/{group_size}, local_rank={self._local_rank}/{self._local_world_size}, ranks={ranks})"
+        return f"MeshCollective(rank={self.rank}/{self.world_size}, {group_type}_group={group_rank}/{group_size}, tp_size={self._tp_size}, mesh={self._mesh}, ranks={ranks})"
+
+    @property
+    def tp_mesh(self):
+        """Returns the sub-mesh for Tensor Parallelism if it exists."""
+        assert self._mesh.parallel_mesh.mesh_dim_names is not None
+        if "tp" in self._mesh.parallel_mesh.mesh_dim_names:
+            return self._mesh.parallel_mesh["tp"]
+        return None
 
     @property
     @override
     def local(self) -> "MeshCollective":
-        if len(self._mesh.mesh_dim_names) == 1:
+        assert self._mesh.physical_mesh.mesh_dim_names is not None
+        if len(self._mesh.physical_mesh.mesh_dim_names) == 1:
             return self
+        process_group = self._mesh.physical_mesh.get_group("local_ranks")
         return MeshCollective(
             rank=self._local_rank,
             world_size=self._local_world_size,
@@ -101,13 +153,51 @@ class MeshCollective(Collective):
             local_rank=self._local_rank,
             device_type=self._device_type,
             mesh=self._mesh,
-            process_group=self._mesh.get_group(1),
+            tp_size=self._tp_size,
+            process_group=process_group,
+        )
+
+    @property
+    @override
+    def tp_world(self) -> "MeshCollective":
+        assert self._mesh.parallel_mesh.mesh_dim_names is not None
+
+        process_group = self._mesh.parallel_mesh.get_group("tp")
+        return MeshCollective(
+            rank=self.tp_rank,
+            world_size=self.tp_world_size,
+            local_world_size=self.tp_world_size,
+            local_rank=self.tp_rank,
+            device_type=self._device_type,
+            mesh=self._mesh,
+            tp_size=self._tp_size,
+            process_group=process_group,
         )
 
     @property
     @override
     def local_rank(self):
         return self._local_rank
+
+    @property
+    @override
+    def dp_rank(self):
+        return self.rank // self._tp_size
+
+    @property
+    @override
+    def dp_world_size(self):
+        return self.world_size // self._tp_size
+
+    @property
+    @override
+    def tp_rank(self):
+        return self.rank % self._tp_size
+
+    @property
+    @override
+    def tp_world_size(self):
+        return self._tp_size
 
     @property
     @override
@@ -129,7 +219,7 @@ class MeshCollective(Collective):
         dist.barrier(group=self._process_group)
 
     @override
-    def all_reduce(self, tensor: Tensor, op: ReduceOp.RedOpType) -> None:
+    def all_reduce(self, tensor: Tensor, op: ReduceOp.RedOpType):
         dist.all_reduce(
             tensor,
             op,
@@ -137,7 +227,7 @@ class MeshCollective(Collective):
         )
 
     @override
-    def all_gather(self, output_tensor: Tensor, input_tensor: Tensor) -> None:
+    def all_gather(self, output_tensor: Tensor, input_tensor: Tensor):
         dist.all_gather_into_tensor(
             output_tensor,
             input_tensor,
@@ -170,5 +260,5 @@ class MeshCollective(Collective):
 
     @property
     @override
-    def global_process_group(self) -> ProcessGroup | None:
+    def process_group(self) -> ProcessGroup | None:
         return self._process_group

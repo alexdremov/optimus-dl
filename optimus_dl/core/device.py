@@ -18,7 +18,7 @@ def get_best_device():
     return torch.device("cpu")
 
 
-def setup_device_and_collective(use_gpu: bool) -> DeviceSetup:
+def setup_device_and_collective(use_gpu: bool, tp_size: int) -> DeviceSetup:
     """Setup device and distributed collective.
 
     Args:
@@ -32,6 +32,6 @@ def setup_device_and_collective(use_gpu: bool) -> DeviceSetup:
     device = torch.device("cpu")
     if use_gpu:
         device = get_best_device()
-    collective = build_best_collective(device=device)
+    collective = build_best_collective(device=device, tp_size=tp_size)
     device = collective.default_device
     return DeviceSetup(device=device, collective=collective)

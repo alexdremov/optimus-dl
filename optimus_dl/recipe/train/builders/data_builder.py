@@ -30,8 +30,8 @@ class DataBuilder:
 
     def build_train_data(self, collective: Collective, **kwargs) -> DataPipeline | None:
         """Build training data pipeline."""
-        kwargs["rank"] = collective.rank
-        kwargs["world_size"] = collective.world_size
+        kwargs["rank"] = collective.dp_rank
+        kwargs["world_size"] = collective.dp_world_size
         train_data = build_data_pipeline(self.data_config.train_datasets, **kwargs)
         if train_data is None:
             return None
@@ -48,8 +48,8 @@ class DataBuilder:
         self, collective: Collective, **kwargs
     ) -> dict[str, DataPipeline | None]:
         """Build evaluation data pipelines."""
-        kwargs["rank"] = collective.rank
-        kwargs["world_size"] = collective.world_size
+        kwargs["rank"] = collective.dp_rank
+        kwargs["world_size"] = collective.dp_world_size
         eval_data = build_data_pipeline_dict(self.data_config.eval_datasets, **kwargs)
         eval_data = {
             k: (

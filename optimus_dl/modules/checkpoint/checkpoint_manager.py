@@ -169,7 +169,7 @@ class CheckpointManager:
         dcp_save(
             state_dict=state_dict,
             storage_writer=FileSystemWriter(checkpoint_id),
-            process_group=collective.global_process_group,
+            process_group=collective.process_group,
         )
 
         metadata_path = None
@@ -288,7 +288,7 @@ class CheckpointManager:
             dcp_load(
                 state_dict=state_dict,
                 storage_reader=FileSystemReader(checkpoint_path),
-                process_group=collective.global_process_group,
+                process_group=collective.process_group,
             )
 
         # Set the loaded state dicts
@@ -350,7 +350,12 @@ class CheckpointManager:
                 per_rank_metadata.pop(key)
 
         data_loaders = data_loaders or {}
-        for k, v in per_rank_metadata.get("data_loaders", {}).items():
+        data_loaders_states = [per_rank_metadata.get("data_loaders", {})]
+
+        # make sure all tp ranks have the same data_loaders_states
+        tp_world = collective.tp_world
+        tp_world.broadcast_objects(data_loaders_states, source_rank=0)
+        for k, v in data_loaders_states[0].items():
             if k in data_loaders:
                 logger.info(f"Restoring {k}")
                 data_loaders[k].load_state_dict(v)
@@ -358,7 +363,9 @@ class CheckpointManager:
                 logger.warning(f"Data loader {k} not found in current configuration")
 
         if "data_sources" in per_rank_metadata and data_sources is not None:
-            data_sources.load_state_dict(per_rank_metadata["data_sources"])
+            sources_states = [per_rank_metadata["data_sources"]]
+            tp_world.broadcast_objects(sources_states, source_rank=0)
+            data_sources.load_state_dict(sources_states[0])
             logger.info(
                 "Restoring data sources indipendently (without the full dataloader pipeline)"
             )

@@ -6,6 +6,7 @@ from optimus_dl.core.registry import RegistryConfig
 from optimus_dl.modules.checkpoint import CheckpointManagerConfig, LoadStrategy
 from optimus_dl.modules.criterion import CriterionConfig
 from optimus_dl.modules.data import DataConfig
+from optimus_dl.modules.distributed.config import DistributedConfig
 from optimus_dl.modules.loggers import MetricsLoggerConfig
 from optimus_dl.modules.model import ModelConfig
 from optimus_dl.modules.model_transforms import ModelTransformConfig
@@ -75,8 +76,10 @@ class TrainRecipeConfig:
         metadata={"help": "Strategy what to load from the checkpoint"},
     )
 
-    use_gpu: bool = field(
-        default=True, metadata={"help": "Use GPU (CUDA / MPS) if available"}
+    # Distributed
+    distributed: DistributedConfig = field(
+        default_factory=DistributedConfig,
+        metadata={"help": "Distributed training configuration (GPU, TP, etc.)"},
     )
 
 

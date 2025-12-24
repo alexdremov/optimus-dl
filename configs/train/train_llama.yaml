@@ -28,7 +28,6 @@ lr_scheduler:
 # Experiment configuration
 common:
   exp_name: ${args.name}
-  use_gpu: true
   log_freq: 50
   save_freq: 500
   eval_freq: 200

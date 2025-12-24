@@ -92,7 +92,8 @@ class EvalRecipe:
 
         # Build model
         collective = build_best_collective(
-            None if self.cfg.common.use_gpu else torch.device("cpu")
+            device=None if self.cfg.common.use_gpu else torch.device("cpu"),
+            tp_size=1,
         )
         model = self.build_eval_model(collective=collective)
 

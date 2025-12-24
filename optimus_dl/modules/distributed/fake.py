@@ -19,8 +19,33 @@ class FakeCollective(Collective):
 
     @property
     @override
+    def tp_world(self) -> "FakeCollective":
+        return self
+
+    @property
+    @override
     def local_rank(self):
         return self.rank
+
+    @property
+    @override
+    def dp_rank(self):
+        return self.rank
+
+    @property
+    @override
+    def dp_world_size(self):
+        return self.world_size
+
+    @property
+    @override
+    def tp_rank(self):
+        return self.rank
+
+    @property
+    @override
+    def tp_world_size(self):
+        return self.world_size
 
     @property
     @override
@@ -98,5 +123,5 @@ class FakeCollective(Collective):
 
     @property
     @override
-    def global_process_group(self) -> ProcessGroup | None:
+    def process_group(self) -> ProcessGroup | None:
         return None

@@ -85,7 +85,7 @@ class DDPTransform(BaseDistributedTransform):
         # Wrap with DDP
         ddp_model = DDPWrappedModel(
             model,
-            process_group=self.collective.global_process_group,
+            process_group=self.collective.process_group,
             device_ids=(
                 [self.collective.local_rank] if self.device.type == "cuda" else None
             ),
@@ -260,7 +260,7 @@ class FullyShardTransform(BaseDistributedTransform):
         if not isinstance(self.collective, MeshCollective):
             raise ValueError("Hybrid sharding requires MeshCollective")
 
-        world_size = self.collective.world_size
+        world_size = self.collective.world_size // self.collective.tp_world_size
 
         # Determine sharding world size
         if self.cfg.sharding_world_size is not None:
@@ -280,8 +280,8 @@ class FullyShardTransform(BaseDistributedTransform):
 
         # Create hybrid mesh: [replicate_dim, shard_dim]
         # This means: replicate across nodes, shard within nodes
-        mesh_shape = (replicate_size, shard_size)
-        mesh_dim_names = ("dp_replicate", "dp_shard")
+        mesh_shape = (replicate_size, shard_size, self.collective.tp_world_size)
+        mesh_dim_names = ("dp_replicate", "dp_shard", "tp")
 
         logger.info(
             f"Creating hybrid mesh with shape {mesh_shape}: {replicate_size} replicas x {shard_size} shards"
@@ -296,5 +296,6 @@ class FullyShardTransform(BaseDistributedTransform):
             mesh_shape=mesh_shape,
             mesh_dim_names=mesh_dim_names,
         )
+        custom_mesh = custom_mesh["dp_replicate", "dp_shard"]
 
         return custom_mesh

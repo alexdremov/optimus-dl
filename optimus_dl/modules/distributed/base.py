@@ -21,6 +21,10 @@ class Collective(ABC):
     def local(self) -> "Collective": ...
 
     @property
+    @abstractmethod
+    def tp_world(self) -> "Collective": ...
+
+    @property
     def is_master(self) -> bool:
         return self.rank == 0
 
@@ -31,6 +35,22 @@ class Collective(ABC):
     @property
     @abstractmethod
     def local_rank(self) -> int: ...
+
+    @property
+    @abstractmethod
+    def dp_rank(self) -> int: ...
+
+    @property
+    @abstractmethod
+    def dp_world_size(self) -> int: ...
+
+    @property
+    @abstractmethod
+    def tp_rank(self) -> int: ...
+
+    @property
+    @abstractmethod
+    def tp_world_size(self) -> int: ...
 
     @property
     @abstractmethod
@@ -71,4 +91,4 @@ class Collective(ABC):
 
     @property
     @abstractmethod
-    def global_process_group(self) -> ProcessGroup | None: ...
+    def process_group(self) -> ProcessGroup | None: ...

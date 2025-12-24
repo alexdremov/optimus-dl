@@ -30,7 +30,6 @@ lr_scheduler:
 # Experiment configuration
 common:
   exp_name: llama-shakespeare
-  use_gpu: true
   log_freq: 100
   save_freq: 500
   eval_freq: 200
