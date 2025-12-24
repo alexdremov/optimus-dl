@@ -71,7 +71,7 @@ RUN rm -rf /setup
 ENV OMP_NUM_THREADS=1
 CMD ["/bin/zsh"]
 
-FROM base as interactive
+FROM base AS interactive
 
 WORKDIR /setup
 COPY docker/requirements-dev.txt /setup/requirements-dev.txt
