@@ -14,7 +14,7 @@ _collective: Collective | None = None
 
 
 def build_best_collective(
-    device: torch.device | None = None, tp_size: int = 1
+    tp_size: int, device: torch.device | None = None
 ) -> Collective:
     global _collective
     if _collective is not None:
@@ -63,6 +63,7 @@ def build_best_collective(
             device_type = "cpu"
 
         collective = FakeCollective(rank=0, world_size=1, device_type=device_type)
+    logger.info(f"Built collective: {collective}")
     return collective
 
 

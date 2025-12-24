@@ -1,11 +1,11 @@
 defaults:
   - train_llama.yaml
-  - override model: llama2-1b
+  - override model: llama2-7b
   - _self_
 
 args:
   name: train-llama-efficient
-  batch_size: 64
+  batch_size: 1
   seq_len: 1024
 
 criterion:
@@ -15,6 +15,7 @@ criterion:
 # This wraps LlamaBlock modules with a checkpointing wrapper to reduce memory usage
 # allowing for larger batch sizes or training larger models (up to ~8B on single node A100s)
 model_transforms:
+  - _name: tensor_parallel
   - _name: activation_checkpoint
     layer_classes: ["LlamaAttention"]
     use_reentrant: false
