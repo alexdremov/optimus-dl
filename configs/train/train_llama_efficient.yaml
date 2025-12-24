@@ -1,10 +1,12 @@
 defaults:
   - train_llama.yaml
-  - override model: llama2-7b
+  - override model: llama2-1b
   - _self_
 
 args:
   name: train-llama-efficient
+  batch_size: 64
+  seq_len: 1024
 
 criterion:
   use_liger_kernel: true
@@ -14,13 +16,10 @@ criterion:
 # allowing for larger batch sizes or training larger models (up to ~8B on single node A100s)
 model_transforms:
   - _name: activation_checkpoint
-    layer_classes: ["LlamaBlock"]
+    layer_classes: ["LlamaAttention"]
     use_reentrant: false
   - _name: fully_shard
     reshard_after_forward: true
-    mixed_precision:
-      param_dtype: bfloat16
-      reduce_dtype: float32
   - _name: compile
     compile_kwargs:
       disable: false

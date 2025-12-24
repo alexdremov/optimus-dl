@@ -95,6 +95,11 @@ optimus_dl = ["py.typed"]
 [tool.setuptools_scm]
 write_to = "optimus_dl/_version.py"
 local_scheme = "no-local-version"
+version_file_template = '''
+version = "{version}"
+commit_hash = "{scm_version.node}"
+commit_count = {scm_version.distance}
+'''
 
 # Black configuration
 [tool.black]
