@@ -56,19 +56,53 @@ ENV PATH="/root/.local/bin/:$PATH"
 RUN uv venv -p=3.12 /app/venv
 ENV PATH="/app/venv/bin:$PATH"
 ARG UV_LINK_MODE=copy
-ENV UV_CACHE_DIR=/root/.cache/uv
+ENV UV_NO_CACHE=1
 
 COPY ./pyproject.toml /setup/optimus_dl/
 COPY ./optimus_dl /setup/optimus_dl/optimus_dl
-RUN --mount=type=cache,target=/root/.cache/uv \
-    cd /setup/optimus_dl/ && \
-    SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} uv pip install .[dev] \
-        --cache-dir /root/.cache/uv && \
+RUN cd /setup/optimus_dl/ && \
+    SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} uv pip install .[dev] --no-cache && \
     chmod -R 777 /app/venv
 
 WORKDIR /app
 RUN rm -rf /setup
 
+# Entrypoint
+ENV OMP_NUM_THREADS=1
+CMD ["/bin/zsh"]
+
+FROM base as interactive
+
+WORKDIR /setup
+COPY docker/requirements-dev.txt /setup/requirements-dev.txt
+RUN uv pip install -r /setup/requirements-dev.txt --no-cache
+
+RUN <<EOR
+    apt update
+    apt install -y ffmpeg libsm6 libxext6 psmisc
+EOR
+
+RUN curl https://getmic.ro | bash
+RUN mv ./micro /usr/local/bin/micro
+
+RUN grep -q '^/bin/fish$' /etc/shells; or echo '/bin/fish' | sudo tee -a /etc/shells
+ENV SHELL=/bin/fish
+SHELL ["/bin/fish", "-c"]
+RUN curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | source && fisher install jorgebucaran/fisher
+RUN fisher install IlanCosman/tide@v6
+RUN tide configure \
+    --auto \
+    --style=Lean \
+    --prompt_colors='True color' \
+    --show_time=No \
+    --lean_prompt_height='Two lines' \
+    --prompt_connection=Disconnected \
+    --prompt_spacing=Compact \
+    --icons='Few icons' \
+    --transient=No
+
+WORKDIR /app
+RUN rm -rf /setup
 # Entrypoint
 ENV OMP_NUM_THREADS=1
 CMD ["/bin/zsh"]
