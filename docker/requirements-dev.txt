@@ -9,6 +9,3 @@ joblib
 scipy
 ipywidgets
 tqdm
-mayavi
-PyQt5
-uv

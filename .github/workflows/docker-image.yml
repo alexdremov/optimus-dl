@@ -29,7 +29,9 @@ jobs:
         python-version: '3.11'
 
     - name: Install build
-      run: pip install build setuptools_scm
+      run: |
+        pip install build setuptools_scm
+        python -m setuptools_scm > /opt/version.txt
 
     - name: Login to Docker Hub
       uses: docker/login-action@v3
@@ -72,8 +74,8 @@ jobs:
 
     - name: Docker Build & Push Action
       run: |
-        export VERSION=$(python -m setuptools_scm)
-        echo "Building optimus-dl:${VERSION} and optimus-dl:latest..."
+        export VERSION=$(cat /opt/version.txt)
+        echo $VERSION
         docker buildx bake -f docker/docker-bake.hcl --print
         docker buildx bake -f docker/docker-bake.hcl \
           --allow network.host \
