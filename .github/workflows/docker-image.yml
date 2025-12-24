@@ -44,5 +44,5 @@ jobs:
         docker buildx bake -f docker/docker-bake.hcl \
           --allow network.host \
           --push \
-          --set *.cache-from=type=gha \
-          --set *.cache-to=type=gha,mode=max
+          --set *.cache-from=type=gha,ghtoken=${{ github.token }} \
+          --set *.cache-to=type=gha,mode=max,ghtoken=${{ github.token }}
