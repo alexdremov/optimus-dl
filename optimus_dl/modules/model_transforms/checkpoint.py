@@ -1,12 +1,16 @@
 """Activation checkpointing (gradient checkpointing) transform using public PyTorch API."""
 
-import logging
 import functools
+import logging
 from dataclasses import dataclass
 
-import torch.nn as nn
 import torch
-from torch.utils.checkpoint import checkpoint, create_selective_checkpoint_contexts, CheckpointPolicy
+import torch.nn as nn
+from torch.utils.checkpoint import (
+    CheckpointPolicy,
+    checkpoint,
+    create_selective_checkpoint_contexts,
+)
 
 from optimus_dl.modules.model.base import BaseModel
 from optimus_dl.modules.model_transforms import register_model_transform
@@ -33,12 +37,14 @@ class ActivationCheckpointConfig(ModelTransformConfig):
 class CheckpointWrapper(nn.Module):
     """Wraps a module to apply activation checkpointing during forward pass."""
 
-    def __init__(self, module: nn.Module, ops_to_save: list, use_reentrant: bool = False):
+    def __init__(
+        self, module: nn.Module, ops_to_save: list, use_reentrant: bool = False
+    ):
         super().__init__()
         self.module = module
         self.use_reentrant = use_reentrant
 
-        def policy_fn(ctx, op, *args, **kwargs):
+        def policy_fn(_, op, *__, **___):
             if op in ops_to_save:
                 return CheckpointPolicy.MUST_SAVE
             else:
@@ -54,8 +60,10 @@ class CheckpointWrapper(nn.Module):
             self.module,
             *args,
             use_reentrant=self.use_reentrant,
-            context_fn=functools.partial(create_selective_checkpoint_contexts, self.policy_fn),
-            **kwargs
+            context_fn=functools.partial(
+                create_selective_checkpoint_contexts, self.policy_fn
+            ),
+            **kwargs,
         )
 
 
@@ -82,10 +90,14 @@ class ActivationCheckpointTransform(BaseModelTransform):
 
         target_classes = set(self.cfg.layer_classes)
         ops_to_save = [
-            eval(op, {"__builtins__": None}, {"torch": torch}) for op in (self.cfg.ops_to_save or [])
+            eval(op, {"__builtins__": None}, {"torch": torch})
+            for op in (self.cfg.ops_to_save or [])
         ]
         replaced_count = self._replace_modules(
-            model, target_classes, use_reentrant=self.cfg.use_reentrant, ops_to_save=ops_to_save
+            model,
+            target_classes,
+            use_reentrant=self.cfg.use_reentrant,
+            ops_to_save=ops_to_save,
         )
 
         if replaced_count == 0:
@@ -98,7 +110,11 @@ class ActivationCheckpointTransform(BaseModelTransform):
         return model
 
     def _replace_modules(
-        self, model: nn.Module, target_classes: set, use_reentrant: bool, ops_to_save: list
+        self,
+        model: nn.Module,
+        target_classes: set,
+        use_reentrant: bool,
+        ops_to_save: list,
     ) -> int:
         """Recursively replace target modules with CheckpointWrapper."""
         count = 0
@@ -106,10 +122,14 @@ class ActivationCheckpointTransform(BaseModelTransform):
             if child.__class__.__name__ in target_classes:
                 # Replace the module
                 logger.debug(f"Wrapping {name} ({child.__class__.__name__})")
-                wrapped_child = CheckpointWrapper(child, use_reentrant=use_reentrant, ops_to_save=ops_to_save)
+                wrapped_child = CheckpointWrapper(
+                    child, use_reentrant=use_reentrant, ops_to_save=ops_to_save
+                )
                 setattr(model, name, wrapped_child)
                 count += 1
             else:
                 # Recurse
-                count += self._replace_modules(child, target_classes, use_reentrant, ops_to_save)
+                count += self._replace_modules(
+                    child, target_classes, use_reentrant, ops_to_save
+                )
         return count

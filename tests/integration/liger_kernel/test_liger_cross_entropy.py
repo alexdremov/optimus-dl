@@ -23,13 +23,17 @@ class TestLigerCrossEntropyEquivalence(unittest.TestCase):
         self.base_cfg = CrossEntropyCriterionConfig(
             _name="cross_entropy", label_smoothing=0.1, use_liger_kernel=False
         )
-        self.base_criterion = CrossEntropyCriterion(self.base_cfg, collective=FakeCollective(0, 1))
+        self.base_criterion = CrossEntropyCriterion(
+            self.base_cfg, collective=FakeCollective(0, 1)
+        )
 
         # Liger Kernel implementation
         self.liger_cfg = CrossEntropyCriterionConfig(
             _name="cross_entropy", label_smoothing=0.1, use_liger_kernel=True
         )
-        self.liger_criterion = CrossEntropyCriterion(self.liger_cfg, collective=FakeCollective(0, 1))
+        self.liger_criterion = CrossEntropyCriterion(
+            self.liger_cfg, collective=FakeCollective(0, 1)
+        )
 
     def test_loss_equivalence(self):
         """Test that Liger CrossEntropy produces same loss as PyTorch implementation."""

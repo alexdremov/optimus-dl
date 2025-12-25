@@ -20,13 +20,13 @@ from dataclasses import dataclass, field
 
 import torch
 import torch.nn as nn
+from torch.distributed.tensor import DTensor, Shard
 from torch.nn import functional as F
 
 from optimus_dl.modules.model import register_model
 from optimus_dl.modules.model.blocks.attention import CausalSelfAttention
 from optimus_dl.modules.model.blocks.layer_norms import RMSNorm
 from optimus_dl.modules.model.gpt2 import GPT, GPTConfig
-from torch.distributed.tensor import DTensor
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,10 @@ def _reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor) -> torch.Te
     """
     ndim = x.ndim
     assert 1 < ndim
-    assert freqs_cis.shape[:-1] == (x.shape[1], x.shape[-2])
+    assert freqs_cis.shape[:-1] == (
+        x.shape[1],
+        x.shape[-2],
+    ), f"{freqs_cis.shape = }, {x.shape = }"
     # New shape for broadcasting
     shape = [
         1 if i != 1 and i != ndim - 2 else d for i, d in enumerate(x.shape[:-1])
@@ -182,6 +185,7 @@ class LlamaAttention(CausalSelfAttention):
 
     def forward(self, x, freqs_cis):
         B, T, C = x.size()
+        print(x.shape)
 
         # (B, T, n_head * head_dim)
         xq = self.wq(x)
@@ -214,6 +218,17 @@ class LlamaAttention(CausalSelfAttention):
                 .reshape(B, self.n_head, T, self.head_dim)
             )
 
+        force_make_dtensor = False
+        force_make_dtensor_mesh = None
+        if str(xq.device.type) == "cpu" and isinstance(xq, DTensor):
+            force_make_dtensor_mesh = xq.device_mesh
+            assert isinstance(xk, DTensor)
+            assert isinstance(xv, DTensor)
+            xq = xq.to_local()
+            xk = xk.to_local()
+            xv = xv.to_local()
+            force_make_dtensor = True
+
         if self.flash:
             # efficient attention using Flash Attention CUDA kernels
             y = torch.nn.functional.scaled_dot_product_attention(
@@ -226,6 +241,9 @@ class LlamaAttention(CausalSelfAttention):
             att = F.softmax(att, dim=-1)
             att = self.attn_dropout(att)
             y = att @ xv
+
+        if force_make_dtensor and not isinstance(y, DTensor):
+            y = DTensor.from_local(y, force_make_dtensor_mesh, (Shard(1),))
 
         # (B, T, n_head * head_dim)
         y = y.transpose(1, 2).contiguous().view(B, T, C)
@@ -248,7 +266,10 @@ class LlamaBlock(nn.Module):
         self.mlp = LlamaMLP(config)
 
     def forward(self, x, freqs_cis):
-        x = x + self.attn(self.ln_1(x), freqs_cis)
+        print("pre ln:", x.shape)
+        ln_1 = self.ln_1(x)
+        print("post ln:", x.shape)
+        x = x + self.attn(ln_1, freqs_cis)
         x = x + self.mlp(self.ln_2(x))
         return x
 
@@ -295,20 +316,19 @@ class Llama(GPT):
                     p, mean=0.0, std=0.02 / math.sqrt(2 * config.n_layer)
                 )
 
-    def apply_tp(self, mesh, sequence_parallel: bool=False):
-        if sequence_parallel:
-            self._apply_tp_sp(mesh)
-        else:
-            self._apply_tp(mesh)
-
-    def _apply_tp(self, mesh):
+    def apply_tp(
+        self, mesh, sequence_parallel: bool = False, loss_parallel: bool = False
+    ):
         from torch.distributed.tensor.parallel import (
             ColwiseParallel,
             PrepareModuleInput,
+            PrepareModuleOutput,
             RowwiseParallel,
+            SequenceParallel,
             parallelize_module,
         )
-        from torch.distributed.tensor.placement_types import Replicate, Shard
+        from torch.distributed.tensor.placement_types import Replicate
+
         layer_plan = {
             "transformer.wte": RowwiseParallel(
                 input_layouts=Replicate(),
@@ -322,65 +342,45 @@ class Llama(GPT):
             "transformer.h.*.mlp.c_proj": RowwiseParallel(),
             "lm_head": ColwiseParallel(use_local_output=False),
         }
+        if sequence_parallel:
+            layer_plan["transformer.h.*.ln_1"] = SequenceParallel()
+            layer_plan["transformer.h.*.ln_2"] = SequenceParallel()
+            layer_plan["transformer.h.*.attn"] = PrepareModuleInput(
+                input_layouts=(Shard(1), Replicate()),
+                desired_input_layouts=(Replicate(), Replicate()),
+            )
+            layer_plan["transformer.wte"] = RowwiseParallel(
+                input_layouts=Replicate(), output_layouts=Shard(1)
+            )
+            layer_plan["transformer.ln_f"] = SequenceParallel()
+            layer_plan["transformer.h.*.attn.wo"] = RowwiseParallel(
+                output_layouts=Shard(1)
+            )
+            layer_plan["transformer.h.*.mlp.c_proj"] = RowwiseParallel(
+                output_layouts=Shard(1)
+            )
+            layer_plan["lm_head"] = ColwiseParallel(
+                input_layouts=Shard(1),
+                output_layouts=Replicate(),
+                use_local_output=False,
+            )
+
         parallelize_module(self, mesh, layer_plan)
 
         if self.config.tie_word_embeddings:
             # re-tie
-            self.transformer.wte.weight = (
-                self.lm_head.weight
+            self.transformer.wte.weight = self.lm_head.weight
+
+        if not loss_parallel:
+            parallelize_module(
+                self.lm_head,
+                mesh,
+                PrepareModuleOutput(
+                    output_layouts=Shard(2),
+                    desired_output_layouts=Replicate(),
+                    use_local_output=True,
+                ),
             )
-
-    def _apply_tp_sp(self, mesh):
-        from torch.distributed.tensor.parallel import (
-            ColwiseParallel,
-            PrepareModuleInput,
-            PrepareModuleOutput,
-            RowwiseParallel,
-            SequenceParallel,
-            parallelize_module,
-        )
-        from torch.distributed.tensor.placement_types import Replicate, Shard
-        layer_plan = {
-            "transformer.h.*.ln_1": SequenceParallel(),
-            "transformer.h.*.ln_2": SequenceParallel(),
-            "transformer.h.*.attn": PrepareModuleInput(
-                input_layouts=(Shard(1), None),
-                desired_input_layouts=(Replicate(), None),
-            ),
-            "transformer.h.*.attn.wq": ColwiseParallel(use_local_output=False),
-            "transformer.h.*.attn.wk": ColwiseParallel(use_local_output=False),
-            "transformer.h.*.attn.wv": ColwiseParallel(use_local_output=False),
-            "transformer.h.*.attn.wo": RowwiseParallel(output_layouts=Shard(1)),
-            "transformer.h.*.mlp": PrepareModuleInput(
-                input_layouts=(Shard(1),),
-                desired_input_layouts=(Replicate(),),
-            ),
-            "transformer.h.*.mlp.w1": ColwiseParallel(use_local_output=False),
-            "transformer.h.*.mlp.w2": ColwiseParallel(use_local_output=False),
-            "transformer.h.*.mlp.c_proj": RowwiseParallel(output_layouts=Shard(1)),
-            "transformer.ln_f": SequenceParallel(),
-            "transformer.wte": ColwiseParallel(
-                input_layouts=Replicate(),
-                output_layouts=Shard(1),  # shard vocab dim
-            ),
-            "lm_head": RowwiseParallel(input_layouts=Shard(1)),
-        }
-
-        if self.config.tie_word_embeddings:
-            # re-tie
-            self.transformer.wte.weight = (
-                self.lm_head.weight
-            )
-
-        parallelize_module(
-            module=self.lm_head,
-            device_mesh=mesh,
-            parallelize_plan=PrepareModuleOutput(
-                output_layouts=Shard(1),
-                desired_output_layouts=Replicate(),
-            )
-        )
-
 
     def forward(self, input_ids, **kwargs):
         idx = input_ids

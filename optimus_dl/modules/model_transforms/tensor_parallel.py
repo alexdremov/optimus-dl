@@ -1,7 +1,7 @@
 """Tensor Parallelism Transform."""
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from optimus_dl.modules.distributed import Collective
 from optimus_dl.modules.distributed.mesh import MeshCollective
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class TensorParallelConfig(ModelTransformConfig):
     """Configuration for Tensor Parallelism."""
 
-    pass
+    custom_model_kwargs: dict = field(default_factory=dict)
 
 
 @register_model_transform("tensor_parallel", TensorParallelConfig)
@@ -46,7 +46,7 @@ class TensorParallelTransform(BaseModelTransform):
         logger.info(f"Applying Tensor Parallelism with mesh: {tp_mesh}")
 
         # Get the parallelization plan from the model
-        model.apply_tp(tp_mesh)
+        model.apply_tp(tp_mesh, **self.cfg.custom_model_kwargs)
 
         logger.info("Tensor Parallelism applied successfully.")
         return model

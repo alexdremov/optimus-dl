@@ -1,8 +1,6 @@
 import logging
 from dataclasses import dataclass, field
 
-import torch
-
 from optimus_dl.modules.model.base import BaseModel
 from optimus_dl.modules.model_transforms import register_model_transform
 from optimus_dl.modules.model_transforms.base import BaseModelTransform
@@ -25,7 +23,7 @@ class CompileTransformConfig(ModelTransformConfig):
         default=None,
         metadata={
             "help": "Activation memory budget for torch.compile. See https://pytorch.org/blog/activation-checkpointing-techniques/"
-        }
+        },
     )
 
 
@@ -46,7 +44,9 @@ class CompileTransform(BaseModelTransform):
         import torch._functorch.config
 
         compile_kwargs = self.cfg.compile_kwargs if self.cfg else {}
-        torch._functorch.config.activation_memory_budget = self.cfg.activation_memory_budget
+        torch._functorch.config.activation_memory_budget = (
+            self.cfg.activation_memory_budget
+        )
 
         logger.info(f"Applying torch.compile with args: {compile_kwargs}")
         model = torch.compile(model, **compile_kwargs)

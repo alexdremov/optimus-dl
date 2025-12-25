@@ -37,6 +37,7 @@ class GPTConfig(RegistryConfig):
     dropout: float = 0.0
     bias: bool = True
     tie_word_embeddings: bool = True
+    force_disable_flash: bool = False
     shard_every_ith_layer: int = (
         1  # Shard every i-th layer, 1 means all layers are sharded (if global reshard_after_forward is True)
     )

@@ -260,7 +260,9 @@ class TrainRecipe(
                 config=self.cfg.common.distributed
             )
 
-            logger.info("Setting up console logging. Will log from master only from now.")
+            logger.info(
+                "Setting up console logging. Will log from master only from now."
+            )
             if not collective.is_master:
                 setup_logging(logging.WARNING)
 
@@ -270,9 +272,7 @@ class TrainRecipe(
 
             optimizer: Optimizer = self.build_optimizer(model.make_parameter_groups())
             lr_scheduler = self.build_lr_scheduler(optimizer)
-            criterion: BaseCriterion = self.build_criterion(
-                collective=collective
-            )
+            criterion: BaseCriterion = self.build_criterion(collective=collective)
 
             # Setup training context (AMP, scaler, etc.) using recipe mixin
             training_context = self.setup_training_context(device)

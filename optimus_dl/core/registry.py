@@ -99,8 +99,7 @@ def make_registry(registry_name: str, base_class: type | None = None):
         registered_class, structured_cfg = registry[name]
         if type(structured_cfg) is type:
             structured_cfg = omegaconf.OmegaConf.merge(
-                omegaconf.OmegaConf.structured(structured_cfg),
-                structured_cfg()
+                omegaconf.OmegaConf.structured(structured_cfg), structured_cfg()
             )
         if structured_cfg is not None:
             cfg = omegaconf.OmegaConf.merge(

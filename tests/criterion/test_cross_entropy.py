@@ -138,8 +138,12 @@ class TestCrossEntropyCriterion:
         config_no_smooth = CrossEntropyCriterionConfig(label_smoothing=0.0)
         config_smooth = CrossEntropyCriterionConfig(label_smoothing=0.1)
 
-        criterion_no_smooth = CrossEntropyCriterion(config_no_smooth, collective=FakeCollective(0, 1))
-        criterion_smooth = CrossEntropyCriterion(config_smooth, collective=FakeCollective(0, 1))
+        criterion_no_smooth = CrossEntropyCriterion(
+            config_no_smooth, collective=FakeCollective(0, 1)
+        )
+        criterion_smooth = CrossEntropyCriterion(
+            config_smooth, collective=FakeCollective(0, 1)
+        )
 
         # Same setup for both
         batch_size, seq_len, vocab_size = 1, 3, 10

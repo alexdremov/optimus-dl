@@ -1,8 +1,10 @@
-from contextlib import nullcontext
 import logging
+from contextlib import nullcontext
 from dataclasses import dataclass
 
 import torch
+from torch.distributed.tensor import DTensor, Shard
+from torch.distributed.tensor.parallel import loss_parallel
 
 from optimus_dl.core.registry import RegistryConfig
 from optimus_dl.modules.criterion import BaseCriterion, register_criterion
@@ -14,8 +16,6 @@ from optimus_dl.modules.metrics import (
     log_averaged_exponent,
     log_summed,
 )
-from torch.distributed.tensor import DTensor, Shard
-from torch.distributed.tensor.parallel import loss_parallel
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,9 @@ class CrossEntropyCriterionConfig(RegistryConfig):
 
 @register_criterion("cross_entropy", CrossEntropyCriterionConfig)
 class CrossEntropyCriterion(BaseCriterion):
-    def __init__(self, cfg: CrossEntropyCriterionConfig, collective: Collective, **kwargs):
+    def __init__(
+        self, cfg: CrossEntropyCriterionConfig, collective: Collective, **kwargs
+    ):
         self.cfg = cfg
         self.collective = collective
         self._liger_available = False
@@ -55,7 +57,9 @@ class CrossEntropyCriterion(BaseCriterion):
         logits = model_out["logits"]
         is_dtensor = isinstance(logits, DTensor)
 
-        valid_tokens = cached_lambda(lambda: (targets >= 0).sum().item() / self.collective.tp_world_size)
+        valid_tokens = cached_lambda(
+            lambda: (targets >= 0).sum().item() / self.collective.tp_world_size
+        )
 
         log_averaged(
             "accuracy",
@@ -83,7 +87,10 @@ class CrossEntropyCriterion(BaseCriterion):
                 ignore_index=-100,
             )
         else:
-            with torch.autocast(targets.device.type, enabled=False), (loss_parallel() if is_dtensor else nullcontext()):
+            with (
+                torch.autocast(targets.device.type, enabled=False),
+                loss_parallel() if is_dtensor else nullcontext(),
+            ):
                 loss = torch.nn.functional.cross_entropy(
                     input=logits.view(-1, logits.size(-1)).float(),
                     target=targets,
@@ -116,13 +123,13 @@ class CrossEntropyCriterion(BaseCriterion):
             maxes_values_distr = DTensor.from_local(
                 maxes.values,
                 device_mesh=self.collective.tp_mesh,
-                placements=(Shard(1),)
+                placements=(Shard(1),),
             ).full_tensor()
-            tok_shift = (self.collective.tp_rank * local_logits.size(-1))
+            tok_shift = self.collective.tp_rank * local_logits.size(-1)
             maxes_index_distr = DTensor.from_local(
                 maxes.indices + tok_shift,
                 device_mesh=self.collective.tp_mesh,
-                placements=(Shard(1),)
+                placements=(Shard(1),),
             ).full_tensor()
 
             max_total = torch.max(maxes_values_distr, -1, keepdim=True)
