@@ -34,6 +34,6 @@ def setup_device_and_collective(config: DistributedConfig) -> DeviceSetup:
     device = torch.device("cpu")
     if config.use_gpu:
         device = get_best_device()
-    collective = build_best_collective(device=device, config)
+    collective = build_best_collective(config=config, device=device)
     device = collective.default_device
     return DeviceSetup(device=device, collective=collective)

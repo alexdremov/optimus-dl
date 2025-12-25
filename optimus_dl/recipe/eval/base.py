@@ -8,6 +8,7 @@ import torch
 from optimus_dl.modules.checkpoint import CheckpointManager
 from optimus_dl.modules.distributed import build_best_collective
 from optimus_dl.modules.distributed.base import Collective
+from optimus_dl.modules.distributed.config import DistributedConfig
 from optimus_dl.modules.eval import LLMBaselinesModel
 from optimus_dl.modules.tokenizer import build_tokenizer  # New import
 from optimus_dl.recipe.eval.config import EvalConfig
@@ -93,7 +94,7 @@ class EvalRecipe:
         # Build model
         collective = build_best_collective(
             device=None if self.cfg.common.use_gpu else torch.device("cpu"),
-            tp_size=1,
+            config=DistributedConfig(use_gpu=self.cfg.common.use_gpu),
         )
         model = self.build_eval_model(collective=collective)
 

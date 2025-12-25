@@ -257,7 +257,7 @@ class TrainRecipe(
 
             # Setup device and distributed collective
             device, collective = setup_device_and_collective(
-                self.cfg.common.distributed
+                config=self.cfg.common.distributed
             )
 
             if not collective.is_master:

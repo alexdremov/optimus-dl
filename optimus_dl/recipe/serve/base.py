@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from pydantic import ValidationError
 
 from optimus_dl.modules.distributed import build_best_collective
+from optimus_dl.modules.distributed.config import DistributedConfig
 from optimus_dl.modules.tokenizer import build_tokenizer
 from optimus_dl.recipe.mixins import ModelBuilder
 from optimus_dl.recipe.serve.config import ServeConfig
@@ -209,7 +210,7 @@ class ServeRecipe:
         # Build collective for potential distributed init
         collective = build_best_collective(
             device=None if self.device.type == "cuda" else torch.device("cpu"),
-            tp_size=1,
+            config=DistributedConfig(use_gpu=True),
         )
 
         assert (self.cfg.common.checkpoint_path is not None) ^ (
