@@ -1,5 +1,4 @@
 import os
-import sys
 
 import torch
 import torch.distributed as dist
@@ -31,7 +30,7 @@ def _run_sharding_test(rank, world_size, config: LlamaConfig):
         dist.destroy_process_group()
 
 
-def _run_test_full_tensor_parallel(rank, world_size, config: LlamaConfig, sp):
+def _run_test_full_tensor_parallel(rank, world_size, config: LlamaConfig):
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "29500"
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
@@ -41,7 +40,7 @@ def _run_test_full_tensor_parallel(rank, world_size, config: LlamaConfig, sp):
         model = Llama(config)
 
         mesh = init_device_mesh("cpu", (world_size,))
-        model.apply_tp(mesh, sequence_parallel=sp)
+        model.apply_tp(mesh)
 
         input_ids = torch.randint(0, config.vocab_size, (7, 32))
 
@@ -58,7 +57,7 @@ def _run_test_full_tensor_parallel(rank, world_size, config: LlamaConfig, sp):
         ].shape
 
         model = Llama(config)
-        model.apply_tp(mesh, loss_parallel=True, sequence_parallel=sp)
+        model.apply_tp(mesh, loss_parallel=True)
         output = model(input_ids)
 
         assert isinstance(output["logits"], DTensor), output["logits"]
@@ -99,11 +98,10 @@ class TestLlamaTP:
         config = LlamaConfig(
             n_embd=64, n_head=4, n_layer=1, vocab_size=256, force_disable_flash=True
         )
-        for sp in [False, True]:
-            print("Sequence Parallel:", sp, file=sys.stderr)
-            mp.spawn(
-                _run_test_full_tensor_parallel,
-                args=(world_size, config, sp),
-                nprocs=world_size,
-                join=True,
-            )
+
+        mp.spawn(
+            _run_test_full_tensor_parallel,
+            args=(world_size, config),
+            nprocs=world_size,
+            join=True,
+        )

@@ -316,15 +316,11 @@ class Llama(GPT):
                     p, mean=0.0, std=0.02 / math.sqrt(2 * config.n_layer)
                 )
 
-    def apply_tp(
-        self, mesh, sequence_parallel: bool = False, loss_parallel: bool = False
-    ):
+    def apply_tp(self, mesh, loss_parallel: bool = False):
         from torch.distributed.tensor.parallel import (
             ColwiseParallel,
-            PrepareModuleInput,
             PrepareModuleOutput,
             RowwiseParallel,
-            SequenceParallel,
             parallelize_module,
         )
         from torch.distributed.tensor.placement_types import Replicate
@@ -342,29 +338,6 @@ class Llama(GPT):
             "transformer.h.*.mlp.c_proj": RowwiseParallel(),
             "lm_head": ColwiseParallel(use_local_output=False),
         }
-        if sequence_parallel:
-            layer_plan["transformer.h.*.ln_1"] = SequenceParallel()
-            layer_plan["transformer.h.*.ln_2"] = SequenceParallel()
-            layer_plan["transformer.h.*.attn"] = PrepareModuleInput(
-                input_layouts=(Shard(1), Replicate()),
-                desired_input_layouts=(Replicate(), Replicate()),
-            )
-            layer_plan["transformer.wte"] = RowwiseParallel(
-                input_layouts=Replicate(), output_layouts=Shard(1)
-            )
-            layer_plan["transformer.ln_f"] = SequenceParallel()
-            layer_plan["transformer.h.*.attn.wo"] = RowwiseParallel(
-                output_layouts=Shard(1)
-            )
-            layer_plan["transformer.h.*.mlp.c_proj"] = RowwiseParallel(
-                output_layouts=Shard(1)
-            )
-            layer_plan["lm_head"] = ColwiseParallel(
-                input_layouts=Shard(1),
-                output_layouts=Replicate(),
-                use_local_output=False,
-            )
-
         parallelize_module(self, mesh, layer_plan)
 
         if self.config.tie_word_embeddings:
