@@ -2,6 +2,8 @@ from typing import Any, NamedTuple
 
 import torch
 
+from optimus_dl.modules.distributed.config import DistributedConfig
+
 
 class DeviceSetup(NamedTuple):
     device: torch.device
@@ -18,7 +20,7 @@ def get_best_device():
     return torch.device("cpu")
 
 
-def setup_device_and_collective(use_gpu: bool, tp_size: int) -> DeviceSetup:
+def setup_device_and_collective(config: DistributedConfig) -> DeviceSetup:
     """Setup device and distributed collective.
 
     Args:
@@ -30,8 +32,8 @@ def setup_device_and_collective(use_gpu: bool, tp_size: int) -> DeviceSetup:
     from optimus_dl.modules.distributed import build_best_collective
 
     device = torch.device("cpu")
-    if use_gpu:
+    if config.use_gpu:
         device = get_best_device()
-    collective = build_best_collective(device=device, tp_size=tp_size)
+    collective = build_best_collective(device=device, config)
     device = collective.default_device
     return DeviceSetup(device=device, collective=collective)

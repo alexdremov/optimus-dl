@@ -29,6 +29,7 @@ class MeshCollective(Collective):
         mesh: Meshes | None = None,
         process_group=None,
         tp_size: int = 1,
+        sharding_world_size: int | None = None,
     ) -> None:
         super().__init__(rank, world_size)
         assert world_size % local_world_size == 0
@@ -50,26 +51,28 @@ class MeshCollective(Collective):
             # dp_shard: intra-node data parallelism
             # dp_replicate: inter-node data parallelism
 
-            if tp_size > local_world_size:
-                # TP spans across nodes. This is rare and usually slow, but valid.
-                # Fallback to simple (dp, tp) mesh.
-                logger.warning(
-                    f"TP size ({tp_size}) > Local World Size ({local_world_size}). Using 2D (dp, tp) mesh."
-                )
-                mesh_dims = (world_size // tp_size, tp_size)
-                mesh_names = ("dp", "tp")
-            elif local_world_size % tp_size != 0:
+            if local_world_size % tp_size != 0:
                 raise ValueError(
-                    f"Local world size ({local_world_size}) must be divisible by tp_size ({tp_size}) for efficient intra-node TP."
+                    f"Local world size ({local_world_size}) must be divisible by tp_size ({tp_size})."
                 )
-            else:
-                # Standard Case: TP is within node.
-                # Calculate dimension sizes
-                replicate_size = world_size // local_world_size  # Number of nodes
-                shard_size = local_world_size // tp_size  # DP groups per node
 
-                mesh_dims = (replicate_size, shard_size, tp_size)
-                mesh_names = ("dp_replicate", "dp_shard", "tp")
+            sharding_world_size = sharding_world_size or (local_world_size // tp_size)
+            if world_size % (sharding_world_size * tp_size) != 0:
+                raise ValueError(
+                    f"World size ({world_size}) must be divisible by ({sharding_world_size * tp_size = })"
+                )
+
+            # Standard Case: TP is within node.
+            # Calculate dimension sizes
+            replicate_size = world_size // (sharding_world_size * tp_size)
+            shard_size = sharding_world_size
+
+            mesh_dims = (replicate_size, shard_size, tp_size)
+            mesh_names = ("dp_replicate", "dp_shard", "tp")
+
+            assert (
+                replicate_size * shard_size * tp_size == world_size
+            ), "Invalid mesh dimensions"
 
             mesh_device_type = "cpu"
             if device_type == "cuda":
@@ -138,6 +141,12 @@ class MeshCollective(Collective):
         if "tp" in self._mesh.parallel_mesh.mesh_dim_names:
             return self._mesh.parallel_mesh["tp"]
         return None
+
+    @property
+    def dp_mesh(self):
+        """Returns the sub-mesh for Data Parallelism if it exists."""
+        assert self._mesh.physical_mesh.mesh_dim_names is not None
+        return self._mesh.parallel_mesh["dp_replicate", "dp_shard"]
 
     @property
     @override

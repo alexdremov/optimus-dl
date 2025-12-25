@@ -5,6 +5,7 @@ import torch
 
 from optimus_dl.core.bootstrap import bootstrap_module
 from optimus_dl.modules.distributed.base import Collective
+from optimus_dl.modules.distributed.config import DistributedConfig
 from optimus_dl.modules.distributed.fake import FakeCollective
 from optimus_dl.modules.distributed.mesh import MeshCollective
 
@@ -14,7 +15,7 @@ _collective: Collective | None = None
 
 
 def build_best_collective(
-    tp_size: int, device: torch.device | None = None
+    config: DistributedConfig, device: torch.device | None = None
 ) -> Collective:
     global _collective
     if _collective is not None:
@@ -49,7 +50,9 @@ def build_best_collective(
             local_world_size=int(os.environ["LOCAL_WORLD_SIZE"]),
             local_rank=int(os.environ["LOCAL_RANK"]),
             device_type=device_type,
-            tp_size=tp_size,
+            tp_size=config.tp_size,
+            sharding_world_size=config.sharding_world_size,
+
         )
     else:
         # Pass device_type to FakeCollective as well

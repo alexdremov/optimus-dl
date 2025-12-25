@@ -132,10 +132,7 @@ class FullyShardTransformConfig(ModelTransformConfig):
     # Offloading configuration
     offload: OffloadConfig | None = None
     # Whether to use hybrid sharding (HSDP): shard within nodes, replicate across nodes
-    use_hybrid_sharding: bool = False
-    # World size for sharding dimension (typically one node size, e.g., 8 for 8 GPUs per node)
-    # Only relevant when use_hybrid_sharding=True
-    sharding_world_size: int | None = None
+    use_hybrid_sharding: bool = True
 
 
 @register_model_transform("fully_shard", FullyShardTransformConfig)
@@ -150,12 +147,7 @@ class FullyShardTransform(BaseDistributedTransform):
         **kwargs,
     ):
         super().__init__(cfg, collective, device, **kwargs)
-
-        # Initialize mesh during construction
-        if self.cfg.use_hybrid_sharding:
-            self.mesh = self._create_hybrid_mesh()
-        else:
-            self.mesh = None
+        self.mesh = self._create_hybrid_mesh()
 
     def apply(self, model: BaseModel, **kwargs) -> BaseModel:
         if self.collective.world_size <= 1:
@@ -260,42 +252,7 @@ class FullyShardTransform(BaseDistributedTransform):
         if not isinstance(self.collective, MeshCollective):
             raise ValueError("Hybrid sharding requires MeshCollective")
 
-        world_size = self.collective.world_size // self.collective.tp_world_size
-
-        # Determine sharding world size
-        if self.cfg.sharding_world_size is not None:
-            shard_size = self.cfg.sharding_world_size
-        else:
-            # Default to local world size (one node) - get from MeshCollective
-            shard_size = self.collective._local_world_size
-
-        # Validate sharding world size
-        if world_size % shard_size != 0:
-            raise ValueError(
-                f"World size ({world_size}) must be divisible by sharding world size ({shard_size})"
-            )
-
-        # Calculate replicate dimension size
-        replicate_size = world_size // shard_size
-
-        # Create hybrid mesh: [replicate_dim, shard_dim]
-        # This means: replicate across nodes, shard within nodes
-        mesh_shape = (replicate_size, shard_size, self.collective.tp_world_size)
-        mesh_dim_names = ("dp_replicate", "dp_shard", "tp")
-
-        logger.info(
-            f"Creating hybrid mesh with shape {mesh_shape}: {replicate_size} replicas x {shard_size} shards"
-        )
-
-        # Get device type from the device
-        device_type = self.device.type
-
-        # Create the custom mesh
-        custom_mesh = init_device_mesh(
-            device_type=device_type,
-            mesh_shape=mesh_shape,
-            mesh_dim_names=mesh_dim_names,
-        )
-        custom_mesh = custom_mesh["dp_replicate", "dp_shard"]
-
-        return custom_mesh
+        mesh = self.collective.dp_mesh
+        if not self.cfg.use_hybrid_sharding:
+            mesh = mesh._flatten()
+        return mesh
