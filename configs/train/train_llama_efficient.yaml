@@ -1,27 +1,25 @@
+# 7b Llama training on one node with 8xA100 80GB
+# global batch size ~2M
+
 defaults:
   - train_llama.yaml
-  - override model: llama2
+  - override model: llama2-7b
   - _self_
 
 args:
   name: train-llama-efficient
-  batch_size: 16
-  seq_len: 1024
+  batch_size: 2
+  seq_len: 4096
 
 common:
-  distributed:
-    tp_size: 2
+  log_freq: 5
 
 optimization:
-  clip_grad_norm: null
+  acc_steps: 32
 
-# Add activation checkpointing to the model transforms
-# This wraps LlamaBlock modules with a checkpointing wrapper to reduce memory usage
-# allowing for larger batch sizes or training larger models (up to ~8B on single node A100s)
 model_transforms:
-  - _name: tensor_parallel
-  - _name: activation_checkpoint
-    layer_classes: ["LlamaAttention"]
-    use_reentrant: false
   - _name: fully_shard
-    reshard_after_forward: true
+    sync_grad_accum: false
+
+  - _name: compile
+    activation_memory_budget: 0.3

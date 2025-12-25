@@ -263,7 +263,7 @@ class TrainingIterationMixin:
         if hasattr(model, "accumulation_context"):
             ctx = model.accumulation_context(is_last_microbatch=is_last_microbatch)
             if not is_last_microbatch:
-                warn_once(logger, f"Using accumulation context: {ctx}")
+                warn_once(logger, f"Using accumulation context")
             return ctx
         else:
             warn_once(logger, "Model does not support accumulation context, skipping")

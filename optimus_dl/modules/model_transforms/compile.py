@@ -21,6 +21,12 @@ class CompileTransformConfig(ModelTransformConfig):
             "help": "Arguments for torch.compile. See https://pytorch.org/docs/stable/generated/torch.compile.html"
         },
     )
+    activation_memory_budget: float | None = field(
+        default=None,
+        metadata={
+            "help": "Activation memory budget for torch.compile. See https://pytorch.org/blog/activation-checkpointing-techniques/"
+        }
+    )
 
 
 @register_model_transform("compile", CompileTransformConfig)
@@ -37,7 +43,10 @@ class CompileTransform(BaseModelTransform):
         Returns:
             The model with compiled forward method
         """
+        import torch._functorch.config
+
         compile_kwargs = self.cfg.compile_kwargs if self.cfg else {}
+        torch._functorch.config.activation_memory_budget = self.cfg.activation_memory_budget
 
         logger.info(f"Applying torch.compile with args: {compile_kwargs}")
         model = torch.compile(model, **compile_kwargs)

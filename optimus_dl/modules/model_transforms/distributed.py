@@ -125,13 +125,15 @@ class FullyShardTransformConfig(ModelTransformConfig):
     """Configuration for FSDP2 (fully_shard) transform."""
 
     # Whether to reshard parameters after forward pass
-    reshard_after_forward: bool | int = True
+    reshard_after_forward: bool | int = False
     # Mixed precision configuration
     mixed_precision: MixedPrecisionConfig | None = None
     # Offloading configuration
     offload: OffloadConfig | None = None
     # Whether to use hybrid sharding (HSDP): shard within nodes, replicate across nodes
     use_hybrid_sharding: bool = True
+
+    sync_grad_accum: bool = False
 
 
 @register_model_transform("fully_shard", FullyShardTransformConfig)
@@ -216,6 +218,11 @@ class FullyShardTransform(BaseDistributedTransform):
 
         @contextmanager
         def accumulation_context(is_last_microbatch):
+            if self.cfg.sync_grad_accum:
+                fsdp_model.set_requires_gradient_sync(True)
+                yield
+                return
+
             if is_last_microbatch:
                 fsdp_model.set_requires_gradient_sync(True)
             else:

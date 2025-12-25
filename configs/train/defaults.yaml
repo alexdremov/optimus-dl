@@ -9,3 +9,7 @@ hydra:
     dir: .
   job_logging:
     disable_existing_loggers: False
+  job:
+    env_set:
+      PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+      OMP_NUM_THREADS: 1
