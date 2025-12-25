@@ -63,16 +63,15 @@ class CrossEntropyCriterion(BaseCriterion):
             weight=valid_tokens,
             round=2,
         )
-        if self.collective.tp_world.is_master:
-            log_summed(
-                "batch_tokens",
-                valid_tokens,
-            )
-            log_summed(
-                "total_tokens",
-                valid_tokens,
-                reset=False,
-            )
+        log_summed(
+            "batch_tokens",
+            valid_tokens,
+        )
+        log_summed(
+            "total_tokens",
+            valid_tokens,
+            reset=False,
+        )
 
         targets = targets.reshape(-1)
         if self._liger_available and targets.device.type != "cpu" and not is_dtensor:
@@ -91,17 +90,17 @@ class CrossEntropyCriterion(BaseCriterion):
                     label_smoothing=self.cfg.label_smoothing,
                     ignore_index=-100,
                 )
-        if self.collective.tp_world.is_master:
-            log_averaged(
-                "loss",
-                value=lambda: loss.item(),
-                weight=valid_tokens,
-            )
-            log_averaged_exponent(
-                "perplexity",
-                value=lambda: loss.item(),
-                weight=valid_tokens,
-            )
+
+        log_averaged(
+            "loss",
+            value=lambda: loss.item(),
+            weight=valid_tokens,
+        )
+        log_averaged_exponent(
+            "perplexity",
+            value=lambda: loss.item(),
+            weight=valid_tokens,
+        )
 
         return loss
 

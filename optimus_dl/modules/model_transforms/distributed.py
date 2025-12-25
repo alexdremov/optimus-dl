@@ -146,7 +146,9 @@ class FullyShardTransform(BaseDistributedTransform):
         **kwargs,
     ):
         super().__init__(cfg, collective, device, **kwargs)
-        self.mesh = self._create_hybrid_mesh()
+        self.mesh = None
+        if self.collective.world_size > 1:
+            self.mesh = self._create_hybrid_mesh()
 
     def apply(self, model: BaseModel, **kwargs) -> BaseModel:
         if self.collective.world_size <= 1:
