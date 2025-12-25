@@ -17,7 +17,6 @@ class MockConfig:
         self.dropout = dropout
         self.bias = bias
         self.block_size = block_size
-        self.force_disable_flash = False
 
 
 class TestCausalSelfAttention:

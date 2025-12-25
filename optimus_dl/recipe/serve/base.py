@@ -210,7 +210,7 @@ class ServeRecipe:
         # Build collective for potential distributed init
         collective = build_best_collective(
             device=None if self.device.type == "cuda" else torch.device("cpu"),
-            config=DistributedConfig(use_gpu=True),
+            config=DistributedConfig(),
         )
 
         assert (self.cfg.common.checkpoint_path is not None) ^ (

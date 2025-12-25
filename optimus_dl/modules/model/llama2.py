@@ -21,7 +21,6 @@ from dataclasses import dataclass, field
 import torch
 import torch.nn as nn
 from torch.distributed.tensor import DTensor, Shard
-from torch.nn import functional as F
 
 from optimus_dl.modules.model import register_model
 from optimus_dl.modules.model.blocks.attention import CausalSelfAttention
@@ -185,7 +184,6 @@ class LlamaAttention(CausalSelfAttention):
 
     def forward(self, x, freqs_cis):
         B, T, C = x.size()
-        print(x.shape)
 
         # (B, T, n_head * head_dim)
         xq = self.wq(x)
@@ -229,18 +227,9 @@ class LlamaAttention(CausalSelfAttention):
             xv = xv.to_local()
             force_make_dtensor = True
 
-        if self.flash:
-            # efficient attention using Flash Attention CUDA kernels
-            y = torch.nn.functional.scaled_dot_product_attention(
-                xq, xk, xv, attn_mask=None, dropout_p=self.dropout, is_causal=True
-            )
-        else:
-            # manual implementation of attention
-            att = (xq @ xk.transpose(-2, -1)) * (1.0 / math.sqrt(xk.size(-1)))
-            att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float("-inf"))
-            att = F.softmax(att, dim=-1)
-            att = self.attn_dropout(att)
-            y = att @ xv
+        y = torch.nn.functional.scaled_dot_product_attention(
+            xq, xk, xv, attn_mask=None, dropout_p=self.dropout, is_causal=True
+        )
 
         if force_make_dtensor and not isinstance(y, DTensor):
             y = DTensor.from_local(y, force_make_dtensor_mesh, (Shard(1),))
@@ -266,9 +255,7 @@ class LlamaBlock(nn.Module):
         self.mlp = LlamaMLP(config)
 
     def forward(self, x, freqs_cis):
-        print("pre ln:", x.shape)
         ln_1 = self.ln_1(x)
-        print("post ln:", x.shape)
         x = x + self.attn(ln_1, freqs_cis)
         x = x + self.mlp(self.ln_2(x))
         return x
@@ -317,6 +304,19 @@ class Llama(GPT):
                 )
 
     def apply_tp(self, mesh, loss_parallel: bool = False):
+        tp_size = mesh.size(0)
+        assert (
+            self.config.n_head % tp_size == 0
+        ), f"Number of heads ({self.config.n_head}) must be divisible by TP size ({tp_size})"
+        n_kv_head = (
+            self.config.n_kv_head
+            if self.config.n_kv_head is not None
+            else self.config.n_head
+        )
+        assert (
+            n_kv_head % tp_size == 0
+        ), f"Number of KV heads ({n_kv_head}) must be divisible by TP size ({tp_size})"
+
         from torch.distributed.tensor.parallel import (
             ColwiseParallel,
             PrepareModuleOutput,
@@ -351,7 +351,7 @@ class Llama(GPT):
                 PrepareModuleOutput(
                     output_layouts=Shard(2),
                     desired_output_layouts=Replicate(),
-                    use_local_output=True,
+                    use_local_output=False,
                 ),
             )
 

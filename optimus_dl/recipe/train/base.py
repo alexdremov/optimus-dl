@@ -257,7 +257,7 @@ class TrainRecipe(
 
             # Setup device and distributed collective
             device, collective = setup_device_and_collective(
-                config=self.cfg.common.distributed
+                use_gpu=self.cfg.common.use_gpu, config=self.cfg.common.distributed
             )
 
             logger.info(

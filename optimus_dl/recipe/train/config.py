@@ -77,6 +77,7 @@ class TrainRecipeConfig:
     )
 
     # Distributed
+    use_gpu: bool = True
     distributed: DistributedConfig = field(
         default_factory=DistributedConfig,
         metadata={"help": "Distributed training configuration (GPU, TP, etc.)"},

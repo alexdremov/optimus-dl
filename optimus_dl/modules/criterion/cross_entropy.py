@@ -78,6 +78,21 @@ class CrossEntropyCriterion(BaseCriterion):
         )
 
         targets = targets.reshape(-1)
+        enable_loss_parallel = False
+        if is_dtensor:
+            from torch.distributed.tensor.placement_types import Replicate
+
+            if not isinstance(targets, DTensor):
+                targets = DTensor.from_local(
+                    targets, logits.device_mesh, (Replicate(),)
+                )
+
+            # Only enable loss_parallel if logits are actually sharded
+            for placement in logits.placements:
+                if isinstance(placement, Shard):
+                    enable_loss_parallel = True
+                    break
+
         if self._liger_available and targets.device.type != "cpu" and not is_dtensor:
             # Liger kernel handles mixed precision internally, no need to cast to float
             loss = self._liger_cross_entropy(
@@ -89,7 +104,7 @@ class CrossEntropyCriterion(BaseCriterion):
         else:
             with (
                 torch.autocast(targets.device.type, enabled=False),
-                loss_parallel() if is_dtensor else nullcontext(),
+                loss_parallel() if enable_loss_parallel else nullcontext(),
             ):
                 loss = torch.nn.functional.cross_entropy(
                     input=logits.view(-1, logits.size(-1)).float(),

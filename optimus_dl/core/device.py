@@ -20,7 +20,7 @@ def get_best_device():
     return torch.device("cpu")
 
 
-def setup_device_and_collective(config: DistributedConfig) -> DeviceSetup:
+def setup_device_and_collective(use_gpu, config: DistributedConfig) -> DeviceSetup:
     """Setup device and distributed collective.
 
     Args:
@@ -32,7 +32,7 @@ def setup_device_and_collective(config: DistributedConfig) -> DeviceSetup:
     from optimus_dl.modules.distributed import build_best_collective
 
     device = torch.device("cpu")
-    if config.use_gpu:
+    if use_gpu:
         device = get_best_device()
     collective = build_best_collective(config=config, device=device)
     device = collective.default_device
