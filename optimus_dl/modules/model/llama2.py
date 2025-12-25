@@ -31,13 +31,12 @@ from torch.distributed.tensor import DTensor
 logger = logging.getLogger(__name__)
 
 try:
-    from liger_kernel.transformers.functional import liger_rope, liger_swiglu
+    from liger_kernel.transformers.functional import liger_swiglu
 
     LIGER_AVAILABLE = True
 except ImportError:
     LIGER_AVAILABLE = False
     liger_swiglu = None
-    liger_rope = None
 
 
 @dataclass
@@ -55,7 +54,6 @@ class LlamaConfig(GPTConfig):
     # Liger Kernel flags (None = auto-enable if available)
     use_liger_rmsnorm: bool | None = None
     use_liger_swiglu: bool | None = None
-    use_liger_rope: bool | None = None
 
 
 def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0) -> torch.Tensor:
@@ -169,19 +167,6 @@ class LlamaAttention(CausalSelfAttention):
         self.n_rep = self.n_head // self.n_kv_head
         self.head_dim = config.n_embd // config.n_head
 
-        if config.use_liger_rope is None:
-            self.use_liger_rope = LIGER_AVAILABLE
-            if self.use_liger_rope:
-                logger.info("Using liger-kernel for RoPE.")
-        else:
-            self.use_liger_rope = config.use_liger_rope
-
-        if self.use_liger_rope and not LIGER_AVAILABLE:
-            logger.warning(
-                "Liger RoPE requested but not installed. Fallback to PyTorch."
-            )
-            self.use_liger_rope = False
-
         # We don't use the parent's c_attn/c_proj for Llama with potential GQA
         # Delete them to avoid confusion/unused parameters
         del self.c_attn
@@ -209,13 +194,7 @@ class LlamaAttention(CausalSelfAttention):
         xk = xk.view(B, T, self.n_kv_head, self.head_dim)
         xv = xv.view(B, T, self.n_kv_head, self.head_dim)
 
-        if self.use_liger_rope and xq.device.type != "cpu" and liger_rope is not None:
-            cos = freqs_cis[..., 0]  # (T, head_dim/2)
-            sin = freqs_cis[..., 1]  # (T, head_dim/2)
-
-            xq, xk = liger_rope(xq, xk, cos, sin)
-        else:
-            xq, xk = apply_rotary_emb(xq, xk, freqs_cis)
+        xq, xk = apply_rotary_emb(xq, xk, freqs_cis)
 
         # (B, n_head, T, head_dim)
         xq = xq.transpose(1, 2)

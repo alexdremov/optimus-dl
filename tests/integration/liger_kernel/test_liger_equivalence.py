@@ -22,7 +22,6 @@ class TestLigerEquivalence(unittest.TestCase):
             sequence_length=128,
             use_liger_rmsnorm=False,
             use_liger_swiglu=False,
-            use_liger_rope=False,
         )
         # Create base model (standard PyTorch)
         self.base_model = Llama(self.config).to(self.device)
@@ -38,7 +37,6 @@ class TestLigerEquivalence(unittest.TestCase):
             sequence_length=128,
             use_liger_rmsnorm=True,
             use_liger_swiglu=False,
-            use_liger_rope=False,
         )
         liger_model = Llama(liger_config).to(self.device)
         liger_model.load_state_dict(self.base_model.state_dict())
@@ -62,31 +60,6 @@ class TestLigerEquivalence(unittest.TestCase):
             sequence_length=128,
             use_liger_rmsnorm=False,
             use_liger_swiglu=True,
-            use_liger_rope=False,
-        )
-        liger_model = Llama(liger_config).to(self.device)
-        liger_model.load_state_dict(self.base_model.state_dict())
-        liger_model.eval()
-
-        input_ids = torch.randint(0, 1000, (4, 32), device=self.device)
-
-        with torch.no_grad():
-            base_out = self.base_model(input_ids)["logits"]
-            liger_out = liger_model(input_ids)["logits"]
-
-        torch.testing.assert_close(base_out, liger_out, rtol=1e-5, atol=1e-5)
-
-    def test_rope_equivalence(self):
-        """Test that Liger RoPE produces same output as PyTorch implementation."""
-        liger_config = LlamaConfig(
-            n_layer=2,
-            n_head=4,
-            n_embd=128,
-            vocab_size=1000,
-            sequence_length=128,
-            use_liger_rmsnorm=False,
-            use_liger_swiglu=False,
-            use_liger_rope=True,
         )
         liger_model = Llama(liger_config).to(self.device)
         liger_model.load_state_dict(self.base_model.state_dict())
@@ -110,7 +83,6 @@ class TestLigerEquivalence(unittest.TestCase):
             sequence_length=128,
             use_liger_rmsnorm=True,
             use_liger_swiglu=True,
-            use_liger_rope=True,
         )
         liger_model = Llama(liger_config).to(self.device)
         liger_model.load_state_dict(self.base_model.state_dict())
