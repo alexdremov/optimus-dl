@@ -49,10 +49,10 @@ class TestAdamWConfig:
 
     def test_config_inheritance(self):
         """Test that config inherits from RegistryConfig"""
-        from optimus_dl.core.registry import RegistryConfig
+        from optimus_dl.core.registry import RegistryConfigStrict
 
         config = AdamWConfig()
-        assert isinstance(config, RegistryConfig)
+        assert isinstance(config, RegistryConfigStrict)
 
 
 class TestMakeAdamW:
