@@ -3,6 +3,7 @@ import logging
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+from torch.distributed.tensor import DTensor
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,9 @@ class RMSNorm(nn.Module):
         return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
 
     def forward(self, x):
-        if self.use_liger and x.device.type != "cpu":
+        is_dtensor = isinstance(x, DTensor)
+
+        if self.use_liger and x.device.type != "cpu" and not is_dtensor:
             return liger_rms_norm(x, self.weight, self.eps)
 
         output = self._norm(x.float()).type_as(x)

@@ -38,6 +38,13 @@ except ImportError:
     liger_swiglu = None
     liger_rotary_pos_emb = None
 
+try:
+    from torch.distributed.tensor import DTensor
+
+    DTENSOR_AVAILABLE = True
+except ImportError:
+    DTENSOR_AVAILABLE = False
+
 
 @dataclass
 class LlamaConfig(GPTConfig):
@@ -86,20 +93,35 @@ def apply_rotary_emb(q, k, freqs_cis):
     # q, k: (B, T, nh, hs)
     # freq_cis: (T, hs)
     # return: (B, T, nh, hs), (B, T, nh, hs)
-    q = q.float().reshape(*q.shape[:-1], -1, 2)
-    k = k.float().reshape(*k.shape[:-1], -1, 2)
 
-    freqs_cis = _reshape_for_broadcast(freqs_cis, q)
+    # Handle DTensor (Tensor Parallelism)
+    # We perform RoPE on local shards to avoid complex sharding propagation issues with reshape/select.
+    is_q_dtensor = DTENSOR_AVAILABLE and isinstance(q, DTensor)
+    is_k_dtensor = DTENSOR_AVAILABLE and isinstance(k, DTensor)
+
+    q_in = q.to_local() if is_q_dtensor else q
+    k_in = k.to_local() if is_k_dtensor else k
+
+    q_in = q_in.float().reshape(*q_in.shape[:-1], -1, 2)
+    k_in = k_in.float().reshape(*k_in.shape[:-1], -1, 2)
+
+    freqs_cis = _reshape_for_broadcast(freqs_cis, q_in)
 
     # Perform manual "complex" multiplication
-    q_cos = q[..., 0] * freqs_cis[..., 0] - q[..., 1] * freqs_cis[..., 1]
-    q_sin = q[..., 0] * freqs_cis[..., 1] + q[..., 1] * freqs_cis[..., 0]
-    k_cos = k[..., 0] * freqs_cis[..., 0] - k[..., 1] * freqs_cis[..., 1]
-    k_sin = k[..., 0] * freqs_cis[..., 1] + k[..., 1] * freqs_cis[..., 0]
+    q_cos = q_in[..., 0] * freqs_cis[..., 0] - q_in[..., 1] * freqs_cis[..., 1]
+    q_sin = q_in[..., 0] * freqs_cis[..., 1] + q_in[..., 1] * freqs_cis[..., 0]
+    k_cos = k_in[..., 0] * freqs_cis[..., 0] - k_in[..., 1] * freqs_cis[..., 1]
+    k_sin = k_in[..., 0] * freqs_cis[..., 1] + k_in[..., 1] * freqs_cis[..., 0]
 
     # Combine the results back into the interleaved format expected by q and k
-    q_out = torch.stack((q_cos, q_sin), dim=-1).reshape(q.shape).flatten(3)
-    k_out = torch.stack((k_cos, k_sin), dim=-1).reshape(k.shape).flatten(3)
+    q_out = torch.stack((q_cos, q_sin), dim=-1).reshape(q_in.shape).flatten(3)
+    k_out = torch.stack((k_cos, k_sin), dim=-1).reshape(k_in.shape).flatten(3)
+
+    # Wrap back to DTensor if inputs were DTensor
+    if is_q_dtensor:
+        q_out = DTensor.from_local(q_out, q.device_mesh, q.placements)
+    if is_k_dtensor:
+        k_out = DTensor.from_local(k_out, k.device_mesh, k.placements)
 
     return q_out, k_out
 
@@ -319,22 +341,22 @@ class Llama(GPT):
             "transformer.h.*.ln_1": SequenceParallel(),
             "transformer.h.*.ln_2": SequenceParallel(),
             "transformer.h.*.attn": PrepareModuleInput(
-                input_layouts=(Shard(1), Replicate()),
-                desired_input_layouts=(Replicate(), Replicate()),
+                input_layouts=(Shard(1), None),
+                desired_input_layouts=(Replicate(), None),
             ),
             "transformer.h.*.attn.wq": ColwiseParallel(use_local_output=False),
             "transformer.h.*.attn.wk": ColwiseParallel(use_local_output=False),
             "transformer.h.*.attn.wv": ColwiseParallel(use_local_output=False),
-            "transformer.h.*.attn.wo": RowwiseParallel(),
+            "transformer.h.*.attn.wo": RowwiseParallel(output_layouts=Shard(1)),
             "transformer.h.*.mlp": PrepareModuleInput(
                 input_layouts=(Shard(1),),
                 desired_input_layouts=(Replicate(),),
             ),
-            "transformer.h.*.mlp.w1": ColwiseParallel(),
-            "transformer.h.*.mlp.w2": ColwiseParallel(),
-            "transformer.h.*.mlp.c_proj": RowwiseParallel(),
+            "transformer.h.*.mlp.w1": ColwiseParallel(use_local_output=False),
+            "transformer.h.*.mlp.w2": ColwiseParallel(use_local_output=False),
+            "transformer.h.*.mlp.c_proj": RowwiseParallel(output_layouts=Shard(1)),
             "transformer.ln_f": SequenceParallel(),
-            "transformer.wte": RowwiseParallel(
+            "transformer.wte": ColwiseParallel(
                 input_layouts=Replicate(),
                 output_layouts=Shard(1),  # shard vocab dim
             ),
