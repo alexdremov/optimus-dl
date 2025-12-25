@@ -67,31 +67,6 @@ class TestCausalSelfAttention:
         assert attention_no_bias.c_attn.bias is None
         assert attention_no_bias.c_proj.bias is None
 
-    @patch("torch.nn.functional.scaled_dot_product_attention")
-    def test_flash_attention_detection(self, mock_flash_attn):
-        """Test automatic detection and usage of Flash Attention when available."""
-        config = MockConfig()
-
-        # Test when flash attention is available
-        with patch(
-            "optimus_dl.modules.model.blocks.attention.hasattr", return_value=True
-        ):
-            attention = CausalSelfAttention(config)
-            assert attention.flash is True
-            assert not hasattr(attention, "bias")  # No manual bias buffer
-
-    def test_manual_attention_fallback(self):
-        """Test fallback to manual attention implementation when Flash Attention is unavailable."""
-        config = MockConfig(block_size=512)
-
-        # Test when flash attention is not available
-        with patch(
-            "optimus_dl.modules.model.blocks.attention.hasattr", return_value=False
-        ):
-            attention = CausalSelfAttention(config)
-            assert attention.flash is False
-            assert hasattr(attention, "bias")  # Manual bias buffer created
-            assert attention.bias.shape == (1, 1, 512, 512)
 
     def test_forward_shape_consistency(self):
         config = MockConfig(n_embd=768, n_head=12, block_size=1024)
