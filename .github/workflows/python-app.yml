@@ -16,6 +16,36 @@ jobs:
 
     steps:
     - uses: actions/checkout@v6
+
+    - name: Aggressive free disk space
+      run: |
+        echo "################################"
+        echo "Disk usage BEFORE cleanup:"
+        echo "################################"
+        df -h
+
+        echo "Removing hosted toolcache..."
+        rm -rf /opt/hostedtoolcache || true
+
+        echo "Removing .NET..."
+        rm -rf /usr/share/dotnet || true
+
+        echo "Removing Android SDK..."
+        rm -rf /usr/local/lib/android || true
+
+        echo "Removing GHC / Haskell..."
+        rm -rf /opt/ghc || true
+        rm -rf /usr/local/.ghcup || true
+
+        echo "Docker prune (just in case runner had leftovers)..."
+        docker container prune -f || true
+        docker image prune -af || true
+        docker volume prune -f || true
+
+        echo "################################"
+        echo "Disk usage AFTER cleanup:"
+        echo "################################"
+        df -h
   
     - name: Set up Python
       uses: actions/setup-python@v6
