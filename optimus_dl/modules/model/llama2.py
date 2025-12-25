@@ -39,9 +39,6 @@ except ImportError:
     liger_swiglu = None
     liger_rope = None
 
-LIGER_AVAILABLE = False
-liger_swiglu = None
-liger_rope = None
 
 @dataclass
 class LlamaConfig(GPTConfig):
@@ -394,7 +391,6 @@ class Llama(GPT):
             ),
             "lm_head": RowwiseParallel(input_layouts=Shard(1)),
         }
-        parallelize_module(self, mesh, layer_plan)
 
         if self.config.tie_word_embeddings:
             # re-tie
