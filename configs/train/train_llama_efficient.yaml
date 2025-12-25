@@ -1,6 +1,9 @@
 # 7b Llama training on one node with 8xA100 80GB
 # global batch size ~2M
 
+# torchrun --nproc-per-node gpu --standalone --nnodes=1 scripts/train.py --config-name train_llama_efficient
+# small test:
+# torchrun --nproc-per-node gpu --standalone --nnodes=1 scripts/train.py --config-name train_llama_efficient model=llama2 optimization.acc_steps=1
 defaults:
   - train_llama.yaml
   - override model: llama2-7b

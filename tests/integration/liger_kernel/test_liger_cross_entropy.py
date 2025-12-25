@@ -8,6 +8,7 @@ from optimus_dl.modules.criterion.cross_entropy import (
     CrossEntropyCriterion,
     CrossEntropyCriterionConfig,
 )
+from optimus_dl.modules.distributed.fake import FakeCollective
 
 LIGER_AVAILABLE = importlib.util.find_spec("liger_kernel") is not None
 
@@ -22,13 +23,13 @@ class TestLigerCrossEntropyEquivalence(unittest.TestCase):
         self.base_cfg = CrossEntropyCriterionConfig(
             _name="cross_entropy", label_smoothing=0.1, use_liger_kernel=False
         )
-        self.base_criterion = CrossEntropyCriterion(self.base_cfg)
+        self.base_criterion = CrossEntropyCriterion(self.base_cfg, collective=FakeCollective(0, 1))
 
         # Liger Kernel implementation
         self.liger_cfg = CrossEntropyCriterionConfig(
             _name="cross_entropy", label_smoothing=0.1, use_liger_kernel=True
         )
-        self.liger_criterion = CrossEntropyCriterion(self.liger_cfg)
+        self.liger_criterion = CrossEntropyCriterion(self.liger_cfg, collective=FakeCollective(0, 1))
 
     def test_loss_equivalence(self):
         """Test that Liger CrossEntropy produces same loss as PyTorch implementation."""

@@ -27,7 +27,7 @@ class ActivationCheckpointConfig(ModelTransformConfig):
     # False is generally recommended for newer PyTorch versions and FSDP.
     use_reentrant: bool = False
 
-    save_ops: list[str] | None = None
+    ops_to_save: list[str] | None = None
 
 
 class CheckpointWrapper(nn.Module):
@@ -54,7 +54,7 @@ class CheckpointWrapper(nn.Module):
             self.module,
             *args,
             use_reentrant=self.use_reentrant,
-            context_fn=functools.partial(create_selective_checkpoint_contexts, self.policy_fn.policy_fn),
+            context_fn=functools.partial(create_selective_checkpoint_contexts, self.policy_fn),
             **kwargs
         )
 

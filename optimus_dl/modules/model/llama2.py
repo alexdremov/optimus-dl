@@ -152,16 +152,11 @@ class LlamaMLP(nn.Module):
 
     def forward(self, x):
         if self.use_liger and x.device.type != "cpu":
-            # liger_swiglu(x, w1, w2) computes silu(x @ w1) * (x @ w2)
-            # We need to pass the weights. w1 is gate (inside silu), w2 is up.
-            # LlamaMLP init: w1 is first, w2 is second.
-            # Standard SwiGLU: SiLU(xW_g) * (xW_u).
-            # In our implementation: silu(self.w1(x)) * self.w2(x)
-            # So w1 is gate, w2 is up.
-            x_swiglu = liger_swiglu(x, self.w1.weight, self.w2.weight)
-            return self.c_proj(x_swiglu)
+            x_swiglu = liger_swiglu(self.w1(x), self.w2(x))
+        else:
+            x_swiglu = nn.functional.silu(self.w1(x)) * self.w2(x)
 
-        return self.c_proj(nn.functional.silu(self.w1(x)) * self.w2(x))
+        return self.c_proj(x_swiglu)
 
 
 class LlamaAttention(CausalSelfAttention):

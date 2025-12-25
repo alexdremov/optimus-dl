@@ -21,7 +21,7 @@ def build_best_collective(
     if _collective is not None:
         return _collective
 
-    logger.info("Initializing collective")
+    logger.info(f"Initializing collective {config}")
     needed_envs = ("LOCAL_RANK", "LOCAL_WORLD_SIZE", "RANK", "WORLD_SIZE")
 
     distr = True

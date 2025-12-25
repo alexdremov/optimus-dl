@@ -7,6 +7,7 @@ from optimus_dl.modules.criterion.cross_entropy import (
     CrossEntropyCriterion,
     CrossEntropyCriterionConfig,
 )
+from optimus_dl.modules.distributed.fake import FakeCollective
 
 
 class TestCrossEntropyCriterionConfig:
@@ -33,7 +34,7 @@ class TestCrossEntropyCriterion:
 
     def test_init(self):
         config = CrossEntropyCriterionConfig(label_smoothing=0.1)
-        criterion = CrossEntropyCriterion(config)
+        criterion = CrossEntropyCriterion(config, collective=FakeCollective(0, 1))
 
         assert criterion.cfg == config
         assert criterion.cfg.label_smoothing == 0.1
@@ -43,7 +44,7 @@ class TestCrossEntropyCriterion:
     def test_call_basic(self, mock_log_summed, mock_log_averaged):
         """Test basic criterion call functionality"""
         config = CrossEntropyCriterionConfig(label_smoothing=0.0)
-        criterion = CrossEntropyCriterion(config)
+        criterion = CrossEntropyCriterion(config, collective=FakeCollective(0, 1))
 
         # Create mock model and batch
         mock_model = Mock()
@@ -78,7 +79,7 @@ class TestCrossEntropyCriterion:
     def test_input_target_shifting(self):
         """Test that input_ids are properly shifted for next-token prediction"""
         config = CrossEntropyCriterionConfig()
-        criterion = CrossEntropyCriterion(config)
+        criterion = CrossEntropyCriterion(config, collective=FakeCollective(0, 1))
 
         # Create mock model
         mock_model = Mock()
@@ -105,7 +106,7 @@ class TestCrossEntropyCriterion:
     def test_cross_entropy_computation(self):
         """Test cross-entropy loss computation with deterministic predictions."""
         config = CrossEntropyCriterionConfig(label_smoothing=0.0)
-        criterion = CrossEntropyCriterion(config)
+        criterion = CrossEntropyCriterion(config, collective=FakeCollective(0, 1))
 
         # Create deterministic test case
         batch_size, seq_len, vocab_size = 1, 3, 5
@@ -137,8 +138,8 @@ class TestCrossEntropyCriterion:
         config_no_smooth = CrossEntropyCriterionConfig(label_smoothing=0.0)
         config_smooth = CrossEntropyCriterionConfig(label_smoothing=0.1)
 
-        criterion_no_smooth = CrossEntropyCriterion(config_no_smooth)
-        criterion_smooth = CrossEntropyCriterion(config_smooth)
+        criterion_no_smooth = CrossEntropyCriterion(config_no_smooth, collective=FakeCollective(0, 1))
+        criterion_smooth = CrossEntropyCriterion(config_smooth, collective=FakeCollective(0, 1))
 
         # Same setup for both
         batch_size, seq_len, vocab_size = 1, 3, 10
@@ -165,7 +166,7 @@ class TestCrossEntropyCriterion:
     def test_accuracy_metric(self):
         """Test accuracy computation"""
         config = CrossEntropyCriterionConfig()
-        criterion = CrossEntropyCriterion(config)
+        criterion = CrossEntropyCriterion(config, collective=FakeCollective(0, 1))
 
         # Perfect predictions
         batch_size, seq_len, vocab_size = 2, 3, 5
@@ -188,7 +189,7 @@ class TestCrossEntropyCriterion:
     def test_accuracy_metric_partial_correct(self):
         """Test accuracy with partially correct predictions"""
         config = CrossEntropyCriterionConfig()
-        criterion = CrossEntropyCriterion(config)
+        criterion = CrossEntropyCriterion(config, collective=FakeCollective(0, 1))
 
         # 2 out of 4 predictions correct
         logits = torch.zeros(1, 4, 3)
@@ -211,7 +212,7 @@ class TestCrossEntropyCriterion:
     ):
         """Test that all metrics are logged correctly"""
         config = CrossEntropyCriterionConfig()
-        criterion = CrossEntropyCriterion(config)
+        criterion = CrossEntropyCriterion(config, collective=FakeCollective(0, 1))
 
         # Setup
         batch_size, seq_len, vocab_size = 2, 5, 100
@@ -245,7 +246,7 @@ class TestCrossEntropyCriterion:
     def test_token_counting(self, mock_log_summed, mock_log_averaged):
         """Test that token counts are computed correctly"""
         config = CrossEntropyCriterionConfig()
-        criterion = CrossEntropyCriterion(config)
+        criterion = CrossEntropyCriterion(config, collective=FakeCollective(0, 1))
 
         batch_size, seq_len, vocab_size = 3, 10, 50
         logits = torch.randn(batch_size, seq_len - 1, vocab_size)
@@ -290,7 +291,7 @@ class TestCrossEntropyCriterion:
     ):
         """Test that perplexity is computed correctly"""
         config = CrossEntropyCriterionConfig()
-        criterion = CrossEntropyCriterion(config)
+        criterion = CrossEntropyCriterion(config, collective=FakeCollective(0, 1))
 
         # Create a case with known loss
         batch_size, seq_len, vocab_size = 1, 3, 10
@@ -330,7 +331,7 @@ class TestCrossEntropyCriterion:
     def test_batch_modification(self):
         """Test that the original batch is modified correctly"""
         config = CrossEntropyCriterionConfig()
-        criterion = CrossEntropyCriterion(config)
+        criterion = CrossEntropyCriterion(config, collective=FakeCollective(0, 1))
 
         batch_size, seq_len, vocab_size = 1, 5, 10
         logits = torch.randn(batch_size, seq_len - 1, vocab_size)
@@ -357,7 +358,7 @@ class TestCrossEntropyCriterion:
     def test_different_batch_sizes_and_sequence_lengths(self):
         """Test criterion with various batch sizes and sequence lengths"""
         config = CrossEntropyCriterionConfig()
-        criterion = CrossEntropyCriterion(config)
+        criterion = CrossEntropyCriterion(config, collective=FakeCollective(0, 1))
 
         test_cases = [
             (1, 5, 100),  # Single sample, short sequence
@@ -387,7 +388,7 @@ class TestCrossEntropyCriterion:
     def test_gradient_flow(self):
         """Test that gradients flow through the loss"""
         config = CrossEntropyCriterionConfig()
-        criterion = CrossEntropyCriterion(config)
+        criterion = CrossEntropyCriterion(config, collective=FakeCollective(0, 1))
 
         # Create model with parameters
         class SimpleModel(torch.nn.Module):
@@ -424,7 +425,7 @@ class TestCrossEntropyCriterion:
     def test_no_grad_accuracy_metric(self):
         """Test that accuracy_metric is computed with no_grad"""
         config = CrossEntropyCriterionConfig()
-        criterion = CrossEntropyCriterion(config)
+        criterion = CrossEntropyCriterion(config, collective=FakeCollective(0, 1))
 
         # Create tensors that require grad
         logits = torch.randn(2, 5, 10, requires_grad=True)
@@ -439,7 +440,7 @@ class TestCrossEntropyCriterion:
     def test_edge_case_single_token(self):
         """Test with minimal sequence length (2 tokens -> 1 target)"""
         config = CrossEntropyCriterionConfig()
-        criterion = CrossEntropyCriterion(config)
+        criterion = CrossEntropyCriterion(config, collective=FakeCollective(0, 1))
 
         batch_size, seq_len, vocab_size = 1, 2, 10
         logits = torch.randn(batch_size, seq_len - 1, vocab_size)  # Shape: (1, 1, 10)
