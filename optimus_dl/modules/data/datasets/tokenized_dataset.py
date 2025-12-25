@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 from omegaconf import MISSING
 
-from optimus_dl.core.registry import RegistryConfig
+from optimus_dl.core.registry import RegistryConfigStrict
 
 from . import register_dataset
 from .base import BaseDataset
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class TokenizedDatasetConfig(RegistryConfig):
+class TokenizedDatasetConfig(RegistryConfigStrict):
     data_dir: str = MISSING
     index_file: str = "index.json"
     limit: int | None = None  # Optional limit on number of documents

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import torchdata.nodes
 from torchdata.nodes.base_node import BaseNode
 
-from optimus_dl.core.registry import RegistryConfig
+from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.data.transforms import (
     BaseTransform,
     register_transform,
@@ -11,7 +11,7 @@ from optimus_dl.modules.data.transforms import (
 
 
 @dataclass
-class PrefetchTransformConfig(RegistryConfig):
+class PrefetchTransformConfig(RegistryConfigStrict):
     prefetch_factor: int = 8
 
 

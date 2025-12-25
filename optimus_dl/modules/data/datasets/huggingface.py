@@ -6,7 +6,7 @@ import datasets.distributed
 from datasets import load_dataset
 from omegaconf import MISSING, OmegaConf
 
-from optimus_dl.core.registry import RegistryConfig
+from optimus_dl.core.registry import RegistryConfigStrict
 
 from . import register_dataset
 from .base import BaseDataset
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class HuggingFaceDatasetConfig(RegistryConfig):
+class HuggingFaceDatasetConfig(RegistryConfigStrict):
     dataset_load_kwargs: dict = MISSING
 
 

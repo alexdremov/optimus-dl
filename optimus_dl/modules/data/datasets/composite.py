@@ -7,7 +7,7 @@ from typing import Any
 import torch
 from omegaconf import MISSING
 
-from optimus_dl.core.registry import RegistryConfig
+from optimus_dl.core.registry import RegistryConfig, RegistryConfigStrict
 
 from . import build_dataset, register_dataset
 from .base import BaseDataset
@@ -36,7 +36,7 @@ class DatasetConfig:
 
 
 @dataclass
-class CompositeDatasetConfig(RegistryConfig):
+class CompositeDatasetConfig(RegistryConfigStrict):
     datasets: dict[str, DatasetConfig] = field(
         default_factory=dict, metadata={"help": "Datasets to load: name -> config"}
     )

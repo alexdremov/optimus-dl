@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 import requests
 from omegaconf import MISSING
 
-from optimus_dl.core.registry import RegistryConfig
+from optimus_dl.core.registry import RegistryConfigStrict
 
 from . import register_dataset
 from .base import BaseDataset
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class TxtLinesDatasetConfig(RegistryConfig):
+class TxtLinesDatasetConfig(RegistryConfigStrict):
     file_link: str = MISSING
     cache_dir: str = field(default_factory=tempfile.gettempdir)
     skip_empty_lines: bool = True

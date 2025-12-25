@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from optimus_dl.core.registry import RegistryConfig
+from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.data import register_dataset
 from optimus_dl.modules.data.datasets import (
     HuggingFaceDataset,
@@ -9,7 +9,7 @@ from optimus_dl.modules.data.datasets import (
 
 
 @dataclass
-class Config(RegistryConfig):
+class Config(RegistryConfigStrict):
     subset: str = "sample-10BT"
 
 

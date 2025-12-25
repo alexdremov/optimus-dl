@@ -3,11 +3,11 @@ from typing import Any
 
 from omegaconf import II
 
-from optimus_dl.core.registry import RegistryConfig
+from optimus_dl.core.registry import RegistryConfigStrict
 
 
 @dataclass
-class MetricsLoggerConfig(RegistryConfig):
+class MetricsLoggerConfig(RegistryConfigStrict):
     """Base configuration for metrics loggers."""
 
     # Common fields that all loggers might use

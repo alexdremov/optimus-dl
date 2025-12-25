@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import numpy as np
 from torchdata.nodes.base_node import BaseNode
 
-from optimus_dl.core.registry import RegistryConfig
+from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.data.transforms import (
     BaseTransform,
     register_transform,
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class ShuffleTransformConfig(RegistryConfig):
+class ShuffleTransformConfig(RegistryConfigStrict):
     buffer_size: int = 1024
     seed: int = 42
 

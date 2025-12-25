@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from omegaconf import MISSING
 from torchdata.nodes.base_node import BaseNode
 
-from optimus_dl.core.registry import RegistryConfig
+from optimus_dl.core.registry import RegistryConfig, RegistryConfigStrict
 from optimus_dl.modules.data.transforms import (
     BaseTransform,
     build_transform,
@@ -12,7 +12,7 @@ from optimus_dl.modules.data.transforms import (
 
 
 @dataclass
-class CompositeTransformConfig(RegistryConfig):
+class CompositeTransformConfig(RegistryConfigStrict):
     transforms: list[RegistryConfig] = MISSING
 
 

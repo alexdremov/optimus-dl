@@ -5,7 +5,7 @@ import numpy as np
 from omegaconf import MISSING
 from torchdata.nodes.base_node import BaseNode
 
-from optimus_dl.core.registry import RegistryConfig
+from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.data.transforms import (
     BaseTransform,
     MapperConfig,
@@ -14,7 +14,7 @@ from optimus_dl.modules.data.transforms import (
 
 
 @dataclass
-class FlatTokensBatcherConfig(RegistryConfig):
+class FlatTokensBatcherConfig(RegistryConfigStrict):
     batch_size: int = MISSING
     seq_len: int = MISSING
     worker_cfg: MapperConfig = field(

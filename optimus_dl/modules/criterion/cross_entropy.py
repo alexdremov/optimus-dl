@@ -6,7 +6,7 @@ import torch
 from torch.distributed.tensor import DTensor, Shard
 from torch.distributed.tensor.parallel import loss_parallel
 
-from optimus_dl.core.registry import RegistryConfig
+from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.criterion import BaseCriterion, register_criterion
 from optimus_dl.modules.distributed.base import Collective
 from optimus_dl.modules.distributed.mesh import MeshCollective
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class CrossEntropyCriterionConfig(RegistryConfig):
+class CrossEntropyCriterionConfig(RegistryConfigStrict):
     label_smoothing: float = 0.0
     use_liger_kernel: bool | None = None
 

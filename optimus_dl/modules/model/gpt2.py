@@ -16,7 +16,7 @@ import torch.nn as nn
 from torch.distributed.fsdp import fully_shard
 from torch.nn import functional as F
 
-from optimus_dl.core.registry import RegistryConfig
+from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.model import register_model
 from optimus_dl.modules.model.base import BaseModel
 from optimus_dl.modules.model.blocks.attention import CausalSelfAttention
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class GPTConfig(RegistryConfig):
+class GPTConfig(RegistryConfigStrict):
     block_size: int = 1024
     vocab_size: int = (
         50304  # GPT-2 vocab_size of 50257, padded up to nearest multiple of 64 for efficiency

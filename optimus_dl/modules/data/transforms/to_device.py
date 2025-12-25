@@ -5,7 +5,7 @@ import torch
 import torchdata.nodes
 from torchdata.nodes.base_node import BaseNode
 
-from optimus_dl.core.registry import RegistryConfig
+from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.data.transforms import (
     BaseTransform,
     register_transform,
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class ToDeviceTransformConfig(RegistryConfig):
+class ToDeviceTransformConfig(RegistryConfigStrict):
     properties: list[str] | None = field(default_factory=lambda: None)
 
 

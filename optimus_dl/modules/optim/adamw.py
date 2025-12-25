@@ -2,12 +2,12 @@ from dataclasses import dataclass
 
 import torch
 
-from optimus_dl.core.registry import RegistryConfig
+from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.optim import register_optimizer
 
 
 @dataclass
-class AdamWConfig(RegistryConfig):
+class AdamWConfig(RegistryConfigStrict):
     lr: float = 1e-3
     betas: tuple[float, float] = (0.9, 0.999)
     eps: float = 1e-8

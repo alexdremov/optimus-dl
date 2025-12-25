@@ -8,8 +8,12 @@ registries = {}
 
 
 @dataclass
-class RegistryConfig(dict[str, Any]):
+class RegistryConfigStrict:
     _name: str | None = None
+
+
+@dataclass
+class RegistryConfig(RegistryConfigStrict, dict[str, Any]): ...
 
 
 C = TypeVar("C", bound=type)
@@ -43,8 +47,10 @@ def make_registry(registry_name: str, base_class: type | None = None):
 
         def wrapper(method):
             cfg = method()
-            assert cfg is None or isinstance(
-                cfg, RegistryConfig
+            assert (
+                cfg is None
+                or isinstance(cfg, RegistryConfig)
+                or isinstance(cfg, RegistryConfigStrict)
             ), "Configs must be subclasses of RegistryConfig"
             registry[full_name] = (registered_class, cfg)
             return method
@@ -55,9 +61,11 @@ def make_registry(registry_name: str, base_class: type | None = None):
         assert (
             name not in registry
         ), f"Double registering of {name} in {registry_name} registry"
-        assert cfg is None or issubclass(
-            cfg, RegistryConfig
-        ), "Configs must be subclasses of RegistryConfig"
+        assert (
+            cfg is None
+            or issubclass(cfg, RegistryConfig)
+            or issubclass(cfg, RegistryConfigStrict)
+        ), "Configs must be subclasses of RegistryConfig or RegistryConfigStrict"
 
         def wrapper(registered_class: C) -> C:
             registry[name] = (registered_class, cfg)
@@ -72,20 +80,22 @@ def make_registry(registry_name: str, base_class: type | None = None):
 
     @overload
     def build(
-        cfg: RegistryConfig,
+        cfg: RegistryConfig | RegistryConfigStrict,
         cast_to: type[T],
         **kwargs: Any,
     ) -> T: ...
 
     @overload
     def build(
-        cfg: RegistryConfig,
+        cfg: RegistryConfig | RegistryConfigStrict,
         cast_to: None = None,
         **kwargs: Any,
     ) -> Any: ...
 
     def build(
-        cfg: RegistryConfig | None, cast_to: type[T] | None = None, **kwargs
+        cfg: RegistryConfig | RegistryConfigStrict | None,
+        cast_to: type[T] | None = None,
+        **kwargs,
     ) -> T | Any | None:
         if cfg is None:
             return None
@@ -119,7 +129,7 @@ def make_registry(registry_name: str, base_class: type | None = None):
 @overload
 def build(
     registry_name: str,
-    cfg: RegistryConfig,
+    cfg: RegistryConfig | RegistryConfigStrict,
     cast_to: type[T],
     **kwargs: Any,
 ) -> T: ...
@@ -128,7 +138,7 @@ def build(
 @overload
 def build(
     registry_name: str,
-    cfg: RegistryConfig,
+    cfg: RegistryConfig | RegistryConfigStrict,
     cast_to: None = None,
     **kwargs: Any,
 ) -> Any: ...
@@ -136,7 +146,7 @@ def build(
 
 def build(
     registry_name: str,
-    cfg: RegistryConfig,
+    cfg: RegistryConfig | RegistryConfigStrict,
     cast_to: type[T] | None = None,
     **kwargs: Any,
 ) -> T | Any | None:

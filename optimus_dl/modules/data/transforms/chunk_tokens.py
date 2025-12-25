@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from omegaconf import MISSING
 from torchdata.nodes.base_node import BaseNode
 
-from optimus_dl.core.registry import RegistryConfig
+from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.data.transforms import (
     BaseTransform,
     register_transform,
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class ChunkTransformConfig(RegistryConfig):
+class ChunkTransformConfig(RegistryConfigStrict):
     max_seq_len: int = MISSING
     add_one_for_shift: bool = True
 

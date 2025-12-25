@@ -6,7 +6,7 @@ import torchdata.nodes
 from omegaconf import MISSING, OmegaConf
 from torchdata.nodes.base_node import BaseNode
 
-from optimus_dl.core.registry import RegistryConfig
+from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.data.transforms import (
     BaseTransform,
     MapperConfig,
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class TokenizeTransformConfig(RegistryConfig):
+class TokenizeTransformConfig(RegistryConfigStrict):
     tokenizer_config: Any = MISSING
     debug_samples: int = 0
     worker_cfg: MapperConfig = field(

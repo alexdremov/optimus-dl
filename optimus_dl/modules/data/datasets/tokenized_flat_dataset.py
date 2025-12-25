@@ -4,14 +4,14 @@ from dataclasses import dataclass, field
 import numpy as np
 from omegaconf import MISSING
 
-from optimus_dl.core.registry import RegistryConfig
+from optimus_dl.core.registry import RegistryConfigStrict
 
 from . import register_dataset
 from .base import BaseDataset
 
 
 @dataclass
-class TokenizedFlatDatasetConfig(RegistryConfig):
+class TokenizedFlatDatasetConfig(RegistryConfigStrict):
     dtype: str = "np.uint16"
     files: list[str] = field(
         default_factory=list,
