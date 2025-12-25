@@ -260,6 +260,7 @@ class TrainRecipe(
                 config=self.cfg.common.distributed
             )
 
+            logger.info("Setting up console logging. Will log from master only from now.")
             if not collective.is_master:
                 setup_logging(logging.WARNING)
 

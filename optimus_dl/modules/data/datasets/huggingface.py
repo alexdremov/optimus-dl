@@ -64,11 +64,10 @@ class HuggingFaceDataset(BaseDataset):
             self.cfg.dataset_load_kwargs.setdefault("num_proc", 4)
         self.dataset = load_dataset(**self.cfg.dataset_load_kwargs)
 
-        logger.info(
-            f"Sharding dataset... (num_shards={self.world_size}, index={self.rank})"
-        )
-
         if self.world_size > 1:
+            logger.info(
+                f"Sharding dataset... (num_shards={self.world_size}, index={self.rank})"
+            )
             self.dataset = datasets.distributed.split_dataset_by_node(
                 dataset=self.dataset,
                 rank=self.rank,

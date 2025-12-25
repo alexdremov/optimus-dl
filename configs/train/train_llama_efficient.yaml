@@ -20,11 +20,8 @@ optimization:
 # allowing for larger batch sizes or training larger models (up to ~8B on single node A100s)
 model_transforms:
   - _name: tensor_parallel
-  # - _name: activation_checkpoint
-  #   layer_classes: ["LlamaAttention"]
-  #   use_reentrant: false
+  - _name: activation_checkpoint
+    layer_classes: ["LlamaAttention"]
+    use_reentrant: false
   - _name: fully_shard
     reshard_after_forward: true
-  # - _name: compile
-  #   compile_kwargs:
-  #     disable: false
