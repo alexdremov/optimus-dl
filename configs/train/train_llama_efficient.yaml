@@ -1,15 +1,12 @@
 defaults:
   - train_llama.yaml
-  - override model: llama2-7b
+  - override model: llama2-1b
   - _self_
 
 args:
   name: train-llama-efficient
-  batch_size: 1
+  batch_size: 16
   seq_len: 1024
-
-criterion:
-  use_liger_kernel: true
 
 # Add activation checkpointing to the model transforms
 # This wraps LlamaBlock modules with a checkpointing wrapper to reduce memory usage

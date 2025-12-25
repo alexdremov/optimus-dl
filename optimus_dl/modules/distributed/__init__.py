@@ -52,7 +52,6 @@ def build_best_collective(
             device_type=device_type,
             tp_size=config.tp_size,
             sharding_world_size=config.sharding_world_size,
-
         )
     else:
         # Pass device_type to FakeCollective as well

@@ -5,7 +5,6 @@ from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 
 import torch
-from torch.distributed.device_mesh import init_device_mesh
 from torch.distributed.fsdp import CPUOffloadPolicy, MixedPrecisionPolicy, fully_shard
 from torch.nn.parallel import DistributedDataParallel as DDP
 

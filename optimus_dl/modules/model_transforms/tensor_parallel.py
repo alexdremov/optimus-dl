@@ -3,7 +3,6 @@
 import logging
 from dataclasses import dataclass
 
-
 from optimus_dl.modules.distributed import Collective
 from optimus_dl.modules.distributed.mesh import MeshCollective
 from optimus_dl.modules.model.base import BaseModel
