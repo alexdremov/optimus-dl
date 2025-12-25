@@ -26,25 +26,22 @@ from optimus_dl.modules.model import register_model
 from optimus_dl.modules.model.blocks.attention import CausalSelfAttention
 from optimus_dl.modules.model.blocks.layer_norms import RMSNorm
 from optimus_dl.modules.model.gpt2 import GPT, GPTConfig
+from torch.distributed.tensor import DTensor
 
 logger = logging.getLogger(__name__)
 
 try:
-    from liger_kernel.transformers.functional import liger_rotary_pos_emb, liger_swiglu
+    from liger_kernel.transformers.functional import liger_rope, liger_swiglu
 
     LIGER_AVAILABLE = True
 except ImportError:
     LIGER_AVAILABLE = False
     liger_swiglu = None
-    liger_rotary_pos_emb = None
+    liger_rope = None
 
-try:
-    from torch.distributed.tensor import DTensor
-
-    DTENSOR_AVAILABLE = True
-except ImportError:
-    DTENSOR_AVAILABLE = False
-
+LIGER_AVAILABLE = False
+liger_swiglu = None
+liger_rope = None
 
 @dataclass
 class LlamaConfig(GPTConfig):
@@ -96,8 +93,8 @@ def apply_rotary_emb(q, k, freqs_cis):
 
     # Handle DTensor (Tensor Parallelism)
     # We perform RoPE on local shards to avoid complex sharding propagation issues with reshape/select.
-    is_q_dtensor = DTENSOR_AVAILABLE and isinstance(q, DTensor)
-    is_k_dtensor = DTENSOR_AVAILABLE and isinstance(k, DTensor)
+    is_q_dtensor = isinstance(q, DTensor)
+    is_k_dtensor = isinstance(k, DTensor)
 
     q_in = q.to_local() if is_q_dtensor else q
     k_in = k.to_local() if is_k_dtensor else k
@@ -220,11 +217,11 @@ class LlamaAttention(CausalSelfAttention):
         xk = xk.view(B, T, self.n_kv_head, self.head_dim)
         xv = xv.view(B, T, self.n_kv_head, self.head_dim)
 
-        if self.use_liger_rope and xq.device.type != "cpu":
+        if self.use_liger_rope and xq.device.type != "cpu" and liger_rope is not None:
             cos = freqs_cis[..., 0]  # (T, head_dim/2)
             sin = freqs_cis[..., 1]  # (T, head_dim/2)
 
-            xq, xk = liger_rotary_pos_emb(xq, xk, cos, sin)
+            xq, xk = liger_rope(xq, xk, cos, sin)
         else:
             xq, xk = apply_rotary_emb(xq, xk, freqs_cis)
 
@@ -327,16 +324,51 @@ class Llama(GPT):
                     p, mean=0.0, std=0.02 / math.sqrt(2 * config.n_layer)
                 )
 
-    def apply_tp(self, mesh):
+    def apply_tp(self, mesh, sequence_parallel: bool=False):
+        if sequence_parallel:
+            self._apply_tp_sp(mesh)
+        else:
+            self._apply_tp(mesh)
+
+    def _apply_tp(self, mesh):
         from torch.distributed.tensor.parallel import (
             ColwiseParallel,
             PrepareModuleInput,
+            RowwiseParallel,
+            parallelize_module,
+        )
+        from torch.distributed.tensor.placement_types import Replicate, Shard
+        layer_plan = {
+            "transformer.wte": RowwiseParallel(
+                input_layouts=Replicate(),
+            ),
+            "transformer.h.*.attn.wq": ColwiseParallel(use_local_output=False),
+            "transformer.h.*.attn.wk": ColwiseParallel(use_local_output=False),
+            "transformer.h.*.attn.wv": ColwiseParallel(use_local_output=False),
+            "transformer.h.*.attn.wo": RowwiseParallel(),
+            "transformer.h.*.mlp.w1": ColwiseParallel(use_local_output=False),
+            "transformer.h.*.mlp.w2": ColwiseParallel(use_local_output=False),
+            "transformer.h.*.mlp.c_proj": RowwiseParallel(),
+            "lm_head": ColwiseParallel(use_local_output=False),
+        }
+        parallelize_module(self, mesh, layer_plan)
+
+        if self.config.tie_word_embeddings:
+            # re-tie
+            self.transformer.wte.weight = (
+                self.lm_head.weight
+            )
+
+    def _apply_tp_sp(self, mesh):
+        from torch.distributed.tensor.parallel import (
+            ColwiseParallel,
+            PrepareModuleInput,
+            PrepareModuleOutput,
             RowwiseParallel,
             SequenceParallel,
             parallelize_module,
         )
         from torch.distributed.tensor.placement_types import Replicate, Shard
-
         layer_plan = {
             "transformer.h.*.ln_1": SequenceParallel(),
             "transformer.h.*.ln_2": SequenceParallel(),
@@ -360,20 +392,25 @@ class Llama(GPT):
                 input_layouts=Replicate(),
                 output_layouts=Shard(1),  # shard vocab dim
             ),
+            "lm_head": RowwiseParallel(input_layouts=Shard(1)),
         }
         parallelize_module(self, mesh, layer_plan)
 
-        if not self.config.tie_word_embeddings:
-            parallelize_module(
-                self.lm_head,
-                mesh,
-                {
-                    "lm_head": ColwiseParallel(
-                        input_layouts=Shard(1),
-                        output_layouts=Replicate(),  # or Shard(-1) if doing loss parallel
-                    )
-                },
+        if self.config.tie_word_embeddings:
+            # re-tie
+            self.transformer.wte.weight = (
+                self.lm_head.weight
             )
+
+        parallelize_module(
+            module=self.lm_head,
+            device_mesh=mesh,
+            parallelize_plan=PrepareModuleOutput(
+                output_layouts=Shard(1),
+                desired_output_layouts=Replicate(),
+            )
+        )
+
 
     def forward(self, input_ids, **kwargs):
         idx = input_ids

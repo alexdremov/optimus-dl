@@ -7,6 +7,8 @@ from typing import Any, NamedTuple
 
 import torch
 from torch.optim import Optimizer
+from torch.distributed.tensor import DTensor
+from torch.distributed.tensor.parallel import loss_parallel
 
 from optimus_dl.core.log import warn_once
 from optimus_dl.core.profile import measured_lambda, measured_next
@@ -69,7 +71,10 @@ class TrainingIterationMixin:
         Returns:
             Elapsed time for backward pass
         """
-        elapsed_backward, _ = measured_lambda(lambda: scaler.scale(loss).backward())
+        def backward():
+            with loss_parallel() if isinstance(loss, DTensor) else nullcontext():
+                scaler.scale(loss).backward()
+        elapsed_backward, _ = measured_lambda(backward)
         return elapsed_backward
 
     def execute_optimizer_step(
@@ -94,9 +99,11 @@ class TrainingIterationMixin:
 
         grad_norm = None
         if clip_grad_norm is not None:
-            grad_norm = torch.nn.utils.clip_grad_norm_(
-                model.parameters(), max_norm=clip_grad_norm
-            )
+            from torch.distributed.tensor.experimental import implicit_replication
+            with implicit_replication():
+                grad_norm = torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), max_norm=clip_grad_norm
+                )
 
         elapsed, _ = measured_lambda(lambda: scaler.step(optimizer))
         scaler.update()

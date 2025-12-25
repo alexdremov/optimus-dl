@@ -269,7 +269,9 @@ class TrainRecipe(
 
             optimizer: Optimizer = self.build_optimizer(model.make_parameter_groups())
             lr_scheduler = self.build_lr_scheduler(optimizer)
-            criterion: BaseCriterion = self.build_criterion()
+            criterion: BaseCriterion = self.build_criterion(
+                collective=collective
+            )
 
             # Setup training context (AMP, scaler, etc.) using recipe mixin
             training_context = self.setup_training_context(device)

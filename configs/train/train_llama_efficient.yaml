@@ -12,6 +12,9 @@ common:
   distributed:
     tp_size: 2
 
+optimization:
+  clip_grad_norm: null
+
 # Add activation checkpointing to the model transforms
 # This wraps LlamaBlock modules with a checkpointing wrapper to reduce memory usage
 # allowing for larger batch sizes or training larger models (up to ~8B on single node A100s)

@@ -250,12 +250,12 @@ class CheckpointManager:
             lr_scheduler = None
 
         if load_strategy.load_data_sources and load_strategy.load_dataloaders:
+            data_sources = None
             load_strategy.load_data_sources = False
             logger.warning(
                 "Not restoring data sources directly as they will be restored with dataloaders restoration"
             )
-
-        if not load_strategy.load_data_sources:
+        elif not load_strategy.load_data_sources:
             data_sources = None
             if load_strategy.load_dataloaders:
                 load_strategy.load_dataloaders = False

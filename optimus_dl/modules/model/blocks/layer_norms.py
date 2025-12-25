@@ -15,6 +15,8 @@ except ImportError:
     LIGER_AVAILABLE = False
     liger_rms_norm = None
 
+LIGER_AVAILABLE = False
+liger_rms_norm = None
 
 class LayerNorm(nn.Module):
     """LayerNorm but with an optional bias. PyTorch doesn't support simply bias=False"""
