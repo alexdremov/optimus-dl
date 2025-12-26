@@ -44,6 +44,7 @@ class LlamaConfig(GPTConfig):
         default=256,
         metadata={"help": "make SwiGLU hidden layer size multiple of large power of 2"},
     )
+    rope_theta: float = 10000.0
     # Liger Kernel flags (None = auto-enable if available)
     use_liger_rmsnorm: bool | None = None
     use_liger_swiglu: bool | None = None
@@ -93,7 +94,9 @@ class Llama(GPT):
 
         # create the token and position embeddings
         self.head_dim = config.n_embd // config.n_head
-        self.freqs_cis = precompute_freqs_cis(self.head_dim, config.sequence_length)
+        self.freqs_cis = precompute_freqs_cis(
+            self.head_dim, config.sequence_length, theta=config.rope_theta
+        )
 
         self.transformer = nn.ModuleDict(
             {

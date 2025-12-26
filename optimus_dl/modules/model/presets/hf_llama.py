@@ -30,26 +30,28 @@ def make_hf_llama_model(cfg: HFLlamaConfig, **_):
 
     # Update local config from HF config
     # Llama 2 uses 4096 context length usually, but it's in config
-    cfg.n_layer = hf_config.num_hidden_layers
-    cfg.n_head = hf_config.num_attention_heads
-    cfg.n_embd = hf_config.hidden_size
-    cfg.vocab_size = hf_config.vocab_size
-    cfg.sequence_length = getattr(hf_config, "max_position_embeddings", 2048)
-    cfg.block_size = cfg.sequence_length  # Ensure consistency
-    cfg.rmsnorm_eps = hf_config.rms_norm_eps
-    cfg.intermediate_size = getattr(hf_config, "intermediate_size", None)
+    optimus_cfg = cfg
+    optimus_cfg.n_layer = hf_config.num_hidden_layers
+    optimus_cfg.n_head = hf_config.num_attention_heads
+    optimus_cfg.n_embd = hf_config.hidden_size
+    optimus_cfg.vocab_size = hf_config.vocab_size
+    optimus_cfg.sequence_length = getattr(hf_config, "max_position_embeddings", 2048)
+    optimus_cfg.block_size = cfg.sequence_length  # Ensure consistency
+    optimus_cfg.rmsnorm_eps = hf_config.rms_norm_eps
+    optimus_cfg.intermediate_size = getattr(hf_config, "intermediate_size", None)
+    optimus_cfg.rope_theta = getattr(hf_config, "rope_theta", 10000.0)
 
     # Ensure correct tying behavior from HF config
-    cfg.tie_word_embeddings = getattr(hf_config, "tie_word_embeddings", False)
+    optimus_cfg.tie_word_embeddings = getattr(hf_config, "tie_word_embeddings", False)
 
     # Handle GQA (Grouped Query Attention)
     if hasattr(hf_config, "num_key_value_heads"):
-        cfg.n_kv_head = hf_config.num_key_value_heads
+        optimus_cfg.n_kv_head = hf_config.num_key_value_heads
     else:
-        cfg.n_kv_head = hf_config.num_attention_heads
+        optimus_cfg.n_kv_head = hf_config.num_attention_heads
 
     # Initialize local Llama model
-    model = Llama(cfg)
+    model = Llama(optimus_cfg)
 
     if not cfg.load_weights:
         return model
@@ -111,21 +113,21 @@ def make_hf_llama_model(cfg: HFLlamaConfig, **_):
     copy_weight("model.embed_tokens.weight", "transformer.wte.weight")
 
     # Layers
-    head_dim = cfg.n_embd // cfg.n_head
-    for i in range(cfg.n_layer):
+    head_dim = optimus_cfg.n_embd // optimus_cfg.n_head
+    for i in range(optimus_cfg.n_layer):
         # Attention
         copy_weight(
             f"model.layers.{i}.self_attn.q_proj.weight",
             f"transformer.h.{i}.attn.wq.weight",
             permute=True,
-            n_heads=cfg.n_head,
+            n_heads=optimus_cfg.n_head,
             head_dim=head_dim,
         )
         copy_weight(
             f"model.layers.{i}.self_attn.k_proj.weight",
             f"transformer.h.{i}.attn.wk.weight",
             permute=True,
-            n_heads=cfg.n_kv_head,
+            n_heads=optimus_cfg.n_kv_head,
             head_dim=head_dim,
         )
         copy_weight(
@@ -172,7 +174,7 @@ def make_hf_llama_model(cfg: HFLlamaConfig, **_):
     # Filter out ignored/optional keys
     missing_keys = {k for k in missing_keys if "inv_freq" not in k and "bias" not in k}
 
-    if cfg.tie_word_embeddings:
+    if optimus_cfg.tie_word_embeddings:
         if "transformer.wte.weight" in loaded_keys and "lm_head.weight" in missing_keys:
             missing_keys.remove("lm_head.weight")
         if "lm_head.weight" in loaded_keys and "transformer.wte.weight" in missing_keys:

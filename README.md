@@ -7,10 +7,18 @@
 *   **Modular "Recipe" Architecture**: Clean separation between model definitions, data pipelines, and training logic.
 *   **Hydra-based Configuration**: Hierarchical, type-safe, and easily conveniently override-able configurations.
 *   **Universal Metrics System**: Lazy evaluation and automatic distributed aggregation of metrics.
-*   **Modern PyTorch**: Built-in support for Mixed Precision (AMP), Distributed Data Parallel (DDP), and `torch.compile`.
+*   **Modern PyTorch**: Built-in support for Mixed Precision (AMP), FSDP2, Tensor Parallelism, Sequence Parallelism, and `torch.compile`.
+*   **Efficient Kernels**: Integrated support for [Liger-Kernel](https://github.com/linkedin/Liger-Kernel) for memory-efficient and fast RMSNorm, SwiGLU, and CrossEntropy.
 *   **Registry System**: easy dependency injection and component swapping via a centralized registry.
 
 The core idea of making everything modular and replacable is to make research experiments easy to implement cleanly.
+
+## Supported Models
+
+Optimus-DL includes highly optimized implementations of:
+*   **Llama 2 / 3**: Full support for GQA, RoPE, and various sharding strategies.
+*   **Qwen**: Support for Qwen-style attention (Q/K Norm) and architectures.
+*   **GPT-2**: Classic architecture for baselining.
 
 ## Quick Start
 

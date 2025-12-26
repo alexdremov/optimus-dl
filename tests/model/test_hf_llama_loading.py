@@ -18,6 +18,7 @@ class TestHFLlamaLoading(unittest.TestCase):
         self.mock_config.hidden_size = 32
         self.mock_config.tie_word_embeddings = False
         self.mock_config.intermediate_size = None
+        self.mock_config.rope_theta = 10000.0
 
         # Calculate expected hidden dim for MLP
         # Llama logic:
@@ -30,6 +31,7 @@ class TestHFLlamaLoading(unittest.TestCase):
         hidden_dim = int(2 * hidden_dim / 3)
         hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
         self.mlp_hidden_dim = hidden_dim
+        self.hidden_dim = hidden_dim
 
         self.mock_config.vocab_size = 100
         self.mock_config.max_position_embeddings = 64
@@ -88,7 +90,7 @@ class TestHFLlamaLoading(unittest.TestCase):
             _name="preset_hfllama2",
             hf_model_name="mock-model",
             load_weights=True,
-            multiple_of=32,  # Match the setup calculation
+            multiple_of=32,
         )
         cfg = OmegaConf.structured(cfg)
 
