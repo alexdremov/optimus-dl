@@ -89,6 +89,7 @@ def measured_lambda(
 
     Returns:
         Tuple of (elapsed_time_ms, result) where:
+
         - elapsed_time_ms: Execution time in milliseconds
         - result: Return value of the function call
 

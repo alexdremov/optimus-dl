@@ -68,6 +68,7 @@ def setup_device_and_collective(
 
     Returns:
         DeviceSetup namedtuple containing:
+
         - device: The PyTorch device to use for computation
         - collective: Distributed collective object for multi-GPU coordination
 

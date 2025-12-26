@@ -32,6 +32,7 @@ class ToDeviceTransform(BaseTransform):
 
     This transform ensures that input data is on the correct device (e.g., CUDA)
     before it enters the model. It includes performance optimizations for GPUs:
+
     - **Memory Pinning**: Automatically uses `PinMemory` to speed up CPU-to-GPU transfers.
     - **Asynchronous Transfers**: Uses `non_blocking=True` for CUDA devices.
     - **Prefetching**: Adds an additional prefetch layer after pinning.

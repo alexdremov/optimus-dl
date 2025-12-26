@@ -107,6 +107,7 @@ class Llama(GPT):
 
     Based on the standard GPT class but incorporates modern architectural
     improvements:
+
     - **Rotary Embeddings (RoPE)**: Position encoding integrated into attention.
     - **RMSNorm**: More efficient normalization layer.
     - **SwiGLU MLP**: SiLU-gated MLP variant.

@@ -15,6 +15,7 @@ class LoadStrategy:
 
     This class controls which components are loaded from a checkpoint. It's
     particularly useful for:
+
     - Fine-tuning: Load model weights but not optimizer state
     - Resuming with different configs: Load model but reset optimizer
     - Evaluation: Load only model weights

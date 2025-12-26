@@ -25,6 +25,7 @@ class HFTokenizer(BaseTokenizer):
     """Wrapper for Hugging Face AutoTokenizer.
 
     Integrates standard Hub tokenizers into the framework. It handles:
+
     - **Pretrained Loading**: Automatically downloads and caches tokenizers.
     - **Special Tokens**: Manages BOS/EOS injection based on config.
     - **Chat Templates**: Supports generating formatted conversation strings.

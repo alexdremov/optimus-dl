@@ -16,6 +16,7 @@ class BaseCriterion:
     is responsible for computing the loss given a model's output and the target data.
 
     Subclasses should implement:
+
     - `__call__()`: Compute the loss given model and batch
 
     Example:

@@ -47,6 +47,7 @@ class TokenProcessor:
     """A resumable generator that yields tokenized documents from a list of files.
 
     Manages a pool of workers to tokenize files in parallel. Features:
+
     - **Parallelism**: Uses multiprocessing to speed up tokenization.
     - **Buffering**: Accumulates a buffer of documents for local shuffling.
     - **Resumability**: Tracks file progress and buffer state to allow

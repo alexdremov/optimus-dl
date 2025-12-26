@@ -23,6 +23,7 @@ class Sharder:
     for each shard to generate a global index file.
 
     Features:
+
     - **Buffering**: Minimizes disk I/O by batching writes.
     - **Size-based Splitting**: Creates shards of approx. equal size (e.g., 512MB).
     - **Metadata Tracking**: Records token counts and file paths for the index.
@@ -108,6 +109,7 @@ class Sharder:
         """Write the current accumulated tokens to a new shard file.
 
         Saves two files:
+
         - `name_XXXXX.npy`: The flat token array.
         - `name_XXXXX_lens.npy`: Array of document lengths for reconstruction.
         """

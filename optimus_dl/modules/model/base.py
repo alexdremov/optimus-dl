@@ -19,6 +19,7 @@ class BaseModel(torch.nn.Module):
 
     All model implementations should inherit from this class. It provides a
     standardized interface for:
+
     - **Forward Pass**: Standard PyTorch forward method.
     - **Optimizer Integration**: Custom parameter grouping (e.g., weight decay
       exclusion for norms/biases).
@@ -28,6 +29,7 @@ class BaseModel(torch.nn.Module):
       devices via `apply_tp`.
 
     Subclasses must implement:
+
     - `forward()`: The main computation loop.
 
     Example:

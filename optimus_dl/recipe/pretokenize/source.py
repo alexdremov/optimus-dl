@@ -176,6 +176,7 @@ class FileReader:
     """Reads raw text documents from different file formats.
 
     Supports reading text columns from:
+
     - Parquet files (`.parquet`)
     - JSON Lines files (`.jsonl`)
     - JSON files (`.json`)

@@ -32,6 +32,7 @@ class TrainingContextMixin:
 
         Returns:
             A dictionary containing:
+
             - "scaler": The torch.cuda.amp.GradScaler instance.
             - "amp_ctx": The torch.autocast context manager.
             - "amp_cfg": The raw AMP configuration object.

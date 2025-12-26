@@ -31,6 +31,7 @@ class HuggingFaceDataset(BaseDataset):
     """Dataset wrapper for Hugging Face Hub datasets.
 
     This class integrates with the Hugging Face `datasets` library, supporting:
+
     - **Streaming**: Automatically enables streaming for efficient loading of
       large datasets without downloading everything.
     - **Distributed Sharding**: Uses `split_dataset_by_node` to ensure each rank

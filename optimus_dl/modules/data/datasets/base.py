@@ -11,11 +11,13 @@ class BaseDataset(torchdata.nodes.BaseNode):
     """Base class for all dataset implementations.
 
     All data sources in Optimus-DL should inherit from this class. It provides:
+
     - Integration with torchdata's pipeline system
     - Checkpointing support for resuming data iteration
     - Configuration storage
 
     Subclasses should implement:
+
     - The data iteration logic (inherited from torchdata.nodes.BaseNode)
     - Optionally override `load_state_dict()` for custom checkpointing
 

@@ -188,6 +188,7 @@ class CompositeDataset(BaseDataset):
 
     This class orchestrates a collection of datasets, sampling from them according
     to specified weights. It handles:
+
     - **Weighted Sampling**: Using a rank-safe multinomial sampler.
     - **Exhaustion Policies**: Can stop training when one/all datasets are
       exhausted or cycle through them indefinitely.
