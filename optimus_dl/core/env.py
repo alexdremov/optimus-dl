@@ -17,9 +17,18 @@ def get_int_from_env(
 ) -> int | None:
     """Return the value of an environment variable as ``int``.
 
-    :param name: The name of the environment variable.
-    :param allow_zero: If ``True``, returns the value if it equals to zero;
-        otherwise, raises a :class:`InvalidEnvironmentVariableError`.
+    Args:
+        env: The environment mapping (e.g. os.environ).
+        name: The name of the environment variable.
+        allow_zero: If ``True``, returns the value if it equals to zero;
+            otherwise, raises a :class:`InvalidEnvironmentVariableError`.
+
+    Returns:
+        The integer value, or None if the variable is not present.
+
+    Raises:
+        InvalidEnvironmentVariableError: If the value is not a valid integer
+            or violates constraints (e.g. negative when allow_zero is False).
     """
     s = env.get(name)
     if s is None:
@@ -49,7 +58,15 @@ def get_int_from_env(
 def get_path_from_env(env: Mapping[str, str], name: str) -> Path | None:
     """Return the value of an environment variable as :class:`~pathlib.Path`.
 
-    :param name: The name of the environment variable.
+    Args:
+        env: The environment mapping.
+        name: The name of the environment variable.
+
+    Returns:
+        The path, or None if the variable is not present.
+
+    Raises:
+        InvalidEnvironmentVariableError: If the value cannot be converted to a Path.
     """
     pathname = env.get(name)
     if not pathname:
@@ -64,6 +81,18 @@ def get_path_from_env(env: Mapping[str, str], name: str) -> Path | None:
 
 
 def get_device_from_env(env: Mapping[str, str], name: str) -> torch.device | None:
+    """Return the value of an environment variable as :class:`torch.device`.
+
+    Args:
+        env: The environment mapping.
+        name: The name of the environment variable.
+
+    Returns:
+        The torch.device, or None if the variable is not present.
+
+    Raises:
+        InvalidEnvironmentVariableError: If the value is not a valid device string.
+    """
     device_str = env.get(name)
     if device_str is None:
         return None
