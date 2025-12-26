@@ -13,3 +13,5 @@ Below is a list of the primary model implementations available in Optimus-DL.
 - [`qwen`](../reference/modules/model/qwen/): An implementation of the Qwen architecture, featuring Q/K LayerNorm for improved attention mechanics.
 - [`base`](../reference/modules/model/base/): Defines the base interface for all models, ensuring consistent API for training and evaluation.
 - [`config`](../reference/modules/model/config/): Provides structured `dataclass` configurations for all supported models, validated with `hydra-zen`.
+
+Llama and Qwen support loading pretrained weights from HuggingFace.

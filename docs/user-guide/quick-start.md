@@ -15,6 +15,8 @@ cd optimus-dl
 pip install -e .
 ```
 
+Alternatively, you can use docker: https://hub.docker.com/repository/docker/alexdremov/optimus-dl/general
+
 ## 2. Running a Training Job
 
 The easiest way to start is to run a training job with one of the provided default configurations. The `train_llama.yaml` config is a good starting point.
@@ -24,6 +26,9 @@ Training is orchestrated by the `scripts/train.py` script.
 ```bash
 # Run with the default Llama configuration
 python scripts/train.py --config-name=train_llama
+
+# multi-gpu training
+torchrun --nproc_per_node=gpu scripts/train.py --config-name=train_llama
 ```
 
 This command will:
@@ -79,6 +84,3 @@ You've successfully run your first training job! Here's where to go next:
 - **Dive into Configuration**: Learn how to create your own comprehensive training workflows in the **[Configuration Guide](configuration.md)**.
 - **Explore the Components**: See what's available for **[Models](models.md)**, **[Data Pipelines](data.md)**, and **[Optimizers](optimizers.md)**.
 - **Browse the API**: For in-depth details, head to the **[API Reference](../reference/)**.
-
-
-

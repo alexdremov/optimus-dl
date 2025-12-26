@@ -10,11 +10,13 @@ Configurations are built in layers. A main training config (e.g., `train_llama.y
 **Example from `train_llama.yaml`:**
 ```yaml
 defaults:
-  - _self_
+  - defaults.yaml
+  - lr_scheduler: wsd
   - model: llama2
-  - optimization: amp_adam
-  - lr_scheduler: cosine
-  # ... other defaults
+  - criterion: cross_entropy
+  - loggers: basic
+  - optimization/amp: bfloat16
+  - _self_
 ```
 Each item in the `defaults` list points to another YAML file, allowing you to mix and match components easily.
 
@@ -86,16 +88,23 @@ data:
           tokenizer_config:
             _name: tiktoken
             name: gpt2
-            add_bos: true
-            add_eos: true
+        - _name: chunk_tokens
+          max_seq_len: ${args.seq_len}
+        - _name: shuffle
+          seed: 42
+          buffer_size: 8096
         - _name: flat_batcher
           batch_size: ${args.batch_size}
           seq_len: ${args.seq_len}
+        - _name: prefetch
+        - _name: to_device
 
   train_datasets:
     source:
-      _name: preset_dataset
-      split: train
+      _name: loop
+      inner:
+        _name: preset_slimpajama6b
+        split: train
     transform: ${data.scratch.my_transform} # Reference the chain
 ```
 
@@ -103,21 +112,18 @@ data:
 This section controls the optimization process, including the optimizer, learning rate scheduler, and gradient clipping.
 
 ```yaml
+# Optimization settings
 optimization:
-  # Optimizer settings
+  iterations: ${args.iterations}
+  acc_steps: 1          # Gradient accumulation steps
+  clip_grad_norm: 5.0   # Gradient clipping norm
+
   optimizer:
     _name: adamw
-    lr: 3e-4
-    weight_decay: 0.1
-
-  # Learning rate scheduler
-  lr_scheduler:
-    _name: cosine
-    warmup_steps: 100
-
-  # Other settings
-  grad_clip_val: 1.0
-  batch_size: ${args.batch_size}
+    lr: 5e-4            # Base learning rate
+    weight_decay: 1e-1
+    betas: [0.9, 0.99]  # Adam beta parameters
+    eps: 1e-8           # Adam epsilon
 ```
 
 ## Command-Line Overrides
@@ -127,8 +133,8 @@ One of Hydra's most powerful features is the ability to override any configurati
 ```bash
 # Override the learning rate and batch size
 python scripts/train.py \
-    optimization.optimizer.lr=1e-5 \
-    args.batch_size=32
+  optimization.optimizer.lr=0.01 \
+  args.batch_size=32
 
 # Swap out the entire model for GPT-2
 python scripts/train.py model=gpt2
