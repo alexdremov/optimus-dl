@@ -7,6 +7,14 @@ from optimus_dl.modules.tokenizer.config import BaseTokenizerConfig
 
 @dataclass
 class CharTokenizerConfig(BaseTokenizerConfig):
+    """Configuration for character/byte-level tokenizer.
+
+    Attributes:
+        vocab_size: Number of unique byte values (usually 256).
+        bos_token_id: ID for the Beginning-of-Sequence token.
+        eos_token_id: ID for the End-of-Sequence token.
+    """
+
     vocab_size: int = 256  # 0-255 bytes + special tokens
     bos_token_id: int = 256
     eos_token_id: int = 257
@@ -14,10 +22,21 @@ class CharTokenizerConfig(BaseTokenizerConfig):
 
 @register_tokenizer("char_tokenize", CharTokenizerConfig)
 class CharTokenizer(BaseTokenizer):
+    """Simple byte-level UTF-8 tokenizer.
+
+    Converts text to raw UTF-8 bytes and adds optional BOS/EOS tokens.
+    Detokenization skips the special token IDs and decodes the remainder
+    as UTF-8.
+
+    Args:
+        config: Character tokenizer configuration.
+    """
+
     def __init__(self, config: CharTokenizerConfig, **kwargs):
         super().__init__(config)
 
     def encode(self, text: str) -> list[int]:
+        """Convert text to UTF-8 bytes and add special tokens."""
         input_ids = list(text.encode("utf-8"))
 
         if self.config.add_bos:
@@ -35,6 +54,7 @@ class CharTokenizer(BaseTokenizer):
         return input_ids
 
     def decode(self, ids: list[int]) -> str:
+        """Filter out special IDs and decode bytes to UTF-8."""
         # Filter out special tokens
         bytes_list = []
         for id in ids:
@@ -44,12 +64,15 @@ class CharTokenizer(BaseTokenizer):
 
     @property
     def vocab_size(self) -> int:
+        """Vocabulary size including BOS/EOS tokens."""
         return max(self.config.vocab_size, (self.config.eos_token_id or 0) + 1)
 
     @property
     def bos_token_id(self):
+        """BOS token ID from config."""
         return self.config.bos_token_id
 
     @property
     def eos_token_id(self):
+        """EOS token ID from config."""
         return self.config.eos_token_id

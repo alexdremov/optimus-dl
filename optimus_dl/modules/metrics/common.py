@@ -162,6 +162,14 @@ class SummedMetric(BaseMetric):
 
 
 class FrequencyMetric(BaseMetric):
+    """Metric that computes the frequency (duration per call) of an event.
+
+    Measures time between successive calls to `log()`.
+
+    Attributes:
+        round: Rounding precision for the result.
+    """
+
     def __init__(self, round: int | None = None):
         self.round = round
         self.start = None
@@ -169,6 +177,7 @@ class FrequencyMetric(BaseMetric):
         self.counter = 0
 
     def log(self):
+        """Record an occurrence and compute elapsed time since the last call."""
         if self.start is None:
             self.start = time.perf_counter_ns()
             return
@@ -177,20 +186,28 @@ class FrequencyMetric(BaseMetric):
         self.start = time.perf_counter_ns()
 
     def compute(self) -> float | int | dict[str, float | int]:
+        """Compute average time per occurrence in milliseconds."""
         if self.counter == 0:
             return 0
         return safe_round(self.elapsed / self.counter / 1e6, self.round)
 
     def merge(self, other_state):
+        """Merge state from another FrequencyMetric."""
         self.elapsed += other_state["elapsed"]
         self.counter += other_state["counter"]
 
     def load_state_dict(self, state_dict):
+        """Restore state and reset the start timer."""
         super().load_state_dict(state_dict)
         self.start = None
 
 
 class StopwatchMeter(BaseMetric):
+    """Metric that acts as a manual stopwatch for measuring event durations.
+
+    Expects pairs of `log(mode="start")` and `log(mode="end")` calls.
+    """
+
     def __init__(self, round: int | None = None):
         self.round = round
         self._start: float | None = None
@@ -198,6 +215,7 @@ class StopwatchMeter(BaseMetric):
         self.counter = 0
 
     def log(self, mode):
+        """Start or stop the timer."""
         if mode == "start":
             self.start()
         elif mode == "end":
@@ -206,47 +224,62 @@ class StopwatchMeter(BaseMetric):
             raise AssertionError("Unknown mode")
 
     def start(self):
+        """Start the timer."""
         self._start = time.perf_counter_ns()
 
     def end(self):
+        """Stop the timer and record the duration."""
         assert self._start is not None, "Was never started"
         self.elapsed += time.perf_counter_ns() - self._start
         self.counter += 1
         self._start = None
 
     def compute(self) -> float | int | dict[str, float | int]:
+        """Compute average duration in milliseconds."""
         if self.counter == 0:
             return 0
         return safe_round(self.elapsed / self.counter / 1e6, self.round)
 
     def merge(self, other_state):
+        """Merge state from another StopwatchMeter."""
         self.elapsed += other_state["elapsed"]
         self.counter += other_state["counter"]
 
     def load_state_dict(self, state_dict):
+        """Restore state and reset current timer."""
         super().load_state_dict(state_dict)
         self._start = None
 
 
 class AveragedExponentMeter(BaseMetric):
+    """Metric that computes the exponent of a weighted average.
+
+    Commonly used for computing perplexity (exp(loss)).
+    """
+
     def __init__(self, round: int | None = None):
         self._internal = AverageMetric()
         self.round = round
 
     def log(self, value, weight):
+        """Log a log-scale value with its weight."""
         self._internal.log(value, weight)
 
     def compute(self):
+        """Return the exponent of the average."""
         return safe_round(np.exp(self._internal.compute()), self.round)
 
     def merge(self, other_state):
+        """Merge state from another meter."""
         self._internal.merge(other_state["internal"])
 
     def load_state_dict(self, state_dict):
+        """Restore state."""
         self._internal.load_state_dict(state_dict["internal"])
         self.round = state_dict["round"]
 
     def state_dict(self):
+        """Collect state for checkpointing."""
         return {
             "internal": self._internal.state_dict(),
             "round": self.round,

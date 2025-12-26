@@ -1,5 +1,4 @@
-"""
-JSONL (JSON Lines) file metrics logger implementation.
+"""JSONL (JSON Lines) file metrics logger implementation.
 
 This logger writes metrics to JSONL files, with one JSON object per line,
 making it easy to process logs with standard tools or custom scripts.
@@ -24,7 +23,19 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class JsonlLoggerConfig(MetricsLoggerConfig):
-    """Configuration for JSONL file logger."""
+    """Configuration for JSONL file logger.
+
+    Attributes:
+        output_dir: Directory where log files will be saved.
+        filename: Base name for the metrics file.
+        append_mode: If True, appends to existing files. If False, overwrites.
+        flush_every: Number of writes before forcing a disk sync.
+        include_timestamp: Whether to add an ISO timestamp to each entry.
+        include_group_in_filename: If True, creates separate files for each
+            metric group (e.g., 'metrics_eval.jsonl').
+        max_file_size_mb: Maximum size of a log file before it is rotated.
+        max_rotated_files: Number of old log files to keep (-1 for unlimited).
+    """
 
     # File settings
     output_dir: str = "logs"
@@ -53,10 +64,14 @@ class JsonlLogger(BaseMetricsLogger):
 
     Writes metrics to JSON Lines files, with one JSON object per line.
     Each line contains the step, group, timestamp (optional), and all metrics.
+    Features automatic file rotation and separate file support for different
+    metric groups.
 
     Example output:
+    ```json
     {"step": 1, "group": "train", "timestamp": "2024-01-01T12:00:00", "loss": 2.5, "lr": 0.001}
     {"step": 2, "group": "train", "timestamp": "2024-01-01T12:00:01", "loss": 2.3, "lr": 0.001}
+    ```
     """
 
     def __init__(self, cfg: JsonlLoggerConfig, **kwargs):
@@ -83,7 +98,11 @@ class JsonlLogger(BaseMetricsLogger):
             logger.info(f"JSONL logger will write to: {self.output_dir}")
 
     def setup(self, experiment_name: str, config: dict[str, Any]) -> None:
-        """Setup JSONL logger with experiment configuration."""
+        """Setup JSONL logger and export the experiment configuration.
+
+        Writes the provided configuration to both `.json` and `.yaml` files in the
+        output directory for reproducibility.
+        """
         if not self.enabled:
             return
 
@@ -109,8 +128,8 @@ class JsonlLogger(BaseMetricsLogger):
     def _rotate_file(self, group: str) -> None:
         """Rotate log file when it gets too large.
 
-        Args:
-            group: Metrics group name
+        Renames the current file (e.g., `metrics.jsonl` -> `metrics.1.jsonl`) and
+        opens a new one.
         """
         if group not in self.file_handles:
             return
@@ -187,14 +206,7 @@ class JsonlLogger(BaseMetricsLogger):
                 self.file_handles.pop(group, None)
 
     def _should_rotate_file(self, group: str) -> bool:
-        """Check if file should be rotated based on size.
-
-        Args:
-            group: Metrics group name
-
-        Returns:
-            True if file should be rotated
-        """
+        """Check if file should be rotated based on size."""
         if group not in self.file_paths:
             return False
 
@@ -209,14 +221,7 @@ class JsonlLogger(BaseMetricsLogger):
         return False
 
     def _get_file_handle(self, group: str) -> TextIO:
-        """Get or create file handle for a metrics group.
-
-        Args:
-            group: Metrics group name
-
-        Returns:
-            File handle for writing
-        """
+        """Get or create the file handle for a specific metrics group."""
         if group in self.file_handles:
             return self.file_handles[group]
 
@@ -251,13 +256,7 @@ class JsonlLogger(BaseMetricsLogger):
     def log_metrics(
         self, metrics: dict[str, Any], step: int, group: str = "train"
     ) -> None:
-        """Log metrics to JSONL file.
-
-        Args:
-            metrics: Dictionary of metric names to values
-            step: Training step/iteration number
-            group: Metrics group (e.g., 'train', 'eval/validation')
-        """
+        """Flatten and write metrics to the appropriate JSONL file."""
         if not self.enabled:
             return
 
@@ -310,7 +309,7 @@ class JsonlLogger(BaseMetricsLogger):
             logger.error(f"Failed to write metrics to JSONL: {e}")
 
     def close(self) -> None:
-        """Close all file handles."""
+        """Close all open file handles and sync to disk."""
         for group, handle in self.file_handles.items():
             try:
                 handle.flush()

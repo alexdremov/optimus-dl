@@ -16,11 +16,34 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class HuggingFaceDatasetConfig(RegistryConfigStrict):
+    """Configuration for Hugging Face datasets.
+
+    Attributes:
+        dataset_load_kwargs: Dictionary of arguments passed to `datasets.load_dataset`.
+            e.g., {"path": "wikitext", "name": "wikitext-2-raw-v1", "split": "train"}.
+    """
+
     dataset_load_kwargs: dict = MISSING
 
 
 @register_dataset("huggingface_dataset", HuggingFaceDatasetConfig)
 class HuggingFaceDataset(BaseDataset):
+    """Dataset wrapper for Hugging Face Hub datasets.
+
+    This class integrates with the Hugging Face `datasets` library, supporting:
+    - **Streaming**: Automatically enables streaming for efficient loading of
+      large datasets without downloading everything.
+    - **Distributed Sharding**: Uses `split_dataset_by_node` to ensure each rank
+      sees a unique portion of the data.
+    - **Checkpointing**: Tracks current position to allow resuming from the middle
+      of a stream.
+
+    Args:
+        cfg: Hugging Face dataset configuration.
+        rank: Distributed rank.
+        world_size: Total number of ranks.
+    """
+
     def __init__(self, cfg, rank: int, world_size: int, **kwargs):
         super().__init__(cfg)
         self.rank = rank
@@ -28,6 +51,7 @@ class HuggingFaceDataset(BaseDataset):
         self.position = 0
 
     def get_state(self):
+        """Return the current position and configuration for checkpointing."""
         return {
             "cfg": self.cfg,
             "dataset_state": (
@@ -41,6 +65,11 @@ class HuggingFaceDataset(BaseDataset):
         }
 
     def reset(self, initial_state: dict | None = None):
+        """Initialize or restore the dataset stream.
+
+        Configures streaming, performs distributed sharding, and skips to the
+        saved position if restoring from a checkpoint.
+        """
         super().reset(initial_state)
         if initial_state is not None:
             self.cfg = initial_state.get("cfg", self.cfg)
@@ -86,5 +115,6 @@ class HuggingFaceDataset(BaseDataset):
         self.iter = iter(self.dataset)
 
     def next(self):
+        """Yield the next example from the Hugging Face dataset."""
         self.position += 1
         return next(self.iter)

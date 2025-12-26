@@ -13,11 +13,22 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class OptimizerBuilderConfig(RegistryConfig):
+    """Configuration for OptimizerBuilder."""
+
     pass
 
 
 class OptimizerBuilder:
-    """Mixin for building optimizers."""
+    """Builder class responsible for creating the optimizer.
+
+    Takes parameter groups from the model and instantiates the configured
+    optimizer (e.g., AdamW). It also logs the total number of optimized
+    parameters.
+
+    Args:
+        cfg: Builder configuration.
+        optimization_config: Optimization settings including the optimizer config.
+    """
 
     def __init__(
         self,
@@ -28,7 +39,16 @@ class OptimizerBuilder:
         self.optimization_config = optimization_config
 
     def build_optimizer(self, params, **kwargs) -> Optimizer:
-        """Build and validate the optimizer."""
+        """Build and validate the optimizer.
+
+        Args:
+            params: Iterable of parameters or dicts defining parameter groups
+                (typically from `model.make_parameter_groups()`).
+            **kwargs: Additional arguments passed to the optimizer constructor.
+
+        Returns:
+            Instantiated Optimizer.
+        """
         optimizer = build(
             "optimizer", self.optimization_config.optimizer, params=params, **kwargs
         )

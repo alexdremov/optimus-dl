@@ -7,13 +7,13 @@ repo_url: https://github.com/alexdremov/optimus-dl
 
 theme:
   name: material
-  palette: 
+  palette:
     # Light mode
     - scheme: default
       primary: white
-      accent: indigo 
+      accent: indigo
       toggle:
-        icon: material/brightness-7 
+        icon: material/brightness-7
         name: Switch to dark mode
     # Dark mode
     - scheme: slate
@@ -54,7 +54,6 @@ markdown_extensions:
 
 extra_javascript:
   - javascripts/mathjax.js
-  - https://polyfill.io/v3/polyfill.min.js?features=es6
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
 
 plugins:
@@ -67,19 +66,14 @@ plugins:
             docstring_style: google
             show_root_heading: true
             show_source: true
+  - gen-files:
+      scripts:
+        - docs/gen_doc_stubs.py
+  - literate-nav
 
 nav:
   - Home: index.md
   - User Guide:
     - Quick Start: user-guide/quick-start.md
     - Configuration: user-guide/configuration.md
-  - API Reference:
-    - Core:
-      - Bootstrap: api/core/bootstrap.md
-      - Registry: api/core/registry.md
-      - Utilities: api/core/utils.md
-    - Modules:
-      - Models: api/modules/models.md
-      - Data: api/modules/data.md
-      - Checkpointing: api/modules/checkpoint.md
-    - Recipe: api/recipe.md
+  - API Reference: reference/

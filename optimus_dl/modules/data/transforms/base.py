@@ -81,6 +81,7 @@ class MapperConfig:
         snapshot_frequency: How often to snapshot the iterator state for checkpointing.
         prebatch: Number of items to batch together before processing (for efficiency).
     """
+
     num_workers: int = 4
     in_order: bool = True
     method: str = "thread"

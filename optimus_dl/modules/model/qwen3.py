@@ -23,6 +23,22 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Qwen3Config(GPTConfig):
+    """Configuration for Qwen3-style models.
+
+    Attributes:
+        sequence_length: Maximum context length.
+        rmsnorm_eps: Epsilon for RMSNorm.
+        rope_theta: Base frequency for rotary embeddings (Qwen3 uses 5M).
+        head_dim: Dimensionality of each attention head.
+        bias: Global bias flag for linear layers.
+        attention_bias: Specific bias flag for attention projections.
+        n_kv_head: Number of Key/Value heads.
+        intermediate_size: Dimension of SwiGLU hidden layer.
+        multiple_of: SwiGLU rounding factor.
+        use_liger_rmsnorm: Enable Liger-kernel for RMSNorm.
+        use_liger_swiglu: Enable Liger-kernel for SwiGLU.
+    """
+
     sequence_length: int = 32768
     rmsnorm_eps: float = 1e-6
     rope_theta: float = 5000000.0  # Qwen3 default
@@ -42,6 +58,8 @@ class Qwen3Config(GPTConfig):
 
 
 class Qwen3Block(nn.Module):
+    """Qwen3 Transformer block with Q/K normalization."""
+
     def __init__(self, config: Qwen3Config):
         super().__init__()
         self.ln_1 = RMSNorm(
@@ -69,6 +87,7 @@ class Qwen3Block(nn.Module):
         )
 
     def forward(self, x, freqs_cis):
+        """Compute block forward pass."""
         ln_1 = self.ln_1(x)
         attn_out = self.attn(ln_1, freqs_cis)
 
@@ -79,6 +98,18 @@ class Qwen3Block(nn.Module):
 
 @register_model("qwen3", Qwen3Config)
 class Qwen3(GPT):
+    """Qwen3 Language Model architecture.
+
+    Extends the framework's GPT base with Qwen-specific features:
+    - **Q/K Normalization**: Applies RMSNorm to Query and Key tensors before
+      attention computation to improve training stability.
+    - **Configurable Biases**: Supports bias in attention and MLP layers.
+    - **Large Context**: Optimized for very long sequence lengths.
+
+    Args:
+        config: Qwen3 model configuration.
+    """
+
     def __init__(self, config: Qwen3Config):
         super().__init__(config)
         assert config.vocab_size is not None
@@ -123,6 +154,16 @@ class Qwen3(GPT):
     def apply_tp(
         self, mesh, loss_parallel: bool = False, sequence_parallel: bool = False
     ):
+        """Apply Tensor Parallelism plan to the Qwen3 model.
+
+        Similar to the Llama plan but handles Qwen3-specific parameter names
+        and bias configurations.
+
+        Args:
+            mesh: DeviceMesh for sharding.
+            loss_parallel: If True, shards the LM head.
+            sequence_parallel: If True, enables sequence sharding.
+        """
         tp_size = mesh.size(0)
         assert (
             self.config.n_head % tp_size == 0
@@ -217,6 +258,7 @@ class Qwen3(GPT):
             )
 
     def forward(self, input_ids, **kwargs):
+        """Forward pass with rotary frequency selection."""
         idx = input_ids
         device = idx.device
         b, t = idx.size()

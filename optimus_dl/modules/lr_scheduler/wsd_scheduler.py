@@ -10,7 +10,19 @@ from .base import BaseLRScheduler, BaseLRSchedulerConfig
 
 @dataclass
 class WSDSchedulerConfig(BaseLRSchedulerConfig):
-    """Configuration for WSD (Warmup, Sustain, Decay) learning rate scheduler"""
+    """Configuration for WSD (Warmup, Sustain, Decay) learning rate scheduler.
+
+    Attributes:
+        final_lr_factor: Factor of base_lr for the final learning rate.
+        n_warmup: Number of iterations for linear warmup.
+        n_warmup_fraction: Fraction of total iterations for warmup.
+        init_div_factor: Initial division factor for start of warmup (1/X).
+        fract_decay: Fraction of total iterations dedicated to decay phase.
+        decay_type: Strategy for decay ('linear', 'cosine', 'exp', etc.).
+        sqrt_power: Power for 'sqrt' decay strategy.
+        linear_pw_subdivisions: Intermediate factors for piecewise linear decay.
+        cooldown_start_lr_factor: LR factor at the start of decay phase.
+    """
 
     final_lr_factor: float = 0.0  # factor by which to reduce max_lr at the end
     n_warmup: int | None = 300  # number of warmup iterations
@@ -29,13 +41,20 @@ class WSDSchedulerConfig(BaseLRSchedulerConfig):
 
 @register_lr_scheduler("wsd", WSDSchedulerConfig)
 class WSDScheduler(BaseLRScheduler):
-    """
-    WSD (Warmup, Sustain, Decay) learning rate scheduler.
+    """WSD (Warmup, Sustain, Decay) learning rate scheduler.
 
-    This scheduler has three phases:
-    1. Warmup: Linear warmup from base_lr/init_div_factor to base_lr
-    2. Sustain: Constant learning rate at base_lr
-    3. Decay: Various decay strategies to final_lr_factor * base_lr
+    This scheduler is designed for pre-training large models and consists of:
+    1. **Warmup**: Linear increase from `base_lr / init_div_factor` to `base_lr`.
+    2. **Sustain**: Constant learning rate at `base_lr`.
+    3. **Decay (Cooldown)**: Decrease from `base_lr` to `base_lr * final_lr_factor`.
+
+    The decay phase supports multiple shapes, including linear, cosine, and
+    piecewise linear.
+
+    Args:
+        cfg: Scheduler configuration.
+        optimizer: Managed optimizer.
+        iterations: Total training iterations.
     """
 
     def __init__(
@@ -80,13 +99,13 @@ class WSDScheduler(BaseLRScheduler):
             )
 
     def get_lr(self) -> list[float]:
-        """Calculate learning rates using WSD schedule formula"""
+        """Calculate learning rates using the WSD formula for the current step."""
         step = self._step_count
         lr_factor = self._get_lr_factor(step)
         return [base_lr * lr_factor for base_lr in self.base_lrs]
 
     def _get_lr_factor(self, step: int) -> float:
-        """Get the learning rate multiplication factor for the current step"""
+        """Identify current phase and compute the corresponding LR factor."""
         if step < self.n_warmup:
             # Warmup phase: linear interpolation from 1/init_div_factor to 1.0
             return (step / self.n_warmup) + (
@@ -103,7 +122,7 @@ class WSDScheduler(BaseLRScheduler):
             return self.final_lr_factor
 
     def _get_decay_factor(self, step: int) -> float:
-        """Calculate decay factor for the decay phase"""
+        """Compute decay factor shape based on configuration."""
         if self.decay_type == "linear":
             progress = (step - self.n_hold) / self.n_anneal_steps
             return self.final_lr_factor + (
@@ -174,7 +193,7 @@ class WSDScheduler(BaseLRScheduler):
             raise ValueError(f"Unknown decay_type: {self.decay_type}")
 
     def state_dict(self) -> dict[str, Any]:
-        """Return scheduler state"""
+        """Return the scheduler's state, including WSD-specific parameters."""
         state = super().state_dict()
         state.update(
             {
@@ -194,7 +213,7 @@ class WSDScheduler(BaseLRScheduler):
         return state
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
-        """Load scheduler state"""
+        """Restore the scheduler's state."""
         super().load_state_dict(state_dict)
         self.iterations = state_dict["iterations"]
         self.final_lr_factor = state_dict["final_lr_factor"]

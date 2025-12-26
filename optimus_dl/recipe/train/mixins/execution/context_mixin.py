@@ -11,19 +11,31 @@ logger = logging.getLogger(__name__)
 
 
 class TrainingContextMixin:
-    """Mixin for setting up training context (AMP, scaler, etc.)."""
+    """Mixin for setting up the training context (precision, scaling, devices).
+
+    Responsible for initializing PyTorch's AMP (Automatic Mixed Precision) and
+    GradScaler based on the optimization configuration. This ensures consistent
+    precision settings across the training loop.
+
+    Args:
+        optimization_config: Configuration containing AMP settings.
+    """
 
     def __init__(self, optimization_config: OptimizationConfig):
         self.optimization_config = optimization_config
 
     def setup_training_context(self, device: torch.device) -> dict[str, Any]:
-        """Setup training context (AMP, scaler, etc.).
+        """Initialize AMP context and Gradient Scaler.
 
         Args:
-            device: Target device
+            device: The target compute device.
 
         Returns:
-            Dictionary containing training context objects
+            A dictionary containing:
+            - "scaler": The torch.cuda.amp.GradScaler instance.
+            - "amp_ctx": The torch.autocast context manager.
+            - "amp_cfg": The raw AMP configuration object.
+            - "device": The device being used.
         """
         amp_cfg = self.optimization_config.amp
         scaler = torch.GradScaler(

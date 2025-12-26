@@ -11,11 +11,22 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class LoggerManagerConfig(RegistryConfig):
+    """Configuration for LoggerManager."""
+
     pass
 
 
 class LoggerManager:
-    """Mixin for handling metrics logging."""
+    """Manager for multiple metrics loggers.
+
+    This class instantiates and orchestrates a list of logging backends (e.g.,
+    JSONL, WandB). It provides a unified interface for setting up, logging to,
+    and closing all configured loggers.
+
+    Args:
+        cfg: Manager configuration.
+        loggers_config: List of configurations for individual loggers.
+    """
 
     def __init__(
         self,
@@ -28,10 +39,13 @@ class LoggerManager:
         self.loggers: list[BaseMetricsLogger] | None = None
 
     def build_loggers(self, **kwargs):
-        """Build metrics loggers from configuration.
+        """Instantiate all configured loggers.
+
+        Uses the registry to build logger instances. If previous state is available
+        (from a checkpoint), it is passed to the logger builders for resumption.
 
         Returns:
-            List of configured logger instances
+            List of active logger instances.
         """
         if self.loggers_config is None:
             logger.info("No loggers configuration found, metrics logging disabled")
@@ -56,12 +70,11 @@ class LoggerManager:
         self.loggers = loggers
 
     def setup_loggers(self, experiment_name: str, full_config: dict):
-        """Setup all loggers with experiment configuration.
+        """Initialize all loggers with experiment context.
 
         Args:
-            loggers: List of logger instances
-            experiment_name: Name of the current experiment
-            full_config: Full configuration dict for logger setup
+            experiment_name: Name of the experiment.
+            full_config: Complete training configuration dictionary.
         """
         for logger_instance in self.loggers or []:
             try:
@@ -72,13 +85,12 @@ class LoggerManager:
                 )
 
     def log_metrics_to_loggers(self, metrics, step: int, group: str = "train"):
-        """Log metrics to all provided loggers.
+        """Dispatch metrics to all active loggers.
 
         Args:
-            loggers: List of logger instances
-            metrics: Dictionary of metric names to values
-            step: Training step/iteration number
-            group: Metrics group (e.g., 'train', 'eval/validation')
+            metrics: Dictionary of metric values.
+            step: Current iteration.
+            group: Metric group name.
         """
         for logger_instance in self.loggers or []:
             try:
@@ -89,11 +101,7 @@ class LoggerManager:
                 )
 
     def close_loggers(self):
-        """Close all loggers.
-
-        Args:
-            loggers: List of logger instances to close
-        """
+        """Clean up all loggers."""
         for logger_instance in self.loggers or []:
             try:
                 logger_instance.close()
@@ -103,12 +111,14 @@ class LoggerManager:
                 )
 
     def state_dict(self):
+        """Collect state from all loggers for checkpointing."""
         return {
             logger_instance.cfg.id: logger_instance.state_dict()
             for logger_instance in self.loggers or []
         }
 
     def load_state_dict(self, state_dict):
+        """Load logger states from a checkpoint."""
         self.previous_state = state_dict
 
 

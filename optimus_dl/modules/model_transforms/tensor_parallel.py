@@ -15,14 +15,28 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TensorParallelConfig(ModelTransformConfig):
-    """Configuration for Tensor Parallelism."""
+    """Configuration for Tensor Parallelism.
+
+    Attributes:
+        custom_model_kwargs: Additional keyword arguments passed to the model's
+            `apply_tp` method (e.g., sequence_parallel=True).
+    """
 
     custom_model_kwargs: dict = field(default_factory=dict)
 
 
 @register_model_transform("tensor_parallel", TensorParallelConfig)
 class TensorParallelTransform(BaseModelTransform):
-    """Applies Tensor Parallelism to the model."""
+    """Transform that applies Tensor Parallelism to a model.
+
+    This transform delegates the actual sharding logic to the model's `apply_tp`
+    method, providing it with the appropriate Tensor Parallel device mesh from
+     the global collective.
+
+    Args:
+        cfg: Tensor parallel configuration.
+        collective: Distributed collective (MeshCollective required).
+    """
 
     def __init__(
         self,
@@ -34,6 +48,7 @@ class TensorParallelTransform(BaseModelTransform):
         self.collective = collective
 
     def apply(self, model: BaseModel, **kwargs) -> BaseModel:
+        """Apply the tensor parallel plan to the model."""
         if not isinstance(self.collective, MeshCollective):
             logger.warning("TensorParallel requires MeshCollective. Skipping.")
             return model

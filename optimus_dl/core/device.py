@@ -19,6 +19,7 @@ class DeviceSetup(NamedTuple):
         device: The PyTorch device to use for computation.
         collective: The distributed collective object for multi-GPU/multi-node training.
     """
+
     device: torch.device
     collective: Any
 

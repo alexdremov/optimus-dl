@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - master
   workflow_dispatch:
 
 permissions:
@@ -14,28 +13,56 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      
+      - uses: actions/checkout@v6
+
       - name: Configure Git Credentials
         run: |
           git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
 
-      - uses: actions/setup-python@v5
+      - name: Aggressive free disk space
+        run: |
+          echo "################################"
+          echo "Disk usage BEFORE cleanup:"
+          echo "################################"
+          df -h
+
+          echo "Removing hosted toolcache..."
+          rm -rf /opt/hostedtoolcache || true
+
+          echo "Removing .NET..."
+          rm -rf /usr/share/dotnet || true
+
+          echo "Removing Android SDK..."
+          rm -rf /usr/local/lib/android || true
+
+          echo "Removing GHC / Haskell..."
+          rm -rf /opt/ghc || true
+          rm -rf /usr/local/.ghcup || true
+
+          echo "Docker prune (just in case runner had leftovers)..."
+          docker container prune -f || true
+          docker image prune -af || true
+          docker volume prune -f || true
+
+          echo "################################"
+          echo "Disk usage AFTER cleanup:"
+          echo "################################"
+          df -h
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
         with:
-          python-version: 3.x
+          python-version: '3.12'
 
-      - run: echo "cache_id=$(date --utc '+%V')" >> $GITHUB_ENV 
-
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5.0.1
         with:
-          key: mkdocs-material-${{ env.cache_id }}
-          path: .cache
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
           restore-keys: |
-            mkdocs-material-
+            ${{ runner.os }}-pip-
 
-      - name: Install dependencies
-        run: pip install .[docs]
+      - name: Install build
+        run: pip install .[docs] --cache-dir ~/.cache/pip
 
       - name: Deploy documentation
-        run: mkdocs gh-deploy --force
+        run: PYTHONPATH=. mkdocs gh-deploy --force

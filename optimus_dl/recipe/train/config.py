@@ -57,6 +57,7 @@ class TrainRecipeConfig:
         use_gpu: Whether to use GPU if available. If False, uses CPU.
         distributed: Configuration for distributed training mesh.
     """
+
     # Exp metadata
     exp_name: str = field(default=MISSING, metadata={"help": "Experiment name"})
     exp_description: str | None = field(
@@ -163,6 +164,7 @@ class TrainConfig(RegistryConfig):
         ...     ),
         ... )
     """
+
     args: dict = field(default_factory=dict)
     common: TrainRecipeConfig = field(default_factory=TrainRecipeConfig)
 

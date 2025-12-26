@@ -11,11 +11,21 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class CriterionBuilderConfig(RegistryConfig):
+    """Configuration for CriterionBuilder (usually just a registry name)."""
+
     pass
 
 
 class CriterionBuilder:
-    """Mixin for building loss criteria."""
+    """Builder class responsible for creating the loss criterion instance.
+
+    Uses the `criterion` registry to instantiate the specified loss function
+    (e.g., CrossEntropy) based on the training configuration.
+
+    Args:
+        cfg: Builder configuration.
+        criterion_config: Configuration for the criterion itself.
+    """
 
     def __init__(
         self, cfg: CriterionBuilderConfig, criterion_config: CriterionConfig, **kwargs
@@ -23,7 +33,7 @@ class CriterionBuilder:
         self.criterion_config = criterion_config
 
     def build_criterion(self, **kwargs) -> BaseCriterion:
-        """Build and validate the criterion."""
+        """Instantiate and return the configured loss criterion."""
         criterion = build("criterion", self.criterion_config, **kwargs)
         assert isinstance(criterion, BaseCriterion)
         logger.info(f"Criterion \n{criterion}")

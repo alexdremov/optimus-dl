@@ -42,6 +42,7 @@ class RegistryConfigStrict:
     Attributes:
         _name: The registered name of the component to instantiate.
     """
+
     _name: str | None = None
 
 
@@ -61,6 +62,7 @@ class RegistryConfig(RegistryConfigStrict, dict[str, Any]):
         >>> config = RegistryConfig(_name="my_model", n_layers=12, hidden_size=768)
         >>> config["n_layers"]  # 12
     """
+
     ...
 
 

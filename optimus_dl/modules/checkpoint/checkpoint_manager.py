@@ -1,4 +1,9 @@
-"""Checkpoint mixin for save/load functionality."""
+"""Checkpoint management system for distributed training.
+
+This module provides the CheckpointManager which handles saving and loading sharded
+model and optimizer states using PyTorch's Distributed Checkpoint (DCP) API.
+It also manages metadata, learning rate scheduler states, and data loader positions.
+"""
 
 import logging
 import tempfile
@@ -31,17 +36,37 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class CheckpointManagerConfig(RegistryConfig):
+    """Configuration for CheckpointManager."""
+
     pass
 
 
 class CheckpointManager:
-    """Mixin for checkpoint save/load functionality."""
+    """Manages saving and loading of distributed checkpoints.
+
+    This class provides high-level orchestration for training checkpoints. It
+    integrates with PyTorch DCP for efficient sharded I/O and handles the
+    complexity of synchronizing metadata and per-rank states (like dataloaders).
+
+    Example:
+        >>> manager = CheckpointManager(cfg)
+        >>> # Save a checkpoint
+        >>> manager.save_checkpoint(dir, model, optimizer, collective, config, iteration=100)
+        >>> # Load it back
+        >>> manager.load_checkpoint(dir, model, optimizer, collective)
+    """
 
     def __init__(
         self,
         cfg: CheckpointManagerConfig,
         **kwargs,
     ):
+        """Initialize CheckpointManager.
+
+        Args:
+            cfg: Configuration object.
+            **kwargs: Additional keyword arguments.
+        """
         self.cfg = cfg
 
     def load_checkpoint_if_exists(
@@ -55,7 +80,22 @@ class CheckpointManager:
         load_strategy: LoadStrategy | None = None,
         **kwargs,
     ) -> tuple[int, dict | None]:
-        """Load checkpoint if exists, return start iteration and metadata."""
+        """Attempt to find and load the latest checkpoint from a directory.
+
+        Args:
+            checkpoint_dir: Directory to search for checkpoints.
+            model: Model to load weights into.
+            optimizer: Optional optimizer to restore state.
+            collective: Collective for distributed coordination.
+            lr_scheduler: Optional LR scheduler to restore.
+            data_loaders: Optional dict of dataloaders to restore state.
+            load_strategy: Strategy defining what components to load.
+            **kwargs: Passed to load_checkpoint.
+
+        Returns:
+            Tuple of (start_iteration, metadata). start_iteration defaults to 1 if no
+            checkpoint is found.
+        """
         latest_checkpoint = self.find_latest_checkpoint(checkpoint_dir)
         if not latest_checkpoint:
             return 1, None

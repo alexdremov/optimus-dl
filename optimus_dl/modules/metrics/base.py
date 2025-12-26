@@ -9,11 +9,20 @@ from optimus_dl.modules.distributed import Collective
 
 @dataclass
 class MetricEntry:
+    """Container for a metric and its logging metadata.
+
+    Attributes:
+        metric: The actual BaseMetric instance.
+        reset: If True, the metric is reset after each step.
+        priority: Priority for ordering metrics in logs (lower is higher priority).
+    """
+
     metric: "BaseMetric"
     reset: bool = False
     priority: int = 0
 
     def state_dict(self) -> dict[str, Any]:
+        """Return entry state for checkpointing."""
         return {
             "metric": self.metric.state_dict(),
             "reset": self.reset,
@@ -22,6 +31,7 @@ class MetricEntry:
         }
 
     def load_state_dict(self, state_dict: dict[str, Any]):
+        """Restore entry state."""
         import optimus_dl.modules.metrics as metrics
 
         self.metric = getattr(metrics, state_dict["metric_class"]).from_state_dict(
@@ -32,6 +42,20 @@ class MetricEntry:
 
 
 class MetricGroup:
+    """A named collection of metrics that are logged together.
+
+    This class manages a group of related metrics (e.g., 'train' or 'eval'). It
+    handles:
+    - **Sampling Frequency**: Only triggers logging every `log_freq` steps.
+    - **Priority Sorting**: Ensures consistent ordering of metrics in output.
+    - **State Management**: Can reset metrics after logging and serialize the
+      entire group state.
+
+    Args:
+        name: Unique name for the group.
+        log_freq: Frequency (in iterations) at which to trigger logging.
+    """
+
     def __init__(self, name: str, log_freq: int | None = None):
         self.name = name
         self.log_freq = log_freq or 1
@@ -40,39 +64,43 @@ class MetricGroup:
         self._iteration_counter = 0
 
     def compute(self) -> dict[str, float | int | dict[str, float | int]]:
+        """Compute the current values for all metrics in the group."""
         return OrderedDict(
             (name, self._metrics[name].metric.compute()) for name in self._keys_sorted
         )
 
     @property
     def metrics(self) -> OrderedDict[str, MetricEntry]:
-        """Return the metrics in sorted order by priority"""
+        """Return the metrics in sorted order by priority."""
         return self._metrics
 
     def step(self) -> bool:
-        """Increment iteration counter and return whether to log"""
+        """Increment iteration counter and return whether to log at this step."""
         self._iteration_counter += 1
         return (self._iteration_counter % self.log_freq) == 0
 
     def should_log(self) -> bool:
-        """Check if current iteration should trigger logging"""
+        """Check if the current iteration should trigger logging."""
         return (self._iteration_counter % self.log_freq) == 0
 
     def add_metric(self, name: str, metric_entry: MetricEntry):
+        """Add a new metric entry to the group."""
         self._metrics[name] = metric_entry
         self._update_keys_sorted()
 
     def _update_keys_sorted(self):
-        """Update the sorted keys based on current metrics"""
+        """Update the sorted list of metric keys based on priorities."""
         self._keys_sorted = sorted(
             self._metrics.keys(),
             key=lambda k: self._metrics[k].priority,
         )
 
     def get_metric(self, name: str) -> MetricEntry | None:
+        """Retrieve a specific metric entry by name."""
         return self._metrics.get(name)
 
     def reset(self):
+        """Reset all metrics marked for reset after logging."""
         for key in list(self._metrics.keys()):
             entry = self._metrics[key]
             if entry.reset:
@@ -80,6 +108,7 @@ class MetricGroup:
         self._update_keys_sorted()
 
     def state_dict(self) -> dict[str, Any]:
+        """Return the entire group state for checkpointing."""
         return {
             "name": self.name,
             "log_freq": self.log_freq,
@@ -89,6 +118,7 @@ class MetricGroup:
         }
 
     def load_state_dict(self, state_dict: dict[str, Any]):
+        """Restore the group state."""
         assert self.name == state_dict["name"]
         self.log_freq = state_dict["log_freq"]
         self._metrics = OrderedDict()
@@ -104,48 +134,59 @@ _active_metric_groups = defaultdict(lambda: 0)
 
 
 class BaseMetric(ABC):
+    """Abstract base class for all individual metric implementations.
+
+    Metrics are responsible for accumulating raw data (log) and processing it
+    into a final value (compute). They must support merging states for
+    distributed aggregation.
+    """
+
     @abstractmethod
     def compute(self) -> float | int | dict[str, float | int]:
-        """
-        Computes the metric and returns a result.
-        The result can be a single float/int value or a dictionary of values.
-        """
+        """Compute the final metric value from accumulated data."""
         raise NotImplementedError
 
     @abstractmethod
     def log(self, **kwargs):
-        """
-        Incorporate new data into the metric.
-        """
+        """Accumulate new raw data points."""
         raise NotImplementedError
 
     @abstractmethod
     def merge(self, other_state):
-        """
-        Merges the state of another metric into this one.
-        This is useful for aggregating metrics from different processes.
-        """
+        """Merge state from another instance of the same metric type."""
         raise NotImplementedError
 
     @classmethod
     def from_state_dict(cls, state_dict: dict[str, Any]):
-        """
-        Creates a metric instance from a state dictionary.
-        This is useful for loading metrics from saved states.
-        """
+        """Create a new metric instance restored from state."""
         instance = cls()
         instance.load_state_dict(state_dict)
         return instance
 
     def state_dict(self) -> dict[str, Any]:
+        """Return internal metric state."""
         return self.__dict__
 
     def load_state_dict(self, state_dict: dict[str, Any]):
+        """Restore internal metric state."""
         self.__dict__.update(state_dict)
 
 
 @contextlib.contextmanager
 def metrics_group(name: str, log_freq: int | None = None, force_recreate: bool = False):
+    """Context manager for activating a metrics group.
+
+    While inside this context, any calls to `log_metric` will be recorded in
+    this group.
+
+    Args:
+        name: Name of the group to activate.
+        log_freq: Optional logging frequency to set/update.
+        force_recreate: If True, clears existing group state.
+
+    Yields:
+        bool: True if the group should trigger logging at this step.
+    """
     if force_recreate:
         _metric_groups.pop(name, None)
     _metric_groups.setdefault(name, MetricGroup(name, log_freq=log_freq))
@@ -167,16 +208,18 @@ def metrics_group(name: str, log_freq: int | None = None, force_recreate: bool =
 def compute_metrics(
     group_name: str, aggregate: bool = False, collective: Collective | None = None
 ) -> dict[str, float | int | dict[str, float | int]]:
-    """
-    Compute final metric values for a group with optional distributed aggregation.
+    """Compute final values for a group, with optional distributed aggregation.
+
+    If `aggregate` is True, it performs an all-gather of metric states across
+    all distributed ranks and merges them before computing final values.
 
     Args:
-        group_name: Name of the metrics group to compute
-        aggregate: Whether to aggregate metrics across distributed ranks
-        collective: Collective communication object for distributed aggregation
+        group_name: Name of the group to compute.
+        aggregate: If True, merges metrics from all ranks.
+        collective: Distributed collective for aggregation.
 
     Returns:
-        Dictionary mapping metric names to computed values
+        Dictionary mapping metric names to computed values.
     """
     if group_name not in _metric_groups:
         return {}
@@ -224,33 +267,26 @@ def compute_metrics(
 
 
 def step_metrics(name: str):
-    """Explicitly step the iteration counter for a metric group"""
+    """Explicitly step the iteration counter for a metric group."""
     if name in _metric_groups:
         _metric_groups[name].step()
 
 
 def reset_metrics(name: str):
-    """
-    Resets the metrics for a given group.
-    If the group does not exist, it does nothing.
-    """
+    """Reset all resettable metrics in a group."""
     if name in _metric_groups:
         _metric_groups[name].reset()
 
 
 def state_dict():
-    """
-    Returns the state of all metrics in the current context.
-    """
+    """Return state for all managed metric groups."""
     return {
         group_name: group.state_dict() for group_name, group in _metric_groups.items()
     }
 
 
 def load_state_dict(state_dict: dict[str, Any]):
-    """
-    Loads the state of all metrics from a given state dictionary.
-    """
+    """Restore state for all managed metric groups."""
     for group_name, group in state_dict.items():
         if group_name not in _metric_groups:
             _metric_groups[group_name] = MetricGroup(
@@ -260,7 +296,7 @@ def load_state_dict(state_dict: dict[str, Any]):
 
 
 def _evaluate_value(value_or_callable):
-    """Helper to evaluate a value or callable lazily"""
+    """Helper to evaluate a value or callable lazily."""
     if callable(value_or_callable):
         return value_or_callable()
     return value_or_callable
@@ -274,6 +310,16 @@ def log_metric(
     force_log: bool = False,
     **kwargs,
 ):
+    """Log data point(s) to all currently active metric groups.
+
+    Args:
+        name: Name of the metric.
+        metric_factory: Callable that creates a new metric instance if needed.
+        reset: Whether to reset the metric after making a step or preserving it across steps.
+        priority: Ordering priority.
+        force_log: If True, logs even if `should_log` is False for the group.
+        **kwargs: Data to pass to the metric's `log` method.
+    """
     for group_name in _active_metric_groups:
         group = _metric_groups[group_name]
 

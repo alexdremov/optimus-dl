@@ -34,6 +34,20 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class LlamaConfig(GPTConfig):
+    """Configuration for Llama-style models.
+
+    Attributes:
+        sequence_length: Maximum context length.
+        rmsnorm_eps: Epsilon for RMSNorm.
+        bias: Whether to use bias (usually False for Llama).
+        n_kv_head: Number of Key/Value heads (for GQA).
+        intermediate_size: Dimension of SwiGLU hidden layer.
+        multiple_of: Round SwiGLU hidden dim to a multiple of this value.
+        rope_theta: Base frequency for rotary embeddings.
+        use_liger_rmsnorm: Whether to use Liger-kernel for RMSNorm.
+        use_liger_swiglu: Whether to use Liger-kernel for SwiGLU.
+    """
+
     sequence_length: int = 16000
     rmsnorm_eps: float = 1e-5
     bias: bool = False
@@ -51,6 +65,8 @@ class LlamaConfig(GPTConfig):
 
 
 class LlamaBlock(nn.Module):
+    """Llama Transformer block with RMSNorm, Rotary Attention, and SwiGLU MLP."""
+
     def __init__(self, config: LlamaConfig):
         super().__init__()
         self.ln_1 = RMSNorm(
@@ -76,6 +92,7 @@ class LlamaBlock(nn.Module):
         )
 
     def forward(self, x, freqs_cis):
+        """Compute the forward pass for the transformer block."""
         ln_1 = self.ln_1(x)
         attn_out = self.attn(ln_1, freqs_cis)
 
@@ -86,6 +103,19 @@ class LlamaBlock(nn.Module):
 
 @register_model("llama2", LlamaConfig)
 class Llama(GPT):
+    """Llama Language Model architecture.
+
+    Based on the standard GPT class but incorporates modern architectural
+    improvements:
+    - **Rotary Embeddings (RoPE)**: Position encoding integrated into attention.
+    - **RMSNorm**: More efficient normalization layer.
+    - **SwiGLU MLP**: SiLU-gated MLP variant.
+    - **Tensor Parallelism**: Comprehensive sharding plan for distributed training.
+
+    Args:
+        config: Llama model configuration.
+    """
+
     def __init__(self, config: LlamaConfig):
         super().__init__(config)
         assert config.vocab_size is not None
@@ -123,6 +153,17 @@ class Llama(GPT):
     def apply_tp(
         self, mesh, loss_parallel: bool = False, sequence_parallel: bool = False
     ):
+        """Apply a 1D Tensor Parallelism plan to the Llama model.
+
+        Shards attention (Q/K/V/O) and MLP (w1/w2/c_proj) layers across the
+        provided device mesh. Supports optional sequence parallelism for norms
+        and communication-efficient sharded loss.
+
+        Args:
+            mesh: DeviceMesh for sharding.
+            loss_parallel: If True, shards the LM head and uses loss_parallel.
+            sequence_parallel: If True, enables sequence sharding and sharded norms.
+        """
         tp_size = mesh.size(0)
         assert (
             self.config.n_head % tp_size == 0
@@ -217,6 +258,7 @@ class Llama(GPT):
             )
 
     def forward(self, input_ids, **kwargs):
+        """Perform the forward pass, handling rotary frequency lookup."""
         idx = input_ids
         device = idx.device
         b, t = idx.size()

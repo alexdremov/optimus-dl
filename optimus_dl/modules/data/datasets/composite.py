@@ -66,8 +66,21 @@ def _get_rank_seed(seed: int, epoch: int, rank: int) -> int:
 
 
 class _WeightedSampler:
-    """
-    Helper class for weighted sampling.
+    """Helper class for weighted sampling across multiple datasets.
+
+    This sampler maintains a generator and generates batches of indices according
+    to the provided weights. It supports enabling/disabling datasets (e.g., when
+    one is exhausted and cycling is disabled) and handles state serialization
+    for checkpointing.
+
+    Args:
+        weights: Dictionary mapping dataset names to sampling weights.
+        seed: Base random seed.
+        rank: Distributed rank.
+        world_size: Total number of ranks.
+        epoch: Current epoch (used for seed mixing).
+        random_tensor_batch_size: Internal batch size for multinomial sampling.
+        initial_state: Optional state to restore from.
     """
 
     def __init__(
@@ -114,6 +127,12 @@ class _WeightedSampler:
         self._batch_of_indices = self._get_batch_of_indices()
 
     def set_active(self, name: str, active: bool):
+        """Enable or disable a dataset in the sampler.
+
+        Args:
+            name: Name of the dataset.
+            active: If False, the dataset's weight is set to 0.
+        """
         idx = self.name_to_idx[name]
         if active:
             self.weights[idx] = self.original_weights[idx]
@@ -155,6 +174,7 @@ class _WeightedSampler:
         return self.names[item]
 
     def state_dict(self):
+        """Return the sampler state for checkpointing."""
         return {
             "g_state": self._g_snapshot,
             "offset": self._offset,
@@ -164,6 +184,22 @@ class _WeightedSampler:
 
 @register_dataset("composite", CompositeDatasetConfig)
 class CompositeDataset(BaseDataset):
+    """Dataset that combines multiple sub-datasets with weighted sampling.
+
+    This class orchestrates a collection of datasets, sampling from them according
+    to specified weights. It handles:
+    - **Weighted Sampling**: Using a rank-safe multinomial sampler.
+    - **Exhaustion Policies**: Can stop training when one/all datasets are
+      exhausted or cycle through them indefinitely.
+    - **Hierarchical Checkpointing**: Correctingly saves and restores the state
+      of all sub-datasets and the global sampling state.
+
+    Args:
+        cfg: Composite dataset configuration.
+        rank: Distributed rank.
+        world_size: Total number of ranks.
+    """
+
     DATASET_NODE_STATES_KEY = "dataset_node_states"
     DATASETS_EXHAUSTED_KEY = "datasets_exhausted"
     EPOCH_KEY = "epoch"
@@ -207,6 +243,11 @@ class CompositeDataset(BaseDataset):
                 raise ValueError("Weights must be non-negative")
 
     def reset(self, initial_state: dict[str, Any] | None = None):
+        """Reset or restore the composite dataset state.
+
+        Restores global epoch/yield counters, the weighted sampler state, and
+        recursively calls reset() on all sub-datasets.
+        """
         super().reset(initial_state)
 
         config_datasets = self.datasets.keys()
@@ -282,6 +323,12 @@ class CompositeDataset(BaseDataset):
             raise StopIteration()
 
     def next(self) -> Any:
+        """Sample the next item from one of the sub-datasets.
+
+        Uses the internal weighted sampler to choose a dataset, then delegates
+        to that dataset's next() method. If a dataset is exhausted, it is either
+        reset (cycled) or removed from sampling depending on configuration.
+        """
         while True:
             self._check_for_stop_iteration()
 
@@ -323,6 +370,7 @@ class CompositeDataset(BaseDataset):
                 self._check_for_stop_iteration()
 
     def get_state(self) -> dict[str, Any]:
+        """Collect current state for checkpointing."""
         return {
             self.DATASETS_EXHAUSTED_KEY: copy.deepcopy(self._datasets_exhausted),
             self.DATASET_NODE_STATES_KEY: {

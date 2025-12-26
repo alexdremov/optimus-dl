@@ -17,6 +17,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TokenizedDatasetConfig(RegistryConfigStrict):
+    """Configuration for pre-tokenized sharded datasets.
+
+    Attributes:
+        data_dir: Path to the directory containing shards and index file.
+        index_file: Name of the JSON index file (defaults to index.json).
+        limit: Optional maximum number of documents to read.
+    """
+
     data_dir: str = MISSING
     index_file: str = "index.json"
     limit: int | None = None  # Optional limit on number of documents
@@ -24,12 +32,17 @@ class TokenizedDatasetConfig(RegistryConfigStrict):
 
 @register_dataset("tokenized_dataset", TokenizedDatasetConfig)
 class TokenizedDataset(BaseDataset):
-    """
-    Dataset that streams full tokenized documents from numpy shards.
-    Expects data prepared by `scripts/prepare_data.py` (shards + _lens.npy).
+    """Dataset that streams full tokenized documents from numpy shards.
+
+    This dataset expects data prepared by `scripts/prepare_data.py`, consisting
+    of multiple `.npy` shards and a global `index.json`. It provides:
+    - **Memory Mapping**: Efficiently reads shards using `mmap_mode="r"`.
+    - **Document Partitioning**: Automatically shards the document list across
+      distributed ranks.
+    - **Precise Seeking**: Can jump to any document index globally for resuming.
 
     Yields:
-        {"input_ids": np.array([...]), "document_id": int}
+        Dictionary: {"input_ids": np.array([...]), "document_id": int}
     """
 
     def __init__(
@@ -60,6 +73,7 @@ class TokenizedDataset(BaseDataset):
         self.shard_doc_offset = 0  # Index of document WITHIN the current shard
 
     def _resolve_dtype(self, type_str: str):
+        """Map string dtype names to numpy dtypes."""
         dtype_map = {
             "np.uint8": np.uint8,
             "np.uint16": np.uint16,
@@ -75,7 +89,7 @@ class TokenizedDataset(BaseDataset):
         return dtype_map.get(type_str, np.uint16)
 
     def _load_index(self):
-        """Loads metadata and calculates rank boundaries."""
+        """Load metadata and calculate rank-specific document boundaries."""
         index_path = self.data_dir / self.index_file
         if not index_path.exists():
             raise FileNotFoundError(f"Index file not found: {index_path}")
@@ -119,7 +133,10 @@ class TokenizedDataset(BaseDataset):
             self.end_doc_idx = self.total_docs
 
     def _seek(self, global_doc_idx: int):
-        """Precise seek to a global document index."""
+        """Seek to a specific global document index.
+
+        Finds which shard contains the document and sets internal offsets.
+        """
         # Validate bounds
         if not (self.start_doc_idx <= global_doc_idx <= self.end_doc_idx):
             # If we are exactly at the end, it's allowed (means finished)
@@ -166,6 +183,7 @@ class TokenizedDataset(BaseDataset):
         self._load_current_shard(init_doc_offset=self.shard_doc_offset)
 
     def _load_current_shard(self, init_doc_offset: int = 0):
+        """Memory-map the current shard files."""
         if self.current_shard_idx >= len(self.shards):
             self.current_shard_tokens = None
             self.current_shard_doc_lens = None
@@ -188,6 +206,7 @@ class TokenizedDataset(BaseDataset):
             self.shard_token_offset = 0
 
     def reset(self, initial_state: dict[str, Any] | None = None):
+        """Restore dataset state or start from the rank's assigned beginning."""
         super().reset(initial_state)
 
         target_doc_idx = None
@@ -207,6 +226,7 @@ class TokenizedDataset(BaseDataset):
         self._seek(target_doc_idx)
 
     def next(self):
+        """Yield the next tokenized document."""
         # Check global limit
         if self.global_doc_idx >= self.end_doc_idx:
             raise StopIteration
@@ -252,6 +272,7 @@ class TokenizedDataset(BaseDataset):
         return item
 
     def get_state(self):
+        """Return the current global document index for checkpointing."""
         return {
             "rank": self.rank,
             "world_size": self.world_size,
