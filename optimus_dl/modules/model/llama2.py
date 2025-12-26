@@ -20,7 +20,8 @@ from dataclasses import dataclass, field
 
 import torch
 import torch.nn as nn
-from torch.distributed.tensor import DTensor, Shard
+from torch.distributed.tensor import DTensor
+from torch.distributed.tensor.placement_types import Replicate, Shard
 
 from optimus_dl.modules.model import register_model
 from optimus_dl.modules.model.blocks.attention import CausalSelfAttention
@@ -92,9 +93,11 @@ def apply_rotary_emb(q, k, freqs_cis):
     # We perform RoPE on local shards to avoid complex sharding propagation issues with reshape/select.
     is_q_dtensor = isinstance(q, DTensor)
     is_k_dtensor = isinstance(k, DTensor)
+    is_freqs_cis_dtensor = isinstance(freqs_cis, DTensor)
 
     q_in = q.to_local() if is_q_dtensor else q
     k_in = k.to_local() if is_k_dtensor else k
+    freqs_cis = freqs_cis.to_local() if is_freqs_cis_dtensor else freqs_cis
 
     q_in = q_in.float().reshape(*q_in.shape[:-1], -1, 2)
     k_in = k_in.float().reshape(*k_in.shape[:-1], -1, 2)
@@ -192,9 +195,9 @@ class LlamaAttention(CausalSelfAttention):
         xv = self.wv(x)
 
         # (B, T, n_head, head_dim)
-        xq = xq.view(B, T, self.n_head, self.head_dim)
-        xk = xk.view(B, T, self.n_kv_head, self.head_dim)
-        xv = xv.view(B, T, self.n_kv_head, self.head_dim)
+        xq = xq.view(B, T, -1, self.head_dim)
+        xk = xk.view(B, T, -1, self.head_dim)
+        xv = xv.view(B, T, -1, self.head_dim)
 
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis)
 
@@ -256,7 +259,9 @@ class LlamaBlock(nn.Module):
 
     def forward(self, x, freqs_cis):
         ln_1 = self.ln_1(x)
-        x = x + self.attn(ln_1, freqs_cis)
+        attn_out = self.attn(ln_1, freqs_cis)
+
+        x = x + attn_out
         x = x + self.mlp(self.ln_2(x))
         return x
 
@@ -303,7 +308,9 @@ class Llama(GPT):
                     p, mean=0.0, std=0.02 / math.sqrt(2 * config.n_layer)
                 )
 
-    def apply_tp(self, mesh, loss_parallel: bool = False):
+    def apply_tp(
+        self, mesh, loss_parallel: bool = False, sequence_parallel: bool = False
+    ):
         tp_size = mesh.size(0)
         assert (
             self.config.n_head % tp_size == 0
@@ -319,11 +326,12 @@ class Llama(GPT):
 
         from torch.distributed.tensor.parallel import (
             ColwiseParallel,
+            PrepareModuleInput,
             PrepareModuleOutput,
             RowwiseParallel,
+            SequenceParallel,
             parallelize_module,
         )
-        from torch.distributed.tensor.placement_types import Replicate
 
         layer_plan = {
             "transformer.wte": RowwiseParallel(
@@ -338,6 +346,47 @@ class Llama(GPT):
             "transformer.h.*.mlp.c_proj": RowwiseParallel(),
             "lm_head": ColwiseParallel(use_local_output=False),
         }
+        if sequence_parallel:
+            layer_plan.update(
+                {
+                    "transformer.wte": RowwiseParallel(
+                        input_layouts=Replicate(),
+                        output_layouts=Shard(1),
+                        use_local_output=True,
+                    ),
+                    "transformer.h.*.ln_1": SequenceParallel(),
+                    "transformer.h.*.ln_2": SequenceParallel(),
+                    "transformer.ln_f": SequenceParallel(),
+                    "transformer.h.*.attn": PrepareModuleInput(
+                        input_layouts=(Shard(1), Replicate()),
+                        desired_input_layouts=(Shard(1), Replicate()),
+                        use_local_output=False,
+                    ),
+                    "transformer.h.*.attn.wq": ColwiseParallel(
+                        input_layouts=Shard(1), use_local_output=False
+                    ),
+                    "transformer.h.*.attn.wk": ColwiseParallel(
+                        input_layouts=Shard(1), use_local_output=False
+                    ),
+                    "transformer.h.*.attn.wv": ColwiseParallel(
+                        input_layouts=Shard(1), use_local_output=False
+                    ),
+                    "transformer.h.*.attn.wo": RowwiseParallel(output_layouts=Shard(1)),
+                    "transformer.h.*.mlp.w1": ColwiseParallel(
+                        input_layouts=Shard(1), use_local_output=False
+                    ),
+                    "transformer.h.*.mlp.w2": ColwiseParallel(
+                        input_layouts=Shard(1), use_local_output=False
+                    ),
+                    "transformer.h.*.mlp.c_proj": RowwiseParallel(
+                        output_layouts=Shard(1)
+                    ),
+                    "lm_head": ColwiseParallel(
+                        input_layouts=Shard(1), use_local_output=False
+                    ),
+                }
+            )
+
         parallelize_module(self, mesh, layer_plan)
 
         if self.config.tie_word_embeddings:
@@ -372,7 +421,7 @@ class Llama(GPT):
         freqs_cis = self.freqs_cis.to(x.device)[pos]
 
         for _block_idx, block in enumerate(self.transformer.h):
-            x = block(x, freqs_cis=freqs_cis)
+            x = block(x, freqs_cis)
         x = self.transformer.ln_f(x)
 
         logits = self.lm_head(x)

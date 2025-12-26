@@ -16,10 +16,12 @@ from optimus_dl.modules.distributed.mesh import MeshCollective
 from optimus_dl.modules.model import build_model
 
 
-def _run_tp_correctness_test(rank, world_size, model_cfg_dict, loss_parallel):
+def _run_tp_correctness_test(
+    rank, world_size, model_cfg_dict, loss_parallel, sequence_parallel
+):
     os.environ["MASTER_ADDR"] = "localhost"
     # Use a unique port based on logic to avoid collisions
-    port = 29600 + (1 if loss_parallel else 0)
+    port = 29600 + (1 if loss_parallel else 0) + (2 if sequence_parallel else 0)
     os.environ["MASTER_PORT"] = str(port)
 
     if dist.is_initialized():
@@ -80,7 +82,11 @@ def _run_tp_correctness_test(rank, world_size, model_cfg_dict, loss_parallel):
 
         # Apply TP
         if hasattr(tp_model, "apply_tp"):
-            tp_model.apply_tp(collective.tp_mesh, loss_parallel=loss_parallel)
+            tp_model.apply_tp(
+                collective.tp_mesh,
+                loss_parallel=loss_parallel,
+                sequence_parallel=sequence_parallel,
+            )
         else:
             if rank == 0:
                 print("Skipping TP application: model does not support apply_tp")
@@ -177,22 +183,26 @@ llama2_cfg = {
 
 @pytest.mark.parametrize("model_cfg_dict", [llama2_cfg])
 class TestTPCorrectnessGeneric:
-    def test_tp_correctness_loss_parallel_false(self, model_cfg_dict):
-        """Test TP=2 with loss_parallel=False"""
+    @pytest.mark.parametrize("sequence_parallel", [False, True], ids=["NoSP", "SP"])
+    def test_tp_correctness_loss_parallel_false(
+        self, model_cfg_dict, sequence_parallel
+    ):
+        """Test TP=2 with loss_parallel=False, with/without SP"""
         world_size = 2
         mp.spawn(
             _run_tp_correctness_test,
-            args=(world_size, model_cfg_dict, False),
+            args=(world_size, model_cfg_dict, False, sequence_parallel),
             nprocs=world_size,
             join=True,
         )
 
-    def test_tp_correctness_loss_parallel_true(self, model_cfg_dict):
-        """Test TP=2 with loss_parallel=True"""
+    @pytest.mark.parametrize("sequence_parallel", [False, True], ids=["NoSP", "SP"])
+    def test_tp_correctness_loss_parallel_true(self, model_cfg_dict, sequence_parallel):
+        """Test TP=2 with loss_parallel=True, with/without SP"""
         world_size = 2
         mp.spawn(
             _run_tp_correctness_test,
-            args=(world_size, model_cfg_dict, True),
+            args=(world_size, model_cfg_dict, True, sequence_parallel),
             nprocs=world_size,
             join=True,
         )

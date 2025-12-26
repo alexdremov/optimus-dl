@@ -11,9 +11,11 @@ from torch.distributed.tensor.debug import CommDebugMode
 from optimus_dl.modules.model import build_model
 
 
-def _run_collectives_test(rank, world_size, model_cfg_dict, loss_parallel):
+def _run_collectives_test(
+    rank, world_size, model_cfg_dict, loss_parallel, sequence_parallel
+):
     os.environ["MASTER_ADDR"] = "localhost"
-    port = 29800 + (1 if loss_parallel else 0)
+    port = 29800 + (1 if loss_parallel else 0) + (2 if sequence_parallel else 0)
     os.environ["MASTER_PORT"] = str(port)
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
@@ -23,7 +25,9 @@ def _run_collectives_test(rank, world_size, model_cfg_dict, loss_parallel):
         model = build_model(model_cfg)
         mesh = init_device_mesh("cpu", (world_size,))
         if hasattr(model, "apply_tp"):
-            model.apply_tp(mesh, loss_parallel=loss_parallel)
+            model.apply_tp(
+                mesh, loss_parallel=loss_parallel, sequence_parallel=sequence_parallel
+            )
         else:
             if rank == 0:
                 print("Skipping collectives check: model does not support apply_tp")
@@ -47,23 +51,9 @@ def _run_collectives_test(rank, world_size, model_cfg_dict, loss_parallel):
                 model(input_ids)
 
         # Analysis
-        # Expected AllReduces:
-        # 1 for Embeddings (RowwiseParallel, input replicated -> output allreduce)
-        # 2 per Layer:
-        #   - Attention Output (RowwiseParallel)
-        #   - MLP Output (RowwiseParallel)
-        expected_all_reduce = 1 + 2 * n_layer
-
-        # Expected AllGathers:
-        # 1 for LM Head if loss_parallel=False (ColwiseParallel output -> Replicated)
-        # 0 if loss_parallel=True
-        expected_all_gather = 1 if not loss_parallel else 0
-
-        # CommDebugMode tracker keys are usually OpOverload objects or strings depending on version.
-        # We aggregate counts.
-
         all_reduce_count = 0
         all_gather_count = 0
+        reduce_scatter_count = 0
 
         # tracker.comm_counts is a dict {Op: count}
         for op, count in tracker.comm_counts.items():
@@ -72,10 +62,50 @@ def _run_collectives_test(rank, world_size, model_cfg_dict, loss_parallel):
                 all_reduce_count += count
             elif "all_gather" in op_name:
                 all_gather_count += count
+            elif "reduce_scatter" in op_name:
+                reduce_scatter_count += count
+
+        if not sequence_parallel:
+            # Standard TP
+            # Expected AllReduces:
+            # 1 for Embeddings (RowwiseParallel, input replicated -> output allreduce)
+            # 2 per Layer:
+            #   - Attention Output (RowwiseParallel)
+            #   - MLP Output (RowwiseParallel)
+            expected_all_reduce = 1 + 2 * n_layer
+
+            # Expected AllGathers:
+            # 1 for LM Head if loss_parallel=False (ColwiseParallel output -> Replicated)
+            # 0 if loss_parallel=True
+            expected_all_gather = 1 if not loss_parallel else 0
+
+            expected_reduce_scatter = 0
+        else:
+            # Sequence Parallelism
+            # AllReduce replaced by ReduceScatter
+            expected_all_reduce = 0
+
+            # ReduceScatter:
+            # 1 (Embed) + 2 * n_layer (Attn Output + MLP Output)
+            expected_reduce_scatter = 1 + 2 * n_layer
+
+            # AllGather:
+            # Attn Input: 3 (wq, wk, wv separate)
+            # MLP Input: 2 (w1, w2 separate)
+            # LM Head Input: 1
+            # LM Head Output gathering: 1 if not loss_parallel
+
+            expected_all_gather = (3 + 2) * n_layer + 1
+            if not loss_parallel:
+                expected_all_gather += 1
 
         if rank == 0:
-            print(f"Config: loss_parallel={loss_parallel}")
-            print(f"Counts: AllReduce={all_reduce_count}, AllGather={all_gather_count}")
+            print(
+                f"Config: loss_parallel={loss_parallel}, sequence_parallel={sequence_parallel}"
+            )
+            print(
+                f"Counts: AR={all_reduce_count}, AG={all_gather_count}, RS={reduce_scatter_count}"
+            )
             print(f"Operations found: {tracker.comm_counts.keys()}")
 
             assert (
@@ -85,6 +115,10 @@ def _run_collectives_test(rank, world_size, model_cfg_dict, loss_parallel):
             assert (
                 all_gather_count == expected_all_gather
             ), f"AllGather count mismatch. Expected {expected_all_gather}, got {all_gather_count}"
+
+            assert (
+                reduce_scatter_count == expected_reduce_scatter
+            ), f"ReduceScatter count mismatch. Expected {expected_reduce_scatter}, got {reduce_scatter_count}"
 
     finally:
         dist.destroy_process_group()
@@ -103,22 +137,24 @@ llama2_cfg = {
 
 @pytest.mark.parametrize("model_cfg_dict", [llama2_cfg])
 class TestTPCollectivesGeneric:
-    def test_collectives_loss_parallel_false(self, model_cfg_dict):
+    @pytest.mark.parametrize("sequence_parallel", [False, True], ids=["NoSP", "SP"])
+    def test_collectives_loss_parallel_false(self, model_cfg_dict, sequence_parallel):
         """Test collectives with loss_parallel=False (Expect Gather)"""
         world_size = 2
         mp.spawn(
             _run_collectives_test,
-            args=(world_size, model_cfg_dict, False),
+            args=(world_size, model_cfg_dict, False, sequence_parallel),
             nprocs=world_size,
             join=True,
         )
 
-    def test_collectives_loss_parallel_true(self, model_cfg_dict):
+    @pytest.mark.parametrize("sequence_parallel", [False, True], ids=["NoSP", "SP"])
+    def test_collectives_loss_parallel_true(self, model_cfg_dict, sequence_parallel):
         """Test collectives with loss_parallel=True (No Gather)"""
         world_size = 2
         mp.spawn(
             _run_collectives_test,
-            args=(world_size, model_cfg_dict, True),
+            args=(world_size, model_cfg_dict, True, sequence_parallel),
             nprocs=world_size,
             join=True,
         )

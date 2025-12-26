@@ -67,7 +67,6 @@ class TestCausalSelfAttention:
         assert attention_no_bias.c_attn.bias is None
         assert attention_no_bias.c_proj.bias is None
 
-
     def test_forward_shape_consistency(self):
         config = MockConfig(n_embd=768, n_head=12, block_size=1024)
         attention = CausalSelfAttention(config)

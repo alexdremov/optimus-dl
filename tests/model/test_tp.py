@@ -47,7 +47,7 @@ def _run_sharding_test(rank, world_size, model_cfg_dict):
         dist.destroy_process_group()
 
 
-def _run_test_full_tensor_parallel(rank, world_size, model_cfg_dict):
+def _run_test_full_tensor_parallel(rank, world_size, model_cfg_dict, sequence_parallel):
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "29500"
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
@@ -59,7 +59,7 @@ def _run_test_full_tensor_parallel(rank, world_size, model_cfg_dict):
 
         mesh = init_device_mesh("cpu", (world_size,))
         if hasattr(model, "apply_tp"):
-            model.apply_tp(mesh)
+            model.apply_tp(mesh, sequence_parallel=sequence_parallel)
 
         vocab_size = model.config.vocab_size
         n_embd = model.config.n_embd
@@ -69,7 +69,16 @@ def _run_test_full_tensor_parallel(rank, world_size, model_cfg_dict):
         # Check embedding output shape (specific to models with 'transformer.wte')
         if hasattr(model, "transformer") and hasattr(model.transformer, "wte"):
             embedded = model.transformer.wte(input_ids)
-            assert embedded.shape == (7, 32, n_embd), embedded.shape
+            # If SP, embedding output is sharded on seq dim (dim 1)
+            # Local shape: (B, S/TP, H)
+            if sequence_parallel:
+                assert embedded.shape == (
+                    7,
+                    32 // world_size,
+                    n_embd,
+                ), f"SP Embedding shape mismatch: {embedded.shape}"
+            else:
+                assert embedded.shape == (7, 32, n_embd), embedded.shape
 
         output = model(input_ids)
 
@@ -83,7 +92,7 @@ def _run_test_full_tensor_parallel(rank, world_size, model_cfg_dict):
 
         # Test loss_parallel=True
         model = build_model(model_cfg)
-        model.apply_tp(mesh, loss_parallel=True)
+        model.apply_tp(mesh, loss_parallel=True, sequence_parallel=sequence_parallel)
         output = model(input_ids)
 
         assert isinstance(output["logits"], DTensor), output["logits"]
@@ -101,6 +110,7 @@ def _run_test_full_tensor_parallel(rank, world_size, model_cfg_dict):
 
 
 def _run_tp_assertion_test(rank, world_size, model_cfg_dict):
+    # ... (unchanged) ...
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "29502"
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
@@ -137,6 +147,62 @@ llama2_invalid_cfg = {
 }
 
 
+def _run_test_sp_internals(rank, world_size, model_cfg_dict):
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "29503"
+    dist.init_process_group("gloo", rank=rank, world_size=world_size)
+
+    try:
+        torch.manual_seed(42)
+        model_cfg = OmegaConf.create(model_cfg_dict)
+        model = build_model(model_cfg)
+
+        mesh = init_device_mesh("cpu", (world_size,))
+        # Apply TP with Sequence Parallelism
+        model.apply_tp(mesh, sequence_parallel=True)
+
+        # Check Attention Weights
+        # WQ: Colwise -> Shard(0) (Heads)
+        assert (
+            model.transformer.h[0].attn.wq.weight.placements[0].is_shard(0)
+        ), f"WQ should be Shard(0), got {model.transformer.h[0].attn.wq.weight.placements}"
+
+        # WO: Rowwise -> Shard(1) (Heads input)
+        assert (
+            model.transformer.h[0].attn.wo.weight.placements[0].is_shard(1)
+        ), f"WO should be Shard(1), got {model.transformer.h[0].attn.wo.weight.placements}"
+
+        # 2. Verify Data Flow and Intermediate Sharding
+        vocab_size = model.config.vocab_size
+        n_embd = model.config.n_embd
+
+        input_ids = torch.randint(0, vocab_size, (2, 32))
+        # WTE
+        tok_emb = model.transformer.wte(input_ids)
+        # Check output is Shard(1) (Sequence dimension)
+        assert tok_emb.shape == (
+            2,
+            16,
+            n_embd,
+        ), f"WTE output shape mismatch: {tok_emb.shape}"  # Global shape
+
+        x = tok_emb
+        model.freqs_cis[: x.shape[1]].to(x.device)
+
+        # Block 0
+        block = model.transformer.h[0]
+
+        # LN1 (SequenceParallel)
+        # Should accept Shard(1) input and produce Shard(1) output
+        ln1_out = block.ln_1(x)
+        assert isinstance(ln1_out, DTensor)
+        assert ln1_out.placements[0].is_shard(
+            1
+        ), f"LN1 output should be Shard(1), got {ln1_out.placements}"
+    finally:
+        dist.destroy_process_group()
+
+
 @pytest.mark.parametrize("model_cfg_dict", [llama2_cfg])
 class TestTPGeneric:
     def test_tensor_parallel_sharding(self, model_cfg_dict):
@@ -148,10 +214,20 @@ class TestTPGeneric:
             join=True,
         )
 
-    def test_full_tensor_parallel(self, model_cfg_dict):
+    @pytest.mark.parametrize("sequence_parallel", [False, True], ids=["NoSP", "SP"])
+    def test_full_tensor_parallel(self, model_cfg_dict, sequence_parallel):
         world_size = 2
         mp.spawn(
             _run_test_full_tensor_parallel,
+            args=(world_size, model_cfg_dict, sequence_parallel),
+            nprocs=world_size,
+            join=True,
+        )
+
+    def test_sp_internals(self, model_cfg_dict):
+        world_size = 2
+        mp.spawn(
+            _run_test_sp_internals,
             args=(world_size, model_cfg_dict),
             nprocs=world_size,
             join=True,

@@ -60,4 +60,13 @@ class RMSNorm(nn.Module):
             return liger_rms_norm(x, self.weight, self.eps)
 
         output = self._norm(x.float()).type_as(x)
-        return output * self.weight
+
+        weight = self.weight
+        if is_dtensor and not isinstance(weight, DTensor):
+            from torch.distributed.tensor.placement_types import Replicate
+
+            # If x is DTensor, weight must be DTensor for multiplication.
+            # We assume weight is replicated (available on all ranks).
+            weight = DTensor.from_local(weight, x.device_mesh, (Replicate(),))
+
+        return output * weight
