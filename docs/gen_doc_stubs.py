@@ -91,7 +91,7 @@ for path in sorted(src_root.rglob("*.py")):
                 elif item.is_dir() and (item / "__init__.py").exists():
                     name = item.name
                     docstring = get_short_docstring(item / "__init__.py")
-                    link = f"{name}/"
+                    link = f"{name}/index.md"
                     sub_items.append((name, link, docstring))
 
             if sub_items:

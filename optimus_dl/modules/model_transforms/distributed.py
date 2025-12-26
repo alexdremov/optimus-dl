@@ -3,6 +3,7 @@
 import logging
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
+from typing import Any
 
 import torch
 from torch.distributed.fsdp import CPUOffloadPolicy, MixedPrecisionPolicy, fully_shard
@@ -29,7 +30,7 @@ class BaseDistributedTransform(BaseModelTransform):
         cfg: ModelTransformConfig,
         collective: Collective,
         device: torch.device,
-        **kwargs,
+        **kwargs: Any,
     ):
         super().__init__(cfg, **kwargs)
         self.collective = collective
@@ -90,7 +91,7 @@ class DDPTransform(BaseDistributedTransform):
         cfg: DDPTransformConfig,
         collective: Collective,
         device: torch.device,
-        **kwargs,
+        **kwargs: Any,
     ):
         super().__init__(cfg, collective, device, **kwargs)
 
@@ -201,7 +202,7 @@ class FullyShardTransform(BaseDistributedTransform):
         cfg: FullyShardTransformConfig,
         collective: Collective,
         device: torch.device,
-        **kwargs,
+        **kwargs: Any,
     ):
         super().__init__(cfg, collective, device, **kwargs)
         self.mesh = None

@@ -2,6 +2,7 @@
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from optimus_dl.core.model_utils import get_num_parameters
 from optimus_dl.core.registry import RegistryConfig, build, make_registry
@@ -40,7 +41,7 @@ class ModelBuilder:
         self,
         cfg: ModelBuilderConfig,
         model_transforms: list[ModelTransformConfig] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ):
         self.model_transforms = model_transforms or []
 

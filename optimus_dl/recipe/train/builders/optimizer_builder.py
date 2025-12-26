@@ -2,6 +2,7 @@
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from torch.optim import Optimizer
 
@@ -34,7 +35,7 @@ class OptimizerBuilder:
         self,
         cfg: OptimizerBuilderConfig,
         optimization_config: OptimizationConfig,
-        **kwargs,
+        **kwargs: Any,
     ):
         self.optimization_config = optimization_config
 

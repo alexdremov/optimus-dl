@@ -247,7 +247,7 @@ def make_registry(registry_name: str, base_class: type | None = None):
     def build(
         cfg: RegistryConfig | RegistryConfigStrict | dict | None,
         cast_to: type[T] | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> T | Any | None:
         """Build a component instance from configuration.
 

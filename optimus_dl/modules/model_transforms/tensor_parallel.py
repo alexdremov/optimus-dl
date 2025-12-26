@@ -2,6 +2,7 @@
 
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 from optimus_dl.modules.distributed import Collective
 from optimus_dl.modules.distributed.mesh import MeshCollective
@@ -42,7 +43,7 @@ class TensorParallelTransform(BaseModelTransform):
         self,
         cfg: TensorParallelConfig,
         collective: Collective,
-        **kwargs,
+        **kwargs: Any,
     ):
         super().__init__(cfg, **kwargs)
         self.collective = collective
