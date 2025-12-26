@@ -121,7 +121,22 @@ def setup_logging(
     return logging.getLogger(__name__)
 
 
-def warn_once(logger, message):
+def warn_once(logger: logging.Logger, message: str) -> None:
+    """Log a warning message only once, even if called multiple times.
+
+    This is useful for deprecation warnings or other messages that should
+    only appear once per program execution, even if the code path is
+    executed multiple times.
+
+    Args:
+        logger: Logger instance to log the warning to.
+        message: Warning message to log (only logged once).
+
+    Example:
+        >>> logger = logging.getLogger(__name__)
+        >>> warn_once(logger, "This feature is deprecated")
+        >>> warn_once(logger, "This feature is deprecated")  # Won't log again
+    """
     if not hasattr(warn_once, "logged_messages"):
         warn_once.logged_messages = set()
     if message not in warn_once.logged_messages:
