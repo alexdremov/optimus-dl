@@ -1,17 +1,6 @@
 """
-Llama style Language Model.
-References:
-1) Llama inference code:
-https://github.com/facebookresearch/llama/blob/main/llama/model.py
-2) Mistral one file ref:
-https://github.com/mistralai/mistral-src/blob/main/one_file_ref.py
-3) Llama paper:
-https://arxiv.org/pdf/2302.13971.pdf
-
-Main differences from GPT2:
-* Uses RMSNorm instead of LayerNorm
-* Uses a slightly different MLP (SwiGLU)
-* rotary embeddings (RoPE)
+Qwen3 Language Model implementation.
+Features Q/K normalization in attention, optional biases, and SwiGLU MLP.
 """
 
 import logging
@@ -33,10 +22,13 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class LlamaConfig(GPTConfig):
-    sequence_length: int = 16000
-    rmsnorm_eps: float = 1e-5
-    bias: bool = False
+class Qwen3Config(GPTConfig):
+    sequence_length: int = 32768
+    rmsnorm_eps: float = 1e-6
+    rope_theta: float = 5000000.0  # Qwen3 default
+    head_dim: int | None = None
+    bias: bool = False  # Global bias flag
+    attention_bias: bool = True  # Qwen3 usually has bias in attention
     tie_word_embeddings: bool = True
     n_kv_head: int | None = None
     intermediate_size: int | None = None
@@ -49,8 +41,8 @@ class LlamaConfig(GPTConfig):
     use_liger_swiglu: bool | None = None
 
 
-class LlamaBlock(nn.Module):
-    def __init__(self, config: LlamaConfig):
+class Qwen3Block(nn.Module):
+    def __init__(self, config: Qwen3Config):
         super().__init__()
         self.ln_1 = RMSNorm(
             config.n_embd, eps=config.rmsnorm_eps, use_liger=config.use_liger_rmsnorm
@@ -59,9 +51,11 @@ class LlamaBlock(nn.Module):
             n_embd=config.n_embd,
             n_head=config.n_head,
             n_kv_head=config.n_kv_head,
+            head_dim=config.head_dim,
             dropout=config.dropout,
-            bias=False,  # Llama typically uses bias=False
-            use_qk_norm=False,
+            bias=config.attention_bias,
+            use_qk_norm=True,
+            rmsnorm_eps=config.rmsnorm_eps,
         )
         self.ln_2 = RMSNorm(
             config.n_embd, eps=config.rmsnorm_eps, use_liger=config.use_liger_rmsnorm
@@ -83,23 +77,29 @@ class LlamaBlock(nn.Module):
         return x
 
 
-@register_model("llama2", LlamaConfig)
-class Llama(GPT):
-    def __init__(self, config: LlamaConfig):
+@register_model("qwen3", Qwen3Config)
+class Qwen3(GPT):
+    def __init__(self, config: Qwen3Config):
         super().__init__(config)
         assert config.vocab_size is not None
         assert config.sequence_length is not None
         self.config = config
 
         # create the token and position embeddings
-        self.head_dim = config.n_embd // config.n_head
-        self.freqs_cis = precompute_freqs_cis(self.head_dim, config.sequence_length)
+        self.head_dim = (
+            config.head_dim
+            if config.head_dim is not None
+            else config.n_embd // config.n_head
+        )
+        self.freqs_cis = precompute_freqs_cis(
+            self.head_dim, config.sequence_length, theta=config.rope_theta
+        )
 
         self.transformer = nn.ModuleDict(
             {
                 "wte": nn.Embedding(config.vocab_size, config.n_embd),
                 "drop": nn.Dropout(config.dropout),
-                "h": nn.ModuleList([LlamaBlock(config) for _ in range(config.n_layer)]),
+                "h": nn.ModuleList([Qwen3Block(config) for _ in range(config.n_layer)]),
                 "ln_f": RMSNorm(
                     config.n_embd,
                     eps=config.rmsnorm_eps,
@@ -107,10 +107,13 @@ class Llama(GPT):
                 ),
             }
         )
+        # Weight tying
         if config.tie_word_embeddings:
             self.transformer.wte.weight = self.lm_head.weight
 
+        # init all weights
         self.apply(self._init_weights)
+        # apply special scaled init to the residual projections, per GPT-2 paper
         for pn, p in self.named_parameters():
             if pn.endswith("c_proj.weight"):
                 torch.nn.init.normal_(
@@ -220,13 +223,16 @@ class Llama(GPT):
         assert (
             t <= self.config.sequence_length
         ), f"Cannot forward sequence of length {t}, block size is only {self.config.sequence_length}"
+        # shape (1, t)
         pos = torch.arange(0, t, dtype=torch.long, device=device)
 
-        tok_emb = self.transformer.wte(idx)
+        # forward the GPT model itself
+        tok_emb = self.transformer.wte(idx)  # token embeddings of shape (b, t, n_embd)
+
         x = self.transformer.drop(tok_emb)
         freqs_cis = self.freqs_cis.to(x.device)[pos]
 
-        for block in self.transformer.h:
+        for _block_idx, block in enumerate(self.transformer.h):
             x = block(x, freqs_cis)
         x = self.transformer.ln_f(x)
 
@@ -237,51 +243,31 @@ class Llama(GPT):
         }
 
 
-@Llama.register_arch("7b")
-def llama_7b():
-    return LlamaConfig(
-        n_layer=32,
+@Qwen3.register_arch("0.6B")
+def qwen3_0_6b():
+    return Qwen3Config(
+        n_layer=28,
+        n_head=16,
+        n_kv_head=8,
+        n_embd=1024,
+        head_dim=128,
+        intermediate_size=3072,
+        vocab_size=151936,
+        tie_word_embeddings=True,
+        rope_theta=1000000.0,
+        sequence_length=40960,
+        attention_bias=False,
+    )
+
+
+@Qwen3.register_arch("4B")
+def qwen3_4b():
+    return Qwen3Config(
+        n_layer=36,
         n_head=32,
-        n_embd=4096,
+        n_kv_head=8,
+        n_embd=2560,
+        intermediate_size=9216,
         multiple_of=256,
-    )
-
-
-@Llama.register_arch("1b")
-def llama_1b():
-    return LlamaConfig(
-        n_layer=18,
-        n_head=32,
-        n_embd=2048,
-        multiple_of=4,
-    )
-
-
-@Llama.register_arch("210M")
-def llama_210M():
-    return LlamaConfig(
-        n_layer=24,
-        n_head=12,
-        n_embd=768,
-        multiple_of=4,
-    )
-
-
-@Llama.register_arch("lite")
-def llama_lite():
-    return LlamaConfig(
-        n_layer=6,
-        n_head=8,
-        n_embd=768,
-        multiple_of=4,
-    )
-
-
-@Llama.register_arch("x-lite")
-def llama_x_lite():
-    return LlamaConfig(
-        n_layer=6,
-        n_head=4,
-        n_embd=256,
-        multiple_of=4,
+        attention_bias=True,
     )

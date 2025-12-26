@@ -11,9 +11,9 @@ from torch.distributed.tensor import DTensor
 from optimus_dl.modules.model import build_model
 
 
-def _run_sharding_test(rank, world_size, model_cfg_dict):
+def _run_sharding_test(rank, unique_port, world_size, model_cfg_dict):
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "29501"
+    os.environ["MASTER_PORT"] = str(unique_port)
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
     try:
@@ -47,9 +47,11 @@ def _run_sharding_test(rank, world_size, model_cfg_dict):
         dist.destroy_process_group()
 
 
-def _run_test_full_tensor_parallel(rank, world_size, model_cfg_dict, sequence_parallel):
+def _run_test_full_tensor_parallel(
+    rank, unique_port, world_size, model_cfg_dict, sequence_parallel
+):
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "29500"
+    os.environ["MASTER_PORT"] = str(unique_port)
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
     try:
@@ -109,10 +111,9 @@ def _run_test_full_tensor_parallel(rank, world_size, model_cfg_dict, sequence_pa
         dist.destroy_process_group()
 
 
-def _run_tp_assertion_test(rank, world_size, model_cfg_dict):
-    # ... (unchanged) ...
+def _run_tp_assertion_test(rank, unique_port, world_size, model_cfg_dict):
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "29502"
+    os.environ["MASTER_PORT"] = str(unique_port)
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
     try:
         model_cfg = OmegaConf.create(model_cfg_dict)
@@ -145,11 +146,22 @@ llama2_invalid_cfg = {
     "n_layer": 1,
     "vocab_size": 256,
 }
+qwen3_test_cfg = {
+    "_name": "qwen3",
+    "n_embd": 64,
+    "n_head": 4,
+    "n_kv_head": 2,
+    "n_layer": 2,
+    "vocab_size": 256,
+    "sequence_length": 128,
+    "attention_bias": True,
+}
+models_cfg = [llama2_cfg, qwen3_test_cfg]
 
 
-def _run_test_sp_internals(rank, world_size, model_cfg_dict):
+def _run_test_sp_internals(rank, unique_port, world_size, model_cfg_dict):
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "29503"
+    os.environ["MASTER_PORT"] = str(unique_port)
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
     try:
@@ -203,44 +215,44 @@ def _run_test_sp_internals(rank, world_size, model_cfg_dict):
         dist.destroy_process_group()
 
 
-@pytest.mark.parametrize("model_cfg_dict", [llama2_cfg])
+@pytest.mark.parametrize("model_cfg_dict", models_cfg)
 class TestTPGeneric:
-    def test_tensor_parallel_sharding(self, model_cfg_dict):
+    def test_tensor_parallel_sharding(self, unique_port, model_cfg_dict):
         world_size = 2
         mp.spawn(
             _run_sharding_test,
-            args=(world_size, model_cfg_dict),
+            args=(unique_port, world_size, model_cfg_dict),
             nprocs=world_size,
             join=True,
         )
 
     @pytest.mark.parametrize("sequence_parallel", [False, True], ids=["NoSP", "SP"])
-    def test_full_tensor_parallel(self, model_cfg_dict, sequence_parallel):
+    def test_full_tensor_parallel(self, unique_port, model_cfg_dict, sequence_parallel):
         world_size = 2
         mp.spawn(
             _run_test_full_tensor_parallel,
-            args=(world_size, model_cfg_dict, sequence_parallel),
+            args=(unique_port, world_size, model_cfg_dict, sequence_parallel),
             nprocs=world_size,
             join=True,
         )
 
-    def test_sp_internals(self, model_cfg_dict):
+    def test_sp_internals(self, unique_port, model_cfg_dict):
         world_size = 2
         mp.spawn(
             _run_test_sp_internals,
-            args=(world_size, model_cfg_dict),
+            args=(unique_port, world_size, model_cfg_dict),
             nprocs=world_size,
             join=True,
         )
 
     @pytest.mark.parametrize("invalid_model_cfg_dict", [llama2_invalid_cfg])
     def test_tensor_parallel_assertion(
-        self, model_cfg_dict, invalid_model_cfg_dict
+        self, unique_port, model_cfg_dict, invalid_model_cfg_dict
     ):  # model_cfg_dict arg ignored here
         world_size = 2
         mp.spawn(
             _run_tp_assertion_test,
-            args=(world_size, invalid_model_cfg_dict),
+            args=(unique_port, world_size, invalid_model_cfg_dict),
             nprocs=world_size,
             join=True,
         )

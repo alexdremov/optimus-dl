@@ -80,20 +80,20 @@ def make_registry(registry_name: str, base_class: type | None = None):
 
     @overload
     def build(
-        cfg: RegistryConfig | RegistryConfigStrict,
+        cfg: RegistryConfig | RegistryConfigStrict | dict,
         cast_to: type[T],
         **kwargs: Any,
     ) -> T: ...
 
     @overload
     def build(
-        cfg: RegistryConfig | RegistryConfigStrict,
+        cfg: RegistryConfig | RegistryConfigStrict | dict,
         cast_to: None = None,
         **kwargs: Any,
     ) -> Any: ...
 
     def build(
-        cfg: RegistryConfig | RegistryConfigStrict | None,
+        cfg: RegistryConfig | RegistryConfigStrict | dict | None,
         cast_to: type[T] | None = None,
         **kwargs,
     ) -> T | Any | None:
@@ -129,7 +129,7 @@ def make_registry(registry_name: str, base_class: type | None = None):
 @overload
 def build(
     registry_name: str,
-    cfg: RegistryConfig | RegistryConfigStrict,
+    cfg: RegistryConfig | RegistryConfigStrict | dict,
     cast_to: type[T],
     **kwargs: Any,
 ) -> T: ...
@@ -138,7 +138,7 @@ def build(
 @overload
 def build(
     registry_name: str,
-    cfg: RegistryConfig | RegistryConfigStrict,
+    cfg: RegistryConfig | RegistryConfigStrict | dict,
     cast_to: None = None,
     **kwargs: Any,
 ) -> Any: ...
@@ -146,7 +146,7 @@ def build(
 
 def build(
     registry_name: str,
-    cfg: RegistryConfig | RegistryConfigStrict,
+    cfg: RegistryConfig | RegistryConfigStrict | dict,
     cast_to: type[T] | None = None,
     **kwargs: Any,
 ) -> T | Any | None:

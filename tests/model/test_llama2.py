@@ -1,17 +1,18 @@
-from unittest.mock import patch
 
 import pytest
 import torch
 import torch.nn as nn
 
-from optimus_dl.modules.model.llama2 import (
-    Llama,
-    LlamaAttention,
-    LlamaBlock,
-    LlamaConfig,
-    LlamaMLP,
+from optimus_dl.modules.model.blocks.rope import (
     _reshape_for_broadcast,
     apply_rotary_emb,
+)
+from optimus_dl.modules.model.llama2 import (
+    Llama,
+    LlamaBlock,
+    LlamaConfig,
+    RotarySelfAttention,
+    SwiGLUMLP,
     llama_lite,
     precompute_freqs_cis,
 )
@@ -120,8 +121,7 @@ class TestLlamaMLP:
     """Tests for LlamaMLP (SwiGLU implementation)"""
 
     def test_init(self):
-        config = LlamaConfig(n_embd=768, multiple_of=256)
-        mlp = LlamaMLP(config)
+        mlp = SwiGLUMLP(n_embd=768, multiple_of=256)
 
         # Check that all linear layers exist and have no bias
         assert isinstance(mlp.w1, nn.Linear)
@@ -134,8 +134,7 @@ class TestLlamaMLP:
 
     def test_hidden_dimension_calculation(self):
         """Test that hidden dimension is calculated correctly"""
-        config = LlamaConfig(n_embd=768, multiple_of=256)
-        mlp = LlamaMLP(config)
+        mlp = SwiGLUMLP(n_embd=768, multiple_of=256)
 
         # Calculate expected hidden dimension
         expected_hidden_dim = int(2 * 768 * 4 / 3)  # 2048
@@ -149,8 +148,7 @@ class TestLlamaMLP:
 
     def test_forward_swiglu(self):
         """Test SwiGLU activation: SiLU(w1(x)) * w2(x)"""
-        config = LlamaConfig(n_embd=256, multiple_of=64)
-        mlp = LlamaMLP(config)
+        mlp = SwiGLUMLP(n_embd=256, multiple_of=64)
 
         batch_size, seq_len = 2, 10
         x = torch.randn(batch_size, seq_len, 256)
@@ -170,8 +168,7 @@ class TestLlamaMLP:
         multiple_of_values = [64, 128, 256, 512]
 
         for multiple_of in multiple_of_values:
-            config = LlamaConfig(n_embd=512, multiple_of=multiple_of)
-            mlp = LlamaMLP(config)
+            mlp = SwiGLUMLP(n_embd=512, multiple_of=multiple_of)
 
             # Hidden dimension should be divisible by multiple_of
             hidden_dim = mlp.w1.out_features
@@ -183,8 +180,7 @@ class TestLlamaMLP:
             assert output.shape == (1, 5, 512)
 
     def test_gradient_flow(self):
-        config = LlamaConfig(n_embd=256, multiple_of=64)
-        mlp = LlamaMLP(config)
+        mlp = SwiGLUMLP(n_embd=256, multiple_of=64)
 
         x = torch.randn(2, 10, 256, requires_grad=True)
         output = mlp(x)
@@ -203,12 +199,7 @@ class TestLlamaAttention:
 
     def test_init_inheritance(self):
         """Test that LlamaAttention inherits from CausalSelfAttention"""
-        config = LlamaConfig(n_embd=768, n_head=12)
-        attention = LlamaAttention(config)
-
-        from optimus_dl.modules.model.blocks.attention import CausalSelfAttention
-
-        assert isinstance(attention, CausalSelfAttention)
+        attention = RotarySelfAttention(n_embd=768, n_head=12)
 
         # Should have the new attributes for GQA
         assert hasattr(attention, "wq")
@@ -216,11 +207,9 @@ class TestLlamaAttention:
         assert hasattr(attention, "wv")
         assert hasattr(attention, "wo")
         assert hasattr(attention, "n_head")
-        assert hasattr(attention, "n_embd")
 
     def test_forward_with_rope(self):
-        config = LlamaConfig(n_embd=768, n_head=12, block_size=1024)
-        attention = LlamaAttention(config)
+        attention = RotarySelfAttention(n_embd=768, n_head=12)
         attention.eval()
 
         batch_size, seq_len = 2, 20
@@ -233,31 +222,8 @@ class TestLlamaAttention:
         output = attention(x, freqs_cis)
         assert output.shape == (batch_size, seq_len, 768)
 
-    def test_rope_application(self):
-        """Test that rotary embeddings are applied to q and k"""
-        config = LlamaConfig(n_embd=256, n_head=8, block_size=512)
-        attention = LlamaAttention(config)
-
-        # Patch apply_rotary_emb to track its calls
-        with patch("optimus_dl.modules.model.llama2.apply_rotary_emb") as mock_rope:
-            batch_size, seq_len = 1, 10
-            x = torch.randn(batch_size, seq_len, 256)
-            freqs_cis = precompute_freqs_cis(256 // 8, seq_len)
-
-            # Set up mock to return the inputs unchanged
-            def rope_side_effect(q, k, freqs_cis):
-                return q, k
-
-            mock_rope.side_effect = rope_side_effect
-
-            attention(x, freqs_cis)
-
-            # apply_rotary_emb should be called once
-            mock_rope.assert_called_once()
-
     def test_different_sequence_lengths(self):
-        config = LlamaConfig(n_embd=256, n_head=8, block_size=1024)
-        attention = LlamaAttention(config)
+        attention = RotarySelfAttention(n_embd=256, n_head=8)
         attention.eval()
 
         head_dim = 256 // 8
@@ -271,8 +237,7 @@ class TestLlamaAttention:
             assert output.shape == (1, seq_len, 256)
 
     def test_gradient_flow_with_rope(self):
-        config = LlamaConfig(n_embd=256, n_head=8)
-        attention = LlamaAttention(config)
+        attention = RotarySelfAttention(n_embd=256, n_head=8)
 
         batch_size, seq_len = 1, 10
         x = torch.randn(batch_size, seq_len, 256, requires_grad=True)
@@ -302,8 +267,8 @@ class TestLlamaBlock:
 
         assert isinstance(block.ln_1, RMSNorm)
         assert isinstance(block.ln_2, RMSNorm)
-        assert isinstance(block.attn, LlamaAttention)
-        assert isinstance(block.mlp, LlamaMLP)
+        assert isinstance(block.attn, RotarySelfAttention)
+        assert isinstance(block.mlp, SwiGLUMLP)
 
         # Check RMSNorm epsilon
         assert block.ln_1.eps == 1e-5

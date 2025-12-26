@@ -12,11 +12,10 @@ from optimus_dl.modules.model import build_model
 
 
 def _run_collectives_test(
-    rank, world_size, model_cfg_dict, loss_parallel, sequence_parallel
+    rank, unique_port, world_size, model_cfg_dict, loss_parallel, sequence_parallel
 ):
     os.environ["MASTER_ADDR"] = "localhost"
-    port = 29800 + (1 if loss_parallel else 0) + (2 if sequence_parallel else 0)
-    os.environ["MASTER_PORT"] = str(port)
+    os.environ["MASTER_PORT"] = str(unique_port)
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
     try:
@@ -133,28 +132,43 @@ llama2_cfg = {
     "vocab_size": 512,
     "sequence_length": 16,
 }
+qwen3_test_cfg = {
+    "_name": "qwen3",
+    "n_embd": 64,
+    "n_head": 4,
+    "n_kv_head": 2,
+    "n_layer": 2,
+    "vocab_size": 256,
+    "sequence_length": 128,
+    "attention_bias": True,
+}
+models_cfg = [llama2_cfg, qwen3_test_cfg]
 
 
-@pytest.mark.parametrize("model_cfg_dict", [llama2_cfg])
+@pytest.mark.parametrize("model_cfg_dict", models_cfg)
 class TestTPCollectivesGeneric:
     @pytest.mark.parametrize("sequence_parallel", [False, True], ids=["NoSP", "SP"])
-    def test_collectives_loss_parallel_false(self, model_cfg_dict, sequence_parallel):
+    def test_collectives_loss_parallel_false(
+        self, unique_port, model_cfg_dict, sequence_parallel
+    ):
         """Test collectives with loss_parallel=False (Expect Gather)"""
         world_size = 2
         mp.spawn(
             _run_collectives_test,
-            args=(world_size, model_cfg_dict, False, sequence_parallel),
+            args=(unique_port, world_size, model_cfg_dict, False, sequence_parallel),
             nprocs=world_size,
             join=True,
         )
 
     @pytest.mark.parametrize("sequence_parallel", [False, True], ids=["NoSP", "SP"])
-    def test_collectives_loss_parallel_true(self, model_cfg_dict, sequence_parallel):
+    def test_collectives_loss_parallel_true(
+        self, unique_port, model_cfg_dict, sequence_parallel
+    ):
         """Test collectives with loss_parallel=True (No Gather)"""
         world_size = 2
         mp.spawn(
             _run_collectives_test,
-            args=(world_size, model_cfg_dict, True, sequence_parallel),
+            args=(unique_port, world_size, model_cfg_dict, True, sequence_parallel),
             nprocs=world_size,
             join=True,
         )

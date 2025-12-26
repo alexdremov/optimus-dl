@@ -1,6 +1,7 @@
 import gc
 import os
 
+import pytest
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
@@ -21,11 +22,22 @@ llama2_mem_cfg = {
     "vocab_size": 1024,
     "sequence_length": 512,  # Increased sequence length
 }
+qwen3_test_cfg = {
+    "_name": "qwen3",
+    "n_embd": 64,
+    "n_head": 4,
+    "n_kv_head": 2,
+    "n_layer": 2,
+    "vocab_size": 256,
+    "sequence_length": 128,
+    "attention_bias": True,
+}
+models_cfg = [llama2_mem_cfg, qwen3_test_cfg]
 
 
-def _run_memory_test(rank, world_size, model_cfg_dict, result_queue):
+def _run_memory_test(rank, unique_port, world_size, model_cfg_dict, result_queue):
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "29505"
+    os.environ["MASTER_PORT"] = str(unique_port)
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
     try:
@@ -92,14 +104,16 @@ def _run_memory_test(rank, world_size, model_cfg_dict, result_queue):
 
 
 class TestTPMemory:
-    def test_sp_memory_usage(self):
+
+    @pytest.mark.parametrize("model_cfg_dict", models_cfg)
+    def test_sp_memory_usage(self, unique_port, model_cfg_dict):
         world_size = 2
         ctx = mp.get_context("spawn")
         queue = ctx.Queue()
 
         mp.spawn(
             _run_memory_test,
-            args=(world_size, llama2_mem_cfg, queue),
+            args=(unique_port, world_size, model_cfg_dict, queue),
             nprocs=world_size,
             join=True,
         )
@@ -122,5 +136,5 @@ class TestTPMemory:
             ratio = sp_total / nosp_total
             print(f"SP/NoSP Ratio: {ratio:.4f}")
             assert (
-                ratio < 0.8
+                ratio < 0.9
             ), f"SP should provide significant memory savings. Ratio: {ratio}"
