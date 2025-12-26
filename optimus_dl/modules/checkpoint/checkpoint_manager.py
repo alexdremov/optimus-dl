@@ -55,7 +55,7 @@ class CheckpointManager:
         manager.save_checkpoint(dir, model, optimizer, collective, config, iteration=100)
         # Load it back
         manager.load_checkpoint(dir, model, optimizer, collective)
-    
+
         ```"""
 
     def __init__(

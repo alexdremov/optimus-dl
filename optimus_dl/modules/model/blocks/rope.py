@@ -52,7 +52,9 @@ def _reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor) -> torch.Te
     return freqs_cis.view(*shape)
 
 
-def apply_rotary_emb(q: torch.Tensor, k: torch.Tensor, freqs_cis: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+def apply_rotary_emb(
+    q: torch.Tensor, k: torch.Tensor, freqs_cis: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Apply Rotary Positional Embeddings to Query and Key tensors.
 
     Handles both standard Tensors and distributed DTensors.

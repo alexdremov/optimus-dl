@@ -64,7 +64,7 @@ class RegistryConfig(RegistryConfigStrict, dict[str, Any]):
         ```python
         config = RegistryConfig(_name="my_model", n_layers=12, hidden_size=768)
         config["n_layers"]  # 12
-    
+
         ```"""
 
     ...
@@ -95,12 +95,12 @@ def make_registry(registry_name: str, base_class: type | None = None):
     Example:
         ```python
         registry, register, build = make_registry("model", BaseModel)
-        
+
         @register("llama", LlamaConfig)
         class Llama(BaseModel):
             def __init__(self, cfg: LlamaConfig):
                 self.cfg = cfg
-        
+
         # Later, build from config
         config = LlamaConfig(_name="llama", n_embd=512)
         model = build(config)
@@ -143,11 +143,11 @@ def make_registry(registry_name: str, base_class: type | None = None):
             @register("llama", LlamaConfig)
             class Llama(BaseModel):
                 pass
-            
+
             @Llama.register_arch("7b")
             def llama_7b_config():
                 return LlamaConfig(n_layers=32, n_embd=4096)
-        
+
             ```"""
         full_name = f"{class_name}-{name}"
 
@@ -200,7 +200,7 @@ def make_registry(registry_name: str, base_class: type | None = None):
             class MyModel:
                 def __init__(self, cfg: MyModelConfig):
                     self.cfg = cfg
-        
+
             ```"""
         assert (
             name not in registry
@@ -275,7 +275,7 @@ def make_registry(registry_name: str, base_class: type | None = None):
             config = RegistryConfig(_name="llama", n_embd=512)
             model = build(config, cast_to=BaseModel)
             assert isinstance(model, Llama)
-        
+
             ```"""
         if cfg is None:
             return None
@@ -353,7 +353,7 @@ def build(
         ```python
         config = RegistryConfig(_name="llama", n_embd=512)
         model = build("model", config, cast_to=BaseModel)
-    
+
         ```"""
     assert registry_name in registries, f"Unknown registry {registry_name}"
     _, _, build_fn = make_registry(registry_name)

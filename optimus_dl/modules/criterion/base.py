@@ -24,12 +24,12 @@ class BaseCriterion:
         class CrossEntropyCriterion(BaseCriterion):
             def __init__(self, cfg: CrossEntropyConfig):
                 self.cfg = cfg
-        
+
             def __call__(self, model: BaseModel, batch: dict) -> torch.Tensor:
                 logits = model(batch["input_ids"])
                 return F.cross_entropy(logits.view(-1, logits.size(-1)),
                                       batch["labels"].view(-1))
-    
+
         ```"""
 
     def __call__(self, model: BaseModel, batch: dict) -> torch.Tensor:
@@ -54,6 +54,6 @@ class BaseCriterion:
             criterion = CrossEntropyCriterion(cfg)
             loss = criterion(model, batch)
             loss.backward()
-        
+
             ```"""
         raise NotImplementedError

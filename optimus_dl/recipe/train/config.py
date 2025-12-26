@@ -164,7 +164,7 @@ class TrainConfig(RegistryConfig):
                 lr=1e-4,
             ),
         )
-    
+
         ```"""
 
     args: dict = field(default_factory=dict)

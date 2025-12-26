@@ -26,11 +26,11 @@ class BaseDataset(torchdata.nodes.BaseNode):
             def __init__(self, cfg: MyDatasetConfig, **kwargs):
                 super().__init__(cfg, **kwargs)
                 self.data = load_data(cfg.data_path)
-        
+
             def __iter__(self):
                 for item in self.data:
                     yield item
-    
+
         ```"""
 
     def __init__(self, cfg, **kwargs):

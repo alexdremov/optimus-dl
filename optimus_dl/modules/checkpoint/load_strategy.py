@@ -47,10 +47,10 @@ class LoadStrategy:
             load_scheduler=False,
             load_iteration=False,
         )
-        
+
         # Resume training: load everything
         strategy = LoadStrategy()  # All defaults to True
-        
+
         # Evaluation: model only
         strategy = LoadStrategy(
             load_model=True,
@@ -61,7 +61,7 @@ class LoadStrategy:
             load_metrics=False,
             load_iteration=False,
         )
-    
+
         ```"""
 
     load_model: bool = field(

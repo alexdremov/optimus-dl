@@ -27,12 +27,12 @@ class BaseTransform:
             def __init__(self, cfg: TokenizeConfig, **kwargs):
                 super().__init__(**kwargs)
                 self.tokenizer = build_tokenizer(cfg.tokenizer_config)
-        
+
             def build(self, source: BaseNode) -> BaseNode:
                 def tokenize_fn(item):
                     return {"input_ids": self.tokenizer.encode(item["text"])}
                 return source.map(tokenize_fn)
-    
+
         ```"""
 
     def __init__(self, *args, **kwargs) -> None:
@@ -65,7 +65,7 @@ class BaseTransform:
             transform = TokenizeTransform(cfg)
             transformed_source = transform.build(raw_source)
             # transformed_source now yields tokenized data
-        
+
             ```"""
         raise NotImplementedError
 

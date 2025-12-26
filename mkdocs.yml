@@ -3,30 +3,16 @@ site_description: A clean, modular framework for training large language models 
 site_url: https://alexdremov.github.io/optimus-dl/
 
 repo_name: alexdremov/optimus-dl
-repo_url: https://github.com/alexdremov/optimus-dl
+repo_url: https://github.com/alexdremov/optimus-dl/
 
 theme:
   name: material
   palette:
-    # Light mode
-    - scheme: default
-      primary: white
-      accent: indigo
-      toggle:
-        icon: material/brightness-7
-        name: Switch to dark mode
-    # Dark mode
-    - scheme: slate
-      primary: black
-      accent: indigo
-      toggle:
-        icon: material/brightness-4
-        name: Switch to light mode
+    scheme: default
+    primary: white
+    accent: indigo
   features:
-    - navigation.tabs
-    - navigation.sections
     - navigation.expand
-    - navigation.top
     - content.code.copy
     - content.tooltips
 
@@ -76,4 +62,7 @@ nav:
   - User Guide:
     - Quick Start: user-guide/quick-start.md
     - Configuration: user-guide/configuration.md
+    - Models: user-guide/models.md
+    - Data Pipelines: user-guide/data.md
+    - Optimizers: user-guide/optimizers.md
   - API Reference: reference/
