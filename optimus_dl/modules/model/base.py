@@ -31,15 +31,17 @@ class BaseModel(torch.nn.Module):
     - `forward()`: The main computation loop.
 
     Example:
-        >>> @register_model("my_model", MyModelConfig)
-        >>> class MyModel(BaseModel):
-        ...     def __init__(self, cfg: MyModelConfig):
-        ...         super().__init__()
-        ...         self.embedding = nn.Embedding(cfg.vocab_size, cfg.n_embd)
-        ...
-        ...     def forward(self, input_ids):
-        ...         return {"logits": self.embedding(input_ids)}
-    """
+        ```python
+        @register_model("my_model", MyModelConfig)
+        class MyModel(BaseModel):
+            def __init__(self, cfg: MyModelConfig):
+                super().__init__()
+                self.embedding = nn.Embedding(cfg.vocab_size, cfg.n_embd)
+        
+            def forward(self, input_ids):
+                return {"logits": self.embedding(input_ids)}
+    
+        ```"""
 
     def __init__(self):
         """Initialize the base model."""

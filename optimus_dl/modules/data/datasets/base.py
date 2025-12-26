@@ -20,16 +20,18 @@ class BaseDataset(torchdata.nodes.BaseNode):
     - Optionally override `load_state_dict()` for custom checkpointing
 
     Example:
-        >>> @register_dataset("my_dataset", MyDatasetConfig)
-        >>> class MyDataset(BaseDataset):
-        ...     def __init__(self, cfg: MyDatasetConfig, **kwargs):
-        ...         super().__init__(cfg, **kwargs)
-        ...         self.data = load_data(cfg.data_path)
-        ...
-        ...     def __iter__(self):
-        ...         for item in self.data:
-        ...             yield item
-    """
+        ```python
+        @register_dataset("my_dataset", MyDatasetConfig)
+        class MyDataset(BaseDataset):
+            def __init__(self, cfg: MyDatasetConfig, **kwargs):
+                super().__init__(cfg, **kwargs)
+                self.data = load_data(cfg.data_path)
+        
+            def __iter__(self):
+                for item in self.data:
+                    yield item
+    
+        ```"""
 
     def __init__(self, cfg, **kwargs):
         """Initialize the base dataset.

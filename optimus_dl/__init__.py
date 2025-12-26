@@ -1,6 +1,7 @@
 """Optimus-DL: A modular, high-performance framework for training Large Language Models.
 
 Optimus-DL is a research framework built on PyTorch that provides:
+
 - Modular "Recipe" architecture for clean separation of concerns
 - Hydra-based configuration management
 - Universal metrics system with distributed aggregation
@@ -9,14 +10,16 @@ Optimus-DL is a research framework built on PyTorch that provides:
 - Registry system for easy component swapping
 
 Example:
-    Basic training::
+    Basic training:
 
-        >>> from optimus_dl.core.registry import build
-        >>> from optimus_dl.recipe.train.config import TrainConfig
-        >>>
-        >>> config = TrainConfig(...)
-        >>> recipe = build("train_recipe", config)
-        >>> recipe.run()
+    ```python
+    from optimus_dl.core.registry import build
+    from optimus_dl.recipe.train.config import TrainConfig
+
+    config = TrainConfig(...)
+    recipe = build("train_recipe", config)
+    recipe.run()
+    ```
 """
 
 import os

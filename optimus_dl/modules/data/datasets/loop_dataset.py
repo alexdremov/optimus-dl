@@ -20,6 +20,18 @@ class LoopDatasetConfig(RegistryConfigStrict):
 
 @register_dataset("loop", LoopDatasetConfig)
 class LoopDataset(BaseDataset):
+    """Dataset that infinitely loops over an inner dataset.
+
+    When the inner dataset is exhausted, it is automatically re-initialized,
+    creating an endless stream of data. This is useful for training loops where
+    the model needs to see the data multiple times.
+
+    Args:
+        cfg: Loop dataset configuration.
+        rank: Distributed rank for sharding.
+        world_size: Total number of ranks.
+    """
+
     def __init__(self, cfg: LoopDatasetConfig, rank: int, world_size: int, **kwargs):
         super().__init__(cfg)
         self.rank = rank
@@ -29,11 +41,13 @@ class LoopDataset(BaseDataset):
         self.inner_dataset: torchdata.nodes.BaseNode | None = None
 
     def _build_inner(self):
+        """Build the inner dataset from configuration."""
         self.inner_dataset = build_dataset(
             self.cfg.inner, rank=self.rank, world_size=self.world_size, **self.kwargs
         )
 
     def next(self):
+        """Yield the next item from the inner dataset, resetting it if exhausted."""
         if self.inner_dataset is None:
             raise ValueError("Inner dataset not initialized")
 
@@ -45,6 +59,11 @@ class LoopDataset(BaseDataset):
             return self.inner_dataset.next()
 
     def reset(self, initial_state: dict | None = None):
+        """Reset or restore the loop dataset state.
+
+        Args:
+            initial_state: Optional state dictionary for resuming.
+        """
         super().reset(initial_state)
 
         inner_state = None
@@ -60,6 +79,7 @@ class LoopDataset(BaseDataset):
         self.inner_dataset.reset(inner_state)
 
     def get_state(self):
+        """Return the current state for checkpointing."""
         state = {
             "rank": self.rank,
             "world_size": self.world_size,

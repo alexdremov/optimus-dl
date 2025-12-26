@@ -38,8 +38,10 @@ def get_best_device() -> torch.device:
         defaulting to CPU if no accelerators are available.
 
     Example:
-        >>> device = get_best_device()
-        >>> print(device)  # cuda, mps, xpu, or cpu
+        ```python
+        device = get_best_device()
+        print(device)  # cuda, mps, xpu, or cpu
+        ```
     """
     if torch.cuda.is_available():
         return torch.device("cuda")
@@ -70,11 +72,13 @@ def setup_device_and_collective(
         - collective: Distributed collective object for multi-GPU coordination
 
     Example:
-        >>> from optimus_dl.modules.distributed.config import DistributedConfig
-        >>> config = DistributedConfig()
-        >>> setup = setup_device_and_collective(use_gpu=True, config=config)
-        >>> model = model.to(setup.device)
-        >>> # Use setup.collective for distributed operations
+        ```python
+        from optimus_dl.modules.distributed.config import DistributedConfig
+        config = DistributedConfig()
+        setup = setup_device_and_collective(use_gpu=True, config=config)
+        model = model.to(setup.device)
+        # Use setup.collective for distributed operations
+        ```
     """
     from optimus_dl.modules.distributed import build_best_collective
 

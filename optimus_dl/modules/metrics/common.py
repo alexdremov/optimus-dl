@@ -32,10 +32,12 @@ def safe_round(number: float | int | Any, ndigits: int | None) -> float | int:
         Rounded number as float or int (depending on whether rounding occurred).
 
     Example:
-        >>> safe_round(3.14159, 2)  # 3.14
-        >>> safe_round(torch.tensor(3.14159), 2)  # 3.14
-        >>> safe_round(3.14159, None)  # 3.14159 (no rounding)
-    """
+        ```python
+        safe_round(3.14159, 2)  # 3.14
+        safe_round(torch.tensor(3.14159), 2)  # 3.14
+        safe_round(3.14159, None)  # 3.14159 (no rounding)
+    
+        ```"""
     if ndigits is None:
         return number
     if hasattr(number, "__round__"):
@@ -61,11 +63,13 @@ class AverageMetric(BaseMetric):
         count: Accumulated sum of weights.
 
     Example:
-        >>> metric = AverageMetric(round=4)
-        >>> metric.log(value=0.5, weight=32)  # Batch size 32
-        >>> metric.log(value=0.6, weight=32)
-        >>> metric.compute()  # (0.5*32 + 0.6*32) / (32+32) = 0.55
-    """
+        ```python
+        metric = AverageMetric(round=4)
+        metric.log(value=0.5, weight=32)  # Batch size 32
+        metric.log(value=0.6, weight=32)
+        metric.compute()  # (0.5*32 + 0.6*32) / (32+32) = 0.55
+    
+        ```"""
 
     def __init__(self, round: int | None = None):
         """Initialize the average metric.
@@ -120,11 +124,13 @@ class SummedMetric(BaseMetric):
         sum: Accumulated sum of all logged values.
 
     Example:
-        >>> metric = SummedMetric()
-        >>> metric.log(100)
-        >>> metric.log(200)
-        >>> metric.compute()  # 300
-    """
+        ```python
+        metric = SummedMetric()
+        metric.log(100)
+        metric.log(200)
+        metric.compute()  # 300
+    
+        ```"""
 
     def __init__(self, round: int | None = None):
         """Initialize the summed metric.
@@ -315,15 +321,17 @@ def log_averaged(
             metrics appear first.
 
     Example:
-        >>> # Log a simple value
-        >>> log_averaged("train/loss", 0.5, weight=32)
-        >>>
-        >>> # Log with lazy evaluation (only computed if metric is logged)
-        >>> log_averaged("train/loss", lambda: compute_loss(), weight=lambda: batch_size)
-        >>>
-        >>> # Log with rounding
-        >>> log_averaged("train/accuracy", 0.95, round=4)
-    """
+        ```python
+        # Log a simple value
+        log_averaged("train/loss", 0.5, weight=32)
+        
+        # Log with lazy evaluation (only computed if metric is logged)
+        log_averaged("train/loss", lambda: compute_loss(), weight=lambda: batch_size)
+        
+        # Log with rounding
+        log_averaged("train/accuracy", 0.95, round=4)
+    
+        ```"""
     log_metric(
         name=name,
         metric_factory=lambda: AverageMetric(round=round),
@@ -375,12 +383,14 @@ def log_summed(
         priority: Priority for metric ordering when logging.
 
     Example:
-        >>> # Log total tokens processed
-        >>> log_summed("train/tokens", batch_size * seq_len)
-        >>>
-        >>> # Log with lazy evaluation
-        >>> log_summed("train/tokens", lambda: get_token_count())
-    """
+        ```python
+        # Log total tokens processed
+        log_summed("train/tokens", batch_size * seq_len)
+        
+        # Log with lazy evaluation
+        log_summed("train/tokens", lambda: get_token_count())
+    
+        ```"""
     log_metric(
         name=name,
         metric_factory=lambda: SummedMetric(round=round),
@@ -409,11 +419,13 @@ def log_event_start(
         priority: Priority for metric ordering when logging.
 
     Example:
-        >>> log_event_start("perf/forward_pass")
-        >>> # ... do work ...
-        >>> log_event_end("perf/forward_pass")
-        >>> # Metric will show average duration in milliseconds
-    """
+        ```python
+        log_event_start("perf/forward_pass")
+        # ... do work ...
+        log_event_end("perf/forward_pass")
+        # Metric will show average duration in milliseconds
+    
+        ```"""
     log_metric(
         name=name,
         metric_factory=lambda: StopwatchMeter(round=round),
@@ -446,10 +458,12 @@ def log_event_end(
         AssertionError: If `log_event_start()` was not called for this event name.
 
     Example:
-        >>> log_event_start("perf/backward_pass")
-        >>> # ... do backward pass ...
-        >>> log_event_end("perf/backward_pass")
-    """
+        ```python
+        log_event_start("perf/backward_pass")
+        # ... do backward pass ...
+        log_event_end("perf/backward_pass")
+    
+        ```"""
     log_metric(
         name=name,
         metric_factory=lambda: StopwatchMeter(round=round),
@@ -483,14 +497,16 @@ class CachedLambda:
     return the cached result.
 
     Example:
-        >>> # Expensive computation
-        >>> def compute_expensive_metric():
-        ...     return complex_calculation()
-        >>>
-        >>> cached = CachedLambda(compute_expensive_metric)
-        >>> value1 = cached()  # Computes and caches
-        >>> value2 = cached()  # Returns cached value
-    """
+        ```python
+        # Expensive computation
+        def compute_expensive_metric():
+            return complex_calculation()
+        
+        cached = CachedLambda(compute_expensive_metric)
+        value1 = cached()  # Computes and caches
+        value2 = cached()  # Returns cached value
+    
+        ```"""
 
     def __init__(self, func: Callable[[], Any]):
         """Initialize the cached lambda.
@@ -528,8 +544,10 @@ def cached_lambda(x: Callable[[], Any]) -> CachedLambda:
         CachedLambda instance that caches the function's result.
 
     Example:
-        >>> expensive = cached_lambda(lambda: expensive_computation())
-        >>> result = expensive()  # Computes once
-        >>> result = expensive()  # Uses cache
-    """
+        ```python
+        expensive = cached_lambda(lambda: expensive_computation())
+        result = expensive()  # Computes once
+        result = expensive()  # Uses cache
+    
+        ```"""
     return CachedLambda(x)

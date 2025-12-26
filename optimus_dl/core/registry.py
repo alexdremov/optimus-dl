@@ -6,20 +6,22 @@ The registry system is the foundation of Optimus-DL's modular architecture, enab
 easy component swapping and configuration-driven instantiation.
 
 Example:
-    Basic usage::
+    Basic usage:
 
-        # Create a registry
-        registry, register, build = make_registry("my_component")
+    ```python
+    # Create a registry
+    registry, register, build = make_registry("my_component")
 
-        # Register a component
-        @register("my_impl", MyConfig)
-        class MyImplementation:
-            def __init__(self, cfg: MyConfig):
-                self.cfg = cfg
+    # Register a component
+    @register("my_impl", MyConfig)
+    class MyImplementation:
+        def __init__(self, cfg: MyConfig):
+            self.cfg = cfg
 
-        # Build from config
-        config = MyConfig(_name="my_impl", param=1)
-        obj = build(config)
+    # Build from config
+    config = MyConfig(_name="my_impl", param=1)
+    obj = build(config)
+    ```
 """
 
 import functools
@@ -59,9 +61,11 @@ class RegistryConfig(RegistryConfigStrict, dict[str, Any]):
         extra_fields: Additional fields can be added as dictionary keys.
 
     Example:
-        >>> config = RegistryConfig(_name="my_model", n_layers=12, hidden_size=768)
-        >>> config["n_layers"]  # 12
-    """
+        ```python
+        config = RegistryConfig(_name="my_model", n_layers=12, hidden_size=768)
+        config["n_layers"]  # 12
+    
+        ```"""
 
     ...
 
@@ -89,17 +93,19 @@ def make_registry(registry_name: str, base_class: type | None = None):
         build (callable): Function to build instances from configuration
 
     Example:
-        >>> registry, register, build = make_registry("model", BaseModel)
-        >>>
-        >>> @register("llama", LlamaConfig)
-        >>> class Llama(BaseModel):
-        ...     def __init__(self, cfg: LlamaConfig):
-        ...         self.cfg = cfg
-        >>>
-        >>> # Later, build from config
-        >>> config = LlamaConfig(_name="llama", n_embd=512)
-        >>> model = build(config)
+        ```python
+        registry, register, build = make_registry("model", BaseModel)
+        
+        @register("llama", LlamaConfig)
+        class Llama(BaseModel):
+            def __init__(self, cfg: LlamaConfig):
+                self.cfg = cfg
+        
+        # Later, build from config
+        config = LlamaConfig(_name="llama", n_embd=512)
+        model = build(config)
 
+        ```
     Note:
         The registry is stored globally. Multiple calls with the same `registry_name`
         will return the same registry instance.
@@ -133,14 +139,16 @@ def make_registry(registry_name: str, base_class: type | None = None):
                 base class doesn't exist or doesn't have a structured config.
 
         Example:
-            >>> @register("llama", LlamaConfig)
-            >>> class Llama(BaseModel):
-            ...     pass
-            >>>
-            >>> @Llama.register_arch("7b")
-            >>> def llama_7b_config():
-            ...     return LlamaConfig(n_layers=32, n_embd=4096)
-        """
+            ```python
+            @register("llama", LlamaConfig)
+            class Llama(BaseModel):
+                pass
+            
+            @Llama.register_arch("7b")
+            def llama_7b_config():
+                return LlamaConfig(n_layers=32, n_embd=4096)
+        
+            ```"""
         full_name = f"{class_name}-{name}"
 
         assert (
@@ -187,11 +195,13 @@ def make_registry(registry_name: str, base_class: type | None = None):
                 a valid config class.
 
         Example:
-            >>> @register("my_model", MyModelConfig)
-            >>> class MyModel:
-            ...     def __init__(self, cfg: MyModelConfig):
-            ...         self.cfg = cfg
-        """
+            ```python
+            @register("my_model", MyModelConfig)
+            class MyModel:
+                def __init__(self, cfg: MyModelConfig):
+                    self.cfg = cfg
+        
+            ```"""
         assert (
             name not in registry
         ), f"Double registering of {name} in {registry_name} registry"
@@ -261,10 +271,12 @@ def make_registry(registry_name: str, base_class: type | None = None):
                 if cast_to is provided and the built object is not of that type.
 
         Example:
-            >>> config = RegistryConfig(_name="llama", n_embd=512)
-            >>> model = build(config, cast_to=BaseModel)
-            >>> assert isinstance(model, Llama)
-        """
+            ```python
+            config = RegistryConfig(_name="llama", n_embd=512)
+            model = build(config, cast_to=BaseModel)
+            assert isinstance(model, Llama)
+        
+            ```"""
         if cfg is None:
             return None
         if isinstance(cfg, str):
@@ -338,9 +350,11 @@ def build(
             found, or if cast_to is provided and the object is not of that type.
 
     Example:
-        >>> config = RegistryConfig(_name="llama", n_embd=512)
-        >>> model = build("model", config, cast_to=BaseModel)
-    """
+        ```python
+        config = RegistryConfig(_name="llama", n_embd=512)
+        model = build("model", config, cast_to=BaseModel)
+    
+        ```"""
     assert registry_name in registries, f"Unknown registry {registry_name}"
     _, _, build_fn = make_registry(registry_name)
     obj = build_fn(cfg, **kwargs)

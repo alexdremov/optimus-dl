@@ -154,16 +154,18 @@ class TrainConfig(RegistryConfig):
         evaluator: Configuration for the evaluator component.
 
     Example:
-        >>> config = TrainConfig(
-        ...     _name="base",
-        ...     args={"batch_size": 64, "seq_len": 1024},
-        ...     model=ModelConfig(_name="llama", n_embd=512),
-        ...     optimization=OptimizationConfig(
-        ...         batch_size="${args.batch_size}",
-        ...         lr=1e-4,
-        ...     ),
-        ... )
-    """
+        ```python
+        config = TrainConfig(
+            _name="base",
+            args={"batch_size": 64, "seq_len": 1024},
+            model=ModelConfig(_name="llama", n_embd=512),
+            optimization=OptimizationConfig(
+                batch_size="${args.batch_size}",
+                lr=1e-4,
+            ),
+        )
+    
+        ```"""
 
     args: dict = field(default_factory=dict)
     common: TrainRecipeConfig = field(default_factory=TrainRecipeConfig)

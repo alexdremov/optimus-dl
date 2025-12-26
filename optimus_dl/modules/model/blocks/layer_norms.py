@@ -20,18 +20,48 @@ liger_rms_norm = None
 
 
 class LayerNorm(nn.Module):
-    """LayerNorm but with an optional bias. PyTorch doesn't support simply bias=False"""
+    """LayerNorm with optional bias.
 
-    def __init__(self, ndim, bias):
+    PyTorch's standard LayerNorm always expects a bias if elementwise_affine
+    is True. This implementation allows for a more flexible bias=False option
+    as seen in some LLM architectures.
+
+    Attributes:
+        weight: Affine scale parameter.
+        bias: Optional affine bias parameter.
+    """
+
+    def __init__(self, ndim: int, bias: bool):
         super().__init__()
         self.weight = nn.Parameter(torch.ones(ndim))
         self.bias = nn.Parameter(torch.zeros(ndim)) if bias else None
 
-    def forward(self, input):
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        """Apply layer normalization.
+
+        Args:
+            input: Input tensor.
+
+        Returns:
+            Normalized tensor.
+        """
         return F.layer_norm(input, self.weight.shape, self.weight, self.bias, 1e-5)
 
 
 class RMSNorm(nn.Module):
+    """Root Mean Square Layer Normalization (RMSNorm).
+
+    RMSNorm is a simplification of LayerNorm that only scales the input by the
+    root mean square of the activations, omitting the mean subtraction and
+    bias.
+
+    Args:
+        dim: Input dimension.
+        eps: Small value for numerical stability.
+        use_liger: If True, uses the high-performance Liger kernel. If None,
+            automatically enables if available.
+    """
+
     def __init__(self, dim: int, eps: float = 1e-6, use_liger: bool | None = None):
         super().__init__()
         self.eps = eps
@@ -50,10 +80,19 @@ class RMSNorm(nn.Module):
             )
             self.use_liger = False
 
-    def _norm(self, x):
+    def _norm(self, x: torch.Tensor) -> torch.Tensor:
+        """Compute the RMS normalization of the input."""
         return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Perform the forward pass.
+
+        Args:
+            x: Input tensor.
+
+        Returns:
+            RMS normalized tensor.
+        """
         is_dtensor = isinstance(x, DTensor)
 
         if self.use_liger and x.device.type != "cpu" and not is_dtensor:

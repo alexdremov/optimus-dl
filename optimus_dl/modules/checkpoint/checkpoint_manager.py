@@ -49,12 +49,14 @@ class CheckpointManager:
     complexity of synchronizing metadata and per-rank states (like dataloaders).
 
     Example:
-        >>> manager = CheckpointManager(cfg)
-        >>> # Save a checkpoint
-        >>> manager.save_checkpoint(dir, model, optimizer, collective, config, iteration=100)
-        >>> # Load it back
-        >>> manager.load_checkpoint(dir, model, optimizer, collective)
-    """
+        ```python
+        manager = CheckpointManager(cfg)
+        # Save a checkpoint
+        manager.save_checkpoint(dir, model, optimizer, collective, config, iteration=100)
+        # Load it back
+        manager.load_checkpoint(dir, model, optimizer, collective)
+    
+        ```"""
 
     def __init__(
         self,

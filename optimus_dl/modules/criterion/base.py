@@ -19,16 +19,18 @@ class BaseCriterion:
     - `__call__()`: Compute the loss given model and batch
 
     Example:
-        >>> @register_criterion("cross_entropy", CrossEntropyConfig)
-        >>> class CrossEntropyCriterion(BaseCriterion):
-        ...     def __init__(self, cfg: CrossEntropyConfig):
-        ...         self.cfg = cfg
-        ...
-        ...     def __call__(self, model: BaseModel, batch: dict) -> torch.Tensor:
-        ...         logits = model(batch["input_ids"])
-        ...         return F.cross_entropy(logits.view(-1, logits.size(-1)),
-        ...                               batch["labels"].view(-1))
-    """
+        ```python
+        @register_criterion("cross_entropy", CrossEntropyConfig)
+        class CrossEntropyCriterion(BaseCriterion):
+            def __init__(self, cfg: CrossEntropyConfig):
+                self.cfg = cfg
+        
+            def __call__(self, model: BaseModel, batch: dict) -> torch.Tensor:
+                logits = model(batch["input_ids"])
+                return F.cross_entropy(logits.view(-1, logits.size(-1)),
+                                      batch["labels"].view(-1))
+    
+        ```"""
 
     def __call__(self, model: BaseModel, batch: dict) -> torch.Tensor:
         """Compute the loss for a given model and batch.
@@ -48,8 +50,10 @@ class BaseCriterion:
             NotImplementedError: Must be implemented by subclasses.
 
         Example:
-            >>> criterion = CrossEntropyCriterion(cfg)
-            >>> loss = criterion(model, batch)
-            >>> loss.backward()
-        """
+            ```python
+            criterion = CrossEntropyCriterion(cfg)
+            loss = criterion(model, batch)
+            loss.backward()
+        
+            ```"""
         raise NotImplementedError
