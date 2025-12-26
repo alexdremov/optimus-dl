@@ -184,25 +184,15 @@ llama2_cfg = {
 @pytest.mark.parametrize("model_cfg_dict", [llama2_cfg])
 class TestTPCorrectnessGeneric:
     @pytest.mark.parametrize("sequence_parallel", [False, True], ids=["NoSP", "SP"])
+    @pytest.mark.parametrize("loss_parallel", [False, True], ids=["NoLP", "LP"])
     def test_tp_correctness_loss_parallel_false(
-        self, model_cfg_dict, sequence_parallel
+        self, model_cfg_dict, sequence_parallel, loss_parallel
     ):
         """Test TP=2 with loss_parallel=False, with/without SP"""
         world_size = 2
         mp.spawn(
             _run_tp_correctness_test,
-            args=(world_size, model_cfg_dict, False, sequence_parallel),
-            nprocs=world_size,
-            join=True,
-        )
-
-    @pytest.mark.parametrize("sequence_parallel", [False, True], ids=["NoSP", "SP"])
-    def test_tp_correctness_loss_parallel_true(self, model_cfg_dict, sequence_parallel):
-        """Test TP=2 with loss_parallel=True, with/without SP"""
-        world_size = 2
-        mp.spawn(
-            _run_tp_correctness_test,
-            args=(world_size, model_cfg_dict, True, sequence_parallel),
+            args=(world_size, model_cfg_dict, loss_parallel, sequence_parallel),
             nprocs=world_size,
             join=True,
         )

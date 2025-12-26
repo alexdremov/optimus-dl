@@ -232,3 +232,8 @@ target-version = "py310"
     "S101", # asserts allowed in tests...
     "ARG005", # Unused lambda argument
 ]
+
+[dependency-groups]
+dev = [
+    "pytest-xdist>=3.8.0",
+]
