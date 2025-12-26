@@ -2,6 +2,7 @@
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from optimus_dl.core.registry import RegistryConfig, build, make_registry
 from optimus_dl.modules.loggers import BaseMetricsLogger, MetricsLoggerConfig
@@ -32,7 +33,7 @@ class LoggerManager:
         self,
         cfg: LoggerManagerConfig,
         loggers_config: list[MetricsLoggerConfig] | None,
-        **kwargs,
+        **kwargs: Any,
     ):
         self.loggers_config = loggers_config
         self.previous_state = {}

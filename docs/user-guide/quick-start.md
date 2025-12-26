@@ -83,4 +83,4 @@ You've successfully run your first training job! Here's where to go next:
 
 - **Dive into Configuration**: Learn how to create your own comprehensive training workflows in the **[Configuration Guide](configuration.md)**.
 - **Explore the Components**: See what's available for **[Models](models.md)**, **[Data Pipelines](data.md)**, and **[Optimizers](optimizers.md)**.
-- **Browse the API**: For in-depth details, head to the **[API Reference](../reference/)**.
+- **Browse the API**: For in-depth details, head to the **[API Reference](../reference/index.md)**.

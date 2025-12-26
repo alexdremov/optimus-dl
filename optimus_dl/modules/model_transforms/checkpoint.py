@@ -3,6 +3,7 @@
 import functools
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -95,7 +96,7 @@ class ActivationCheckpointTransform(BaseModelTransform):
     def __init__(
         self,
         cfg: ActivationCheckpointConfig,
-        **kwargs,
+        **kwargs: Any,
     ):
         super().__init__(cfg, **kwargs)
 

@@ -23,6 +23,7 @@ from torch.optim import Optimizer
 
 from optimus_dl.core.registry import RegistryConfig, build, make_registry
 from optimus_dl.modules.distributed import Collective
+from optimus_dl.modules.lr_scheduler import BaseLRScheduler
 from optimus_dl.modules.metrics import (
     load_state_dict as metrics_load_state_dict,
     state_dict as metrics_state_dict,
@@ -61,7 +62,7 @@ class CheckpointManager:
     def __init__(
         self,
         cfg: CheckpointManagerConfig,
-        **kwargs,
+        **kwargs: Any,
     ):
         """Initialize CheckpointManager.
 
@@ -77,10 +78,10 @@ class CheckpointManager:
         model: BaseModel,
         optimizer: Optimizer | None,
         collective: Collective,
-        lr_scheduler=None,
+        lr_scheduler: BaseLRScheduler | None = None,
         data_loaders: dict | None = None,
         load_strategy: LoadStrategy | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> tuple[int, dict | None]:
         """Attempt to find and load the latest checkpoint from a directory.
 
@@ -126,7 +127,7 @@ class CheckpointManager:
         collective: Collective,
         checkpoint_dir: str,
         save_freq: int,
-        **kwargs,
+        **kwargs: Any,
     ) -> bool:
         """Save checkpoint if iteration matches save_freq."""
         if save_freq <= 0 or iteration % save_freq != 0:
@@ -154,7 +155,7 @@ class CheckpointManager:
         lr_scheduler=None,
         iteration: int = 0,
         data_loaders: dict | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Save training checkpoint using distributed checkpoint API.
 
@@ -271,7 +272,7 @@ class CheckpointManager:
         data_loaders: dict | None = None,
         data_sources=None,
         load_strategy: LoadStrategy | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> dict:
         """Load training checkpoint using distributed checkpoint API."""
         load_strategy = load_strategy or LoadStrategy()
@@ -452,7 +453,7 @@ class CheckpointManager:
         return None
 
     def build_model_from_checkpoint(
-        self, checkpoint_path: str, device: str | torch.device, **kwargs
+        self, checkpoint_path: str, device: str | torch.device, **kwargs: Any
     ) -> tuple[BaseModel, dict]:
         """Build model and load from checkpoint.
 

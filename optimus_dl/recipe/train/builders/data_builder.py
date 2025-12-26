@@ -2,6 +2,7 @@
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 import torchdata.nodes
 
@@ -68,7 +69,7 @@ class DataBuilder:
         )
 
     def build_eval_data(
-        self, collective: Collective, **kwargs
+        self, collective: Collective, **kwargs: Any
     ) -> dict[str, DataPipeline | None]:
         """Build evaluation data pipelines.
 

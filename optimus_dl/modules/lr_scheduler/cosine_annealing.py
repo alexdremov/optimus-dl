@@ -1,5 +1,6 @@
 import math
 from dataclasses import dataclass
+from typing import Any
 
 from torch.optim import Optimizer
 
@@ -44,7 +45,7 @@ class CosineAnnealingLR(BaseLRScheduler):
         cfg: CosineAnnealingLRConfig,
         optimizer: Optimizer,
         iterations: int,
-        **kwargs,
+        **kwargs: Any,
     ):
         super().__init__(optimizer)
         self.T_max = iterations

@@ -49,7 +49,7 @@ class Evaluator:
         cfg: EvaluatorConfig,
         eval_freq: int = 0,
         eval_iterations: int | None = None,
-        **kwargs,
+        **kwargs: Any,
     ):
         self.eval_freq = eval_freq
         self.eval_iterations = eval_iterations

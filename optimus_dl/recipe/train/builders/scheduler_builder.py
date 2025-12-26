@@ -2,6 +2,7 @@
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from torch.optim import Optimizer
 
@@ -36,7 +37,7 @@ class SchedulerBuilder:
         cfg: SchedulerBuilderConfig,
         lr_scheduler_config: RegistryConfig | None,
         optimization_config: OptimizationConfig,
-        **kwargs,
+        **kwargs: Any,
     ):
         self.lr_scheduler_config = lr_scheduler_config
         self.optimization_config = optimization_config

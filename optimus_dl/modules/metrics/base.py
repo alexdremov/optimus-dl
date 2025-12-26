@@ -308,7 +308,7 @@ def log_metric(
     reset: bool = True,
     priority: int = 100,
     force_log: bool = False,
-    **kwargs,
+    **kwargs: Any,
 ):
     """Log data point(s) to all currently active metric groups.
 
