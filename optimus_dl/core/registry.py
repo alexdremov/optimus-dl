@@ -55,7 +55,7 @@ class RegistryConfig(RegistryConfigStrict, dict[str, Any]):
 
     Attributes:
         _name: The registered name of the component to instantiate.
-        Additional fields can be added as dictionary keys.
+        extra_fields: Additional fields can be added as dictionary keys.
 
     Example:
         >>> config = RegistryConfig(_name="my_model", n_layers=12, hidden_size=768)
@@ -82,10 +82,9 @@ def make_registry(registry_name: str, base_class: type | None = None):
             from. Used for type checking. If None, any class can be registered.
 
     Returns:
-        A tuple of (registry_dict, register_decorator, build_function):
-        - registry_dict: The actual registry dictionary (for inspection/debugging)
-        - register: Decorator function to register components
-        - build: Function to build instances from configuration
+        registry_dict (dict): The actual registry dictionary (for inspection/debugging)
+        register (callable): Decorator function to register components
+        build (callable): Function to build instances from configuration
 
     Example:
         >>> registry, register, build = make_registry("model", BaseModel)

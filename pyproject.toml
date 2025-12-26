@@ -64,9 +64,9 @@ llm-train = "optimus_dl.scripts.train:main"
 
 [project.optional-dependencies]
 docs = [
-    "sphinx>=8.1.0",
-    "sphinx-rtd-theme>=3.0.0",
-    "myst-parser>=4.0.0",
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.24.0",
 ]
 notebook = [
     "ipython>=8.37.0",

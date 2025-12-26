@@ -1,0 +1,57 @@
+site_name: Optimus-DL
+site_description: A clean, modular framework for training large language models with modern PyTorch features.
+site_url: https://alexdremov.github.io/optimus-dl/
+
+repo_name: alexdremov/optimus-dl
+repo_url: https://github.com/alexdremov/optimus-dl
+
+theme:
+  name: material
+  palette: 
+    # Light mode
+    - scheme: default
+      primary: white
+      accent: indigo 
+      toggle:
+        icon: material/brightness-7 
+        name: Switch to dark mode
+    # Dark mode
+    - scheme: slate
+      primary: black
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - content.tooltips
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
+          options:
+            docstring_style: google
+            show_root_heading: true
+            show_source: true
+
+nav:
+  - Home: index.md
+  - User Guide:
+    - Quick Start: user-guide/quick-start.md
+    - Configuration: user-guide/configuration.md
+  - API Reference:
+    - Core:
+      - Bootstrap: api/core/bootstrap.md
+      - Registry: api/core/registry.md
+      - Utilities: api/core/utils.md
+    - Modules:
+      - Models: api/modules/models.md
+      - Data: api/modules/data.md
+      - Checkpointing: api/modules/checkpoint.md
+    - Recipe: api/recipe.md
