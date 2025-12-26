@@ -80,6 +80,7 @@ dev = [
     "isort>=6.0.1",
     "pytest>=8.4.1",
     "ruff>=0.14.10",
+    "pytest-xdist>=3.6.0"
 ]
 
 [build-system]
