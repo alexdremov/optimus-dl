@@ -22,7 +22,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ActivationCheckpointConfig(ModelTransformConfig):
-    """Configuration for activation checkpointing."""
+    """Configuration for activation checkpointing.
+
+    Attributes:
+        layer_classes: List of layer class names to wrap (e.g., ["LlamaBlock"]).
+        use_reentrant: If True, uses the legacy reentrant checkpointing. False
+            is recommended for modern PyTorch and FSDP integration.
+        ops_to_save: Optional list of specific operations to always save (not recompute).
+    """
 
     # List of layer class names to wrap (e.g. ["LlamaBlock", "GPTBlock"])
     layer_classes: list[str] | None = None
@@ -35,7 +42,12 @@ class ActivationCheckpointConfig(ModelTransformConfig):
 
 
 class CheckpointWrapper(nn.Module):
-    """Wraps a module to apply activation checkpointing during forward pass."""
+    """Module wrapper that applies activation checkpointing to its child.
+
+    During the forward pass, this module uses `torch.utils.checkpoint.checkpoint`
+    to trade compute for memory: activations are discarded after the forward
+    pass and recomputed during the backward pass.
+    """
 
     def __init__(
         self, module: nn.Module, ops_to_save: list, use_reentrant: bool = False
@@ -53,6 +65,7 @@ class CheckpointWrapper(nn.Module):
         self.policy_fn = policy_fn
 
     def forward(self, *args, **kwargs):
+        """Forward pass with activation checkpointing."""
         # torch.utils.checkpoint.checkpoint requires a function as the first argument.
         # We pass self.module (which is callable).
         # Note: 'use_reentrant' argument is available in modern PyTorch.
@@ -69,7 +82,15 @@ class CheckpointWrapper(nn.Module):
 
 @register_model_transform("activation_checkpoint", ActivationCheckpointConfig)
 class ActivationCheckpointTransform(BaseModelTransform):
-    """Applies activation checkpointing to the model using torch.utils.checkpoint."""
+    """Transform that injects activation checkpointing into a model.
+
+    Recursively searches the model for instances of specified `layer_classes`
+    and wraps them with `CheckpointWrapper`. This is a crucial optimization for
+    fitting large models or long sequences into GPU memory.
+
+    Args:
+        cfg: Activation checkpointing configuration.
+    """
 
     def __init__(
         self,
@@ -79,6 +100,7 @@ class ActivationCheckpointTransform(BaseModelTransform):
         super().__init__(cfg, **kwargs)
 
     def apply(self, model: BaseModel, **kwargs) -> BaseModel:
+        """Find and wrap target layers in the model."""
         logger.info("Applying activation checkpointing (torch.utils.checkpoint)")
 
         if not self.cfg.layer_classes:

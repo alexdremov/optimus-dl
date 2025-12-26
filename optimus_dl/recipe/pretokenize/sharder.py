@@ -16,12 +16,21 @@ logger = logging.getLogger(__name__)
 
 
 class Sharder:
-    """
-    Manages the creation of numpy shards from tokenized documents.
+    """Manages the creation of sharded dataset files.
 
-    This class accumulates documents, writes them to shard files when a size
-    threshold is reached, and generates a final index file. It also supports
-    state management for checkpointing.
+    Accumulates tokenized documents in memory until a size threshold is reached,
+    then flushes them to disk as numpy arrays (`.npy`). Also tracks metadata
+    for each shard to generate a global index file.
+
+    Features:
+    - **Buffering**: Minimizes disk I/O by batching writes.
+    - **Size-based Splitting**: Creates shards of approx. equal size (e.g., 512MB).
+    - **Metadata Tracking**: Records token counts and file paths for the index.
+    - **Checkpoint Support**: Can serialize internal state to resume processing.
+
+    Args:
+        output_config: Output directory and naming configuration.
+        proc_config: Processing settings (shard size, dtype).
     """
 
     def __init__(self, output_config: OutputConfig, proc_config: ProcessingConfig):
@@ -64,9 +73,10 @@ class Sharder:
         self.current_shard_size_bytes = len(self.current_shard_tokens) * itemsize
 
     def add(self, doc_tokens: list[int]) -> bool:
-        """
-        Adds a document to the current shard. Flushes the shard if it exceeds
-        the size limit.
+        """Add a tokenized document to the current shard.
+
+        If adding the document exceeds the maximum shard size, the current shard
+        is flushed to disk first.
 
         Args:
             doc_tokens: A list of integers representing the tokenized document.
@@ -95,8 +105,11 @@ class Sharder:
         return False
 
     def flush(self):
-        """
-        Writes the accumulated tokens and document lengths to numpy shard files.
+        """Write the current accumulated tokens to a new shard file.
+
+        Saves two files:
+        - `name_XXXXX.npy`: The flat token array.
+        - `name_XXXXX_lens.npy`: Array of document lengths for reconstruction.
         """
         if not self.current_shard_tokens:
             return
@@ -135,8 +148,13 @@ class Sharder:
         self.current_shard_size_bytes = 0
 
     def finalize(self, final_config: dict[str, Any]):
-        """
-        Flushes any remaining data to a final shard and writes the main index file.
+        """Flush remaining data and write the global index file.
+
+        The index file (`index.json`) contains metadata for all shards and the
+        processing configuration, enabling the dataset to be loaded later.
+
+        Args:
+            final_config: Configuration dictionary to embed in the index.
         """
         self.flush()  # Flush any remaining tokens
 

@@ -21,10 +21,12 @@ def get_num_parameters(model: torch.nn.Module) -> int:
         Total number of parameters (sum of all parameter tensor sizes).
 
     Example:
-        >>> model = Llama(LlamaConfig(n_embd=512, n_head=8, n_layer=12))
-        >>> num_params = get_num_parameters(model)
-        >>> print(f"Model has {num_params:,} parameters")
-        >>> # Model has 123,456,789 parameters
+        ```python
+        model = Llama(LlamaConfig(n_embd=512, n_head=8, n_layer=12))
+        num_params = get_num_parameters(model)
+        print(f"Model has {num_params:,} parameters")
+        # Model has 123,456,789 parameters
+        ```
     """
     params = set()
     for param in model.parameters():

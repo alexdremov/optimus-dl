@@ -31,19 +31,28 @@ logger = logging.getLogger(__name__)
 
 
 class RequestHandler(BaseHTTPRequestHandler):
+    """HTTP Request Handler for the model serving API.
+
+    Handles POST requests for text completion and chat completion endpoints,
+    parsing input JSON and formatting responses according to OpenAI-compatible schemas.
+    """
+
     def _send_response(self, response_model):
+        """Send a successful JSON response from a Pydantic model."""
         self.send_response(200)
         self.send_header("Content-type", "application/json")
         self.end_headers()
         self.wfile.write(response_model.model_dump_json().encode("utf-8"))
 
     def _send_error(self, status_code: int, error_message: str):
+        """Send an error response with a specific status code."""
         self.send_response(status_code)
         self.send_header("Content-type", "application/json")
         self.end_headers()
         self.wfile.write(json.dumps({"error": error_message}).encode("utf-8"))
 
     def _parse_request(self, model_class):
+        """Parse and validate the request body using a Pydantic model."""
         content_length = int(self.headers.get("Content-Length", 0))
         post_data = self.rfile.read(content_length)
         try:
@@ -57,6 +66,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             raise ValueError from err
 
     def do_POST(self):
+        """Handle POST requests, routing to specific handlers."""
         routes = {
             "/v1/completions": self.handle_completions,
             "/v1/chat/completions": self.handle_chat_completions,
@@ -74,6 +84,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_error(404, "Not Found")
 
     def handle_completions(self):
+        """Handle legacy text completion requests (/v1/completions)."""
         request = self._parse_request(CompletionRequest)
 
         # Non-streaming only for now for basic completions, or implement stream if needed
@@ -108,6 +119,10 @@ class RequestHandler(BaseHTTPRequestHandler):
         self._send_response(response)
 
     def handle_chat_completions(self):
+        """Handle chat completion requests (/v1/chat/completions).
+
+        Supports both streaming (Server-Sent Events) and non-streaming responses.
+        """
         request = self._parse_request(ChatCompletionRequest)
 
         # Convert pydantic messages to dict list for tokenizer
@@ -186,7 +201,11 @@ class RequestHandler(BaseHTTPRequestHandler):
 
 
 class ServeRecipe:
-    """Recipe for serving LLM Baselines models via simple HTTP API."""
+    """Recipe for serving LLM Baselines models via simple HTTP API.
+
+    This class loads a model from a checkpoint or config, initializes the
+    tokenizer, and starts an HTTP server compatible with OpenAI clients.
+    """
 
     def __init__(self, cfg: ServeConfig):
         self.cfg = cfg
@@ -198,7 +217,7 @@ class ServeRecipe:
         self.model_builder = ModelBuilder(None, [])
 
     def setup(self):
-        """Setup model and tokenizer."""
+        """Load model weights and tokenizer, and configure the device."""
         # Setup device
         if self.cfg.common.device == "auto":
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -255,7 +274,20 @@ class ServeRecipe:
         temperature: float = 1.0,
         top_k: int | None = None,
     ):
-        """Generate text continuation yielding chunks."""
+        """Generate text continuation yielding chunks.
+
+        Handles tokenization (including chat templates), inference loop,
+        sampling, and detokenization delta logic for streaming.
+
+        Args:
+            prompt_or_messages: Input string or list of chat messages.
+            max_new_tokens: Maximum number of tokens to generate.
+            temperature: Sampling temperature (0.0 for greedy).
+            top_k: Optional top-k sampling.
+
+        Yields:
+            String chunks of generated text.
+        """
         if isinstance(prompt_or_messages, list):
             # Apply chat template
             input_ids_list = self.tokenizer.apply_chat_template(
@@ -325,7 +357,10 @@ class ServeRecipe:
         temperature: float = 1.0,
         top_k: int | None = None,
     ) -> str:
-        """Generate full text continuation."""
+        """Generate full text continuation.
+
+        Wrapper around `generate_stream` that accumulates all chunks.
+        """
         return "".join(
             list(
                 self.generate_stream(
@@ -335,7 +370,7 @@ class ServeRecipe:
         )
 
     def run(self):
-        """Run the server."""
+        """Start the HTTP server."""
         self.setup()
 
         server_address = (self.cfg.serve.host, self.cfg.serve.port)

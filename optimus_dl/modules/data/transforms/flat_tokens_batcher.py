@@ -15,6 +15,16 @@ from optimus_dl.modules.data.transforms import (
 
 @dataclass
 class FlatTokensBatcherConfig(RegistryConfigStrict):
+    """Configuration for token aggregation and batching.
+
+    Attributes:
+        batch_size: Number of sequences per batch.
+        seq_len: Sequence length for each sample.
+        worker_cfg: Configuration for map workers (not used directly by batcher).
+        field: The dictionary key containing the tokens (defaults to input_ids).
+        add_one_for_shift: If True, yields seq_len + 1 tokens per sample.
+    """
+
     batch_size: int = MISSING
     seq_len: int = MISSING
     worker_cfg: MapperConfig = field(
@@ -25,6 +35,12 @@ class FlatTokensBatcherConfig(RegistryConfigStrict):
 
 
 class FlatTokensBatcherNode(BaseNode):
+    """Internal node for performing token aggregation and batching.
+
+    Accumulates tokens from variable-length document sources into a buffer
+    until it has enough to form a complete batch of the target size.
+    """
+
     def __init__(self, node: BaseNode, cfg: FlatTokensBatcherConfig, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cfg = cfg
@@ -33,11 +49,13 @@ class FlatTokensBatcherNode(BaseNode):
 
     @property
     def target_size(self):
+        """Calculate total number of tokens needed for one batch."""
         return self.cfg.batch_size * (
             self.cfg.seq_len + (1 if self.cfg.add_one_for_shift else 0)
         )
 
     def reset(self, initial_state: dict | None = None):
+        """Restore batcher buffer and source node state."""
         super().reset(initial_state)
         self.buffer = []
         if initial_state:
@@ -48,6 +66,7 @@ class FlatTokensBatcherNode(BaseNode):
             self.node.reset()
 
     def get_state(self) -> dict[str, Any]:
+        """Collect current buffer and source state for checkpointing."""
         return {
             "buffer": self.buffer,
             "cfg": self.cfg,
@@ -55,6 +74,7 @@ class FlatTokensBatcherNode(BaseNode):
         }
 
     def next(self) -> Any:
+        """Yield the next complete batch of tokens, filling from source as needed."""
         while len(self.buffer) < self.target_size:
             self.buffer.extend(self.node.next()[self.cfg.field])
 
@@ -69,9 +89,20 @@ class FlatTokensBatcherNode(BaseNode):
 
 @register_transform("flat_batcher", FlatTokensBatcherConfig)
 class FlatTokensBatcher(BaseTransform):
+    """Transform that aggregates token IDs and yields fixed-size batches.
+
+    Unlike standard batchers that batch whole examples, this batcher pools all
+    tokens from incoming documents and yields packed sequences, minimizing
+    padding.
+
+    Args:
+        cfg: Batching configuration.
+    """
+
     def __init__(self, cfg: FlatTokensBatcherConfig, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cfg = cfg
 
     def build(self, source: BaseNode) -> BaseNode:
+        """Apply the batching transformation to a source node."""
         return FlatTokensBatcherNode(source, self.cfg)

@@ -19,6 +19,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TokenizeTransformConfig(RegistryConfigStrict):
+    """Configuration for text tokenization.
+
+    Attributes:
+        tokenizer_config: Registry configuration for the tokenizer to use.
+        debug_samples: Number of samples to print to the log for debugging.
+        worker_cfg: Configuration for parallel processing workers.
+    """
+
     tokenizer_config: Any = MISSING
     debug_samples: int = 0
     worker_cfg: MapperConfig = field(
@@ -28,6 +36,15 @@ class TokenizeTransformConfig(RegistryConfigStrict):
 
 @register_transform("tokenize", TokenizeTransformConfig)
 class TokenizeTransform(BaseTransform):
+    """Transform that converts raw text strings into sequences of token IDs.
+
+    Uses the registry system to instantiate a tokenizer and applies it to the
+    input data. Supports parallel mapping via `torchdata.nodes.ParallelMapper`.
+
+    Args:
+        cfg: Tokenization configuration.
+    """
+
     def __init__(self, cfg: TokenizeTransformConfig, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.tokenizer = build_tokenizer(cfg.tokenizer_config)
@@ -46,6 +63,7 @@ class TokenizeTransform(BaseTransform):
         self.debug_samples = cfg.debug_samples
 
     def _map(self, sample):
+        """Map raw text sample to input_ids using the internal tokenizer."""
         text = sample["text"]
         ids = self.tokenizer.encode(text)
         if self.debug_counter < self.debug_samples:
@@ -67,6 +85,7 @@ class TokenizeTransform(BaseTransform):
         }
 
     def build(self, source: BaseNode) -> BaseNode:
+        """Wrap the source node with a parallel mapper using the tokenizer function."""
         return torchdata.nodes.ParallelMapper(
             source=source,
             map_fn=self._map,

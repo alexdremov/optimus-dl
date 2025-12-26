@@ -1,0 +1,68 @@
+site_name: Optimus-DL
+site_description: A clean, modular framework for training large language models with modern PyTorch features.
+site_url: https://alexdremov.github.io/optimus-dl/
+
+repo_name: alexdremov/optimus-dl
+repo_url: https://github.com/alexdremov/optimus-dl/
+
+theme:
+  name: material
+  palette:
+    scheme: default
+    primary: white
+    accent: indigo
+  features:
+    - navigation.expand
+    - content.code.copy
+    - content.tooltips
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.keys
+  - pymdownx.smartsymbols
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.arithmatex:
+      generic: true
+  - toc:
+      permalink: true
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
+          options:
+            docstring_style: google
+            show_root_heading: true
+            show_source: true
+  - gen-files:
+      scripts:
+        - docs/gen_doc_stubs.py
+  - literate-nav
+
+nav:
+  - Home: index.md
+  - User Guide:
+    - Quick Start: user-guide/quick-start.md
+    - Configuration: user-guide/configuration.md
+    - Models: user-guide/models.md
+    - Data Pipelines: user-guide/data.md
+    - Optimizers: user-guide/optimizers.md
+  - API Reference: reference/

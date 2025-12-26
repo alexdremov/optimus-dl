@@ -13,11 +13,26 @@ from optimus_dl.modules.data.transforms import (
 
 @dataclass
 class CompositeTransformConfig(RegistryConfigStrict):
+    """Configuration for a chain of transforms.
+
+    Attributes:
+        transforms: List of transformation configurations to apply in order.
+    """
+
     transforms: list[RegistryConfig] = MISSING
 
 
 @register_transform("compose", CompositeTransformConfig)
 class CompositeTransform(BaseTransform):
+    """Transform that applies multiple transformations in sequence.
+
+    This allows building complex data processing pipelines by composing simpler
+    transforms (e.g., Tokenize -> Chunk -> Batch).
+
+    Args:
+        cfg: Composite transform configuration.
+    """
+
     def __init__(self, cfg: CompositeTransformConfig, *args, **kwargs):
         super().__init__(*args, **kwargs)
         transforms = []
@@ -26,6 +41,7 @@ class CompositeTransform(BaseTransform):
         self.transforms = transforms
 
     def build(self, source: BaseNode) -> BaseNode:
+        """Chain all internal transformations together starting from the source."""
         for transform in self.transforms:
             source = transform.build(source)
         return source

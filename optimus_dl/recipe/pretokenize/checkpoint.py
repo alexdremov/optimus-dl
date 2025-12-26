@@ -12,9 +12,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class CheckpointState:
-    """
-    Represents the state to be saved in a checkpoint.
+    """Represents the state to be saved in a checkpoint.
+
     This provides a clear structure for what is being saved and loaded.
+
+    Attributes:
+        processor_state: State dictionary from the TokenProcessor.
+        sharder_state: State dictionary from the Sharder.
+        rng_state: Random number generator state (from `random.getstate()`).
     """
 
     processor_state: dict[str, Any]
@@ -30,14 +35,22 @@ class CheckpointManager:
         self.tmp_path = output_dir / "checkpoint.tmp"
 
     def save(self, state: CheckpointState):
-        """Saves the current processing state to disk atomically."""
+        """Saves the current processing state to disk atomically.
+
+        Args:
+            state: The checkpoint state object to save.
+        """
         with open(self.tmp_path, "wb") as f:
             pickle.dump(state, f)
         shutil.move(self.tmp_path, self.checkpoint_path)
         logger.debug(f"Saved checkpoint to {self.checkpoint_path}")
 
     def load(self) -> CheckpointState | None:
-        """Loads the processing state from disk if a checkpoint exists."""
+        """Loads the processing state from disk if a checkpoint exists.
+
+        Returns:
+            The loaded CheckpointState, or None if no valid checkpoint is found.
+        """
         if self.checkpoint_path.exists():
             logger.info(f"Loading checkpoint from {self.checkpoint_path}")
             try:

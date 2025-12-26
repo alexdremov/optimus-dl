@@ -18,11 +18,23 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ModelBuilderConfig(RegistryConfig):
+    """Configuration for ModelBuilder."""
+
     pass
 
 
 class ModelBuilder:
-    """Mixin for building models and applying transforms, with checkpoint loading support."""
+    """Mixin for building models and applying transformations.
+
+    Encapsulates the logic for:
+    1.  Instantiating a `BaseModel` from a configuration object.
+    2.  Sequentially applying a list of `ModelTransforms` (e.g., FSDP, DDP, compile).
+    3.  Logging model statistics (parameter count).
+
+    Args:
+        cfg: Builder configuration.
+        model_transforms: List of configurations for transforms to apply.
+    """
 
     def __init__(
         self,
@@ -35,7 +47,16 @@ class ModelBuilder:
     def build_model(
         self, model_config: ModelConfig | None, collective: Collective, **kwargs
     ) -> BaseModel:
-        """Build and validate the model."""
+        """Build the model and apply all configured transforms.
+
+        Args:
+            model_config: Configuration for the model architecture.
+            collective: Distributed collective for transforms that need it.
+            **kwargs: Additional arguments passed to model constructor and transforms.
+
+        Returns:
+            The fully constructed and transformed model.
+        """
         if model_config is None:
             raise ValueError(
                 "model_config is None. Use build_model_from_checkpoint for evaluation."
@@ -59,14 +80,14 @@ class ModelBuilder:
         return model
 
     def _apply_model_transforms(self, model: BaseModel, **kwargs) -> BaseModel:
-        """Apply configured model transforms to the model.
+        """Iteratively apply all configured model transforms.
 
         Args:
-            model: The model to transform
-            **kwargs: Additional arguments to pass to transforms
+            model: The base model.
+            **kwargs: Context arguments (device, collective, etc.).
 
         Returns:
-            The transformed model
+            The transformed model.
         """
         for transform_cfg in self.model_transforms:
             try:

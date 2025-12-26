@@ -32,13 +32,27 @@ class OptimizerStepResult(NamedTuple):
 
 
 class TrainingIterationMixin:
-    """Mixin for orchestrating complete training iterations with gradient accumulation."""
+    """Mixin for executing a complete training step with gradient accumulation.
+
+    Encapsulates the core training logic:
+    1.  **Forward Pass**: Runs the model and criterion, measuring time.
+    2.  **Backward Pass**: Scales gradients and backpropagates, handling
+        loss parallelism if applicable.
+    3.  **Optimization**: Unscales gradients, clips norms, and steps the optimizer.
+    4.  **Logging**: Records detailed performance metrics (forward/backward times,
+        grad norms, etc.).
+
+    Args:
+        optimization_config: Configuration for optimization (accumulation steps, clipping).
+        log_freq: Frequency of metric logging.
+    """
 
     def __init__(self, optimization_config: OptimizationConfig, log_freq: int = 1):
         self.optimization_config = optimization_config
         self.log_freq = log_freq
 
     def log_memory_usage(self):
+        """Log GPU memory usage statistics."""
         if torch.cuda.is_available():
             log_summed("gpu_gb_allocated", torch.cuda.memory_allocated() / (1024**3))
             log_summed("gpu_gb_used", torch.cuda.max_memory_allocated() / (1024**3))
@@ -46,30 +60,32 @@ class TrainingIterationMixin:
     def execute_forward_pass(
         self, model: BaseModel, criterion: BaseCriterion, batch: Any, amp_ctx: Any
     ) -> ForwardPassResult:
-        """Execute forward pass and return loss + timing.
+        """Run the forward pass inside an AMP context.
 
         Args:
-            model: Model to run forward pass on
-            criterion: Loss criterion
-            batch: Input batch
-            amp_ctx: Automatic mixed precision context
+            model: The model to run.
+            criterion: The loss function.
+            batch: The input data.
+            amp_ctx: The autocast context manager.
 
         Returns:
-            ForwardPassResult namedtuple with loss and elapsed_time
+            ForwardPassResult with the computed loss and execution time.
         """
         with amp_ctx:
             elapsed_forward, loss = measured_lambda(lambda: criterion(model, batch))
         return ForwardPassResult(loss=loss, elapsed_time=elapsed_forward)
 
     def execute_backward_pass(self, loss: torch.Tensor, scaler: Any) -> float:
-        """Execute backward pass and return timing.
+        """Run the backward pass with gradient scaling.
+
+        Handles `loss_parallel` context if the loss is a DTensor.
 
         Args:
-            loss: Loss tensor to backpropagate
-            scaler: Gradient scaler for mixed precision
+            loss: The computed loss tensor.
+            scaler: The gradient scaler.
 
         Returns:
-            Elapsed time for backward pass
+            Execution time in milliseconds.
         """
 
         def backward():
@@ -86,16 +102,19 @@ class TrainingIterationMixin:
         scaler: Any,
         clip_grad_norm: float | None = None,
     ) -> OptimizerStepResult:
-        """Execute optimizer step with optional gradient clipping.
+        """Perform the optimization step.
+
+        Includes gradient unscaling, optional gradient clipping, and the
+        optimizer step itself. Updates the scaler state afterwards.
 
         Args:
-            optimizer: Optimizer to step
-            model: Model whose parameters to update
-            scaler: Gradient scaler for mixed precision
-            clip_grad_norm: Maximum gradient norm (optional)
+            optimizer: The optimizer.
+            model: The model (needed for clipping gradients).
+            scaler: The gradient scaler.
+            clip_grad_norm: Maximum norm for gradient clipping.
 
         Returns:
-            OptimizerStepResult namedtuple with elapsed_time and grad_norm
+            OptimizerStepResult with execution time and the computed gradient norm.
         """
         scaler.unscale_(optimizer)
 
@@ -123,14 +142,7 @@ class TrainingIterationMixin:
         elapsed_backward: float,
         acc_steps: int,
     ) -> None:
-        """Log performance metrics for batch processing.
-
-        Args:
-            elapsed_batch_get: Time spent getting the batch
-            elapsed_forward: Time spent in forward pass
-            elapsed_backward: Time spent in backward pass
-            acc_steps: Number of accumulation steps for weight calculation
-        """
+        """Log timing metrics for data loading and forward/backward passes."""
         weight = 1 / acc_steps
 
         log_averaged(
@@ -159,14 +171,7 @@ class TrainingIterationMixin:
         lr_scheduler: Any | None,
         optimizer: Optimizer,
     ) -> None:
-        """Log optimizer-related metrics.
-
-        Args:
-            elapsed_optimizer: Time spent in optimizer step
-            grad_norm: Gradient norm if clipping was performed
-            lr_scheduler: Learning rate scheduler (optional)
-            optimizer: Optimizer for learning rate extraction
-        """
+        """Log optimizer performance, gradient norms, and learning rates."""
         log_averaged("perf/optimizer", value=elapsed_optimizer, priority=1002)
 
         # Log gradient norm if clipping was performed
@@ -191,18 +196,18 @@ class TrainingIterationMixin:
         training_context: dict[str, Any],
         lr_scheduler: Any | None = None,
     ) -> None:
-        """Execute one complete training iteration with gradient accumulation.
+        """Execute one full training iteration, including gradient accumulation.
 
-        Uses gradient accumulation with proper context management for DDP/FSDP/FSDP2.
-        Logs metrics directly using the training metrics mixin methods.
+        This is the main driver for a training step. It loops `acc_steps` times
+        to accumulate gradients before performing a single optimizer update.
 
         Args:
-            model: Model to train
-            optimizer: Optimizer for parameter updates
-            criterion: Loss criterion
-            train_data_iter: Iterator over training data
-            training_context: Training context with scaler, amp_ctx, etc.
-            lr_scheduler: Learning rate scheduler (optional)
+            model: The model to train.
+            optimizer: The optimizer.
+            criterion: The loss function.
+            train_data_iter: Iterator yielding training batches.
+            training_context: Dict with scaler, amp_ctx, etc.
+            lr_scheduler: Optional learning rate scheduler.
         """
         with metrics_group("train", log_freq=self.log_freq):
             optimizer.zero_grad()
@@ -263,6 +268,11 @@ class TrainingIterationMixin:
                 lr_scheduler.step()
 
     def accumulation_context(self, model, is_last_microbatch):
+        """Get the appropriate context manager for gradient accumulation.
+
+        For FSDP/DDP models, this handles synchronization (e.g., disabling
+        all-reduce during accumulation steps).
+        """
         if hasattr(model, "accumulation_context"):
             ctx = model.accumulation_context(is_last_microbatch=is_last_microbatch)
             if not is_last_microbatch:

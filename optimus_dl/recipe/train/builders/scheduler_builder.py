@@ -13,11 +13,23 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SchedulerBuilderConfig(RegistryConfig):
+    """Configuration for SchedulerBuilder."""
+
     pass
 
 
 class SchedulerBuilder:
-    """Mixin for building learning rate schedulers."""
+    """Builder class responsible for creating the learning rate scheduler.
+
+    Instantiates a scheduler (e.g., CosineAnnealing, WSD) and associates it
+    with the optimizer. It ensures the scheduler is aware of the total training
+    iterations.
+
+    Args:
+        cfg: Builder configuration.
+        lr_scheduler_config: Configuration for the scheduler itself (can be None).
+        optimization_config: Optimization settings (needed for total iterations).
+    """
 
     def __init__(
         self,
@@ -30,7 +42,15 @@ class SchedulerBuilder:
         self.optimization_config = optimization_config
 
     def build_lr_scheduler(self, optimizer: Optimizer, **kwargs):
-        """Build learning rate scheduler if configured."""
+        """Build and validate the learning rate scheduler.
+
+        Args:
+            optimizer: The optimizer to schedule.
+            **kwargs: Additional arguments.
+
+        Returns:
+            Instantiated LR Scheduler or None if not configured.
+        """
         if self.lr_scheduler_config is None:
             return None
         lr_scheduler = build(

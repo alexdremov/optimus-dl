@@ -39,28 +39,30 @@ class LoadStrategy:
         extra_ignore_keys: Optional list of state dict keys to ignore during loading.
 
     Example:
-        >>> # Fine-tuning: load model only
-        >>> strategy = LoadStrategy(
-        ...     load_model=True,
-        ...     load_optimizer=False,
-        ...     load_scheduler=False,
-        ...     load_iteration=False,
-        ... )
-        >>>
-        >>> # Resume training: load everything
-        >>> strategy = LoadStrategy()  # All defaults to True
-        >>>
-        >>> # Evaluation: model only
-        >>> strategy = LoadStrategy(
-        ...     load_model=True,
-        ...     load_optimizer=False,
-        ...     load_scheduler=False,
-        ...     load_data_sources=False,
-        ...     load_dataloaders=False,
-        ...     load_metrics=False,
-        ...     load_iteration=False,
-        ... )
-    """
+        ```python
+        # Fine-tuning: load model only
+        strategy = LoadStrategy(
+            load_model=True,
+            load_optimizer=False,
+            load_scheduler=False,
+            load_iteration=False,
+        )
+
+        # Resume training: load everything
+        strategy = LoadStrategy()  # All defaults to True
+
+        # Evaluation: model only
+        strategy = LoadStrategy(
+            load_model=True,
+            load_optimizer=False,
+            load_scheduler=False,
+            load_data_sources=False,
+            load_dataloaders=False,
+            load_metrics=False,
+            load_iteration=False,
+        )
+
+        ```"""
 
     load_model: bool = field(
         default=True, metadata={"help": "Whether to load model weights."}

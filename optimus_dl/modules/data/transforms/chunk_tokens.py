@@ -15,11 +15,24 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ChunkTransformConfig(RegistryConfigStrict):
+    """Configuration for chunking token sequences.
+
+    Attributes:
+        max_seq_len: Maximum length of each produced chunk.
+        add_one_for_shift: If True, adds 1 to max_seq_len (useful for causal LM training).
+    """
+
     max_seq_len: int = MISSING
     add_one_for_shift: bool = True
 
 
 class ChunkTransformNode(BaseNode):
+    """Internal node for performing sequence chunking.
+
+    Maintains a buffer of tokens from the source node and yields segments of
+    length `max_seq_len`.
+    """
+
     def __init__(self, node: BaseNode, cfg: ChunkTransformConfig, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cfg = cfg
@@ -27,6 +40,7 @@ class ChunkTransformNode(BaseNode):
         self.buffer = []
 
     def reset(self, initial_state: dict | None = None):
+        """Restore the buffer and source node state."""
         super().reset(initial_state)
         self.buffer = []
         if initial_state:
@@ -38,6 +52,7 @@ class ChunkTransformNode(BaseNode):
             self.node.reset()
 
     def get_state(self):
+        """Collect current buffer and source state for checkpointing."""
         return {
             "buffer": self.buffer,
             "cfg": self.cfg,
@@ -45,6 +60,7 @@ class ChunkTransformNode(BaseNode):
         }
 
     def next(self):
+        """Yield the next chunk of tokens, refilling the buffer if empty."""
         if len(self.buffer) == 0:
             self.buffer = self.node.next()["input_ids"]
 
@@ -59,9 +75,19 @@ class ChunkTransformNode(BaseNode):
 
 @register_transform("chunk_tokens", ChunkTransformConfig)
 class ChunkTransform(BaseTransform):
+    """Transform that splits variable-length documents into fixed-size chunks.
+
+    Useful when datasets yield full documents that are longer than the desired
+    training sequence length.
+
+    Args:
+        cfg: Chunking configuration.
+    """
+
     def __init__(self, cfg: ChunkTransformConfig, **kwargs):
         super().__init__(**kwargs)
         self.cfg = cfg
 
     def build(self, source: BaseNode) -> BaseNode:
+        """Apply the chunking transformation to a source node."""
         return ChunkTransformNode(source, self.cfg)

@@ -19,7 +19,10 @@ logger = logging.getLogger(__name__)
 
 
 class BaseDistributedTransform(BaseModelTransform):
-    """Base class for distributed model transforms."""
+    """Base class for distributed model transforms.
+
+    Provides common access to the collective and device information.
+    """
 
     def __init__(
         self,
@@ -35,7 +38,15 @@ class BaseDistributedTransform(BaseModelTransform):
 
 @dataclass
 class DDPTransformConfig(ModelTransformConfig):
-    """Configuration for DDP transform."""
+    """Configuration for Distributed Data Parallel (DDP).
+
+    Attributes:
+        find_unused_parameters: Whether to traverse the graph to find unused
+            parameters during backward.
+        gradient_as_bucket_view: If True, uses views for gradient buckets to
+            save memory.
+        static_graph: Whether the computation graph is static across iterations.
+    """
 
     find_unused_parameters: bool = False
     gradient_as_bucket_view: bool = True
@@ -43,22 +54,36 @@ class DDPTransformConfig(ModelTransformConfig):
 
 
 class DDPWrappedModel(DDP, BaseModel):
+    """A wrapper for DDP that implements the BaseModel interface."""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
     def make_parameter_groups(self):
+        """Delegate parameter grouping to the inner module."""
         return self.module.make_parameter_groups()
 
     def fully_shard(self, **fsdp_kwargs):
+        """Delegate sharding to the inner module."""
         return self.module.fully_shard(**fsdp_kwargs)
 
     def accumulation_context(self, is_last_microbatch):
+        """Context manager for gradient accumulation (disables synchronization)."""
         return nullcontext() if is_last_microbatch else self.no_sync()
 
 
 @register_model_transform("ddp", DDPTransformConfig)
 class DDPTransform(BaseDistributedTransform):
-    """Distributed Data Parallel transform."""
+    """Transform that wraps a model with Distributed Data Parallel.
+
+    DDP replicates the model on each device and synchronizes gradients during
+    the backward pass.
+
+    Args:
+        cfg: DDP configuration.
+        collective: Distributed collective.
+        device: Target compute device.
+    """
 
     def __init__(
         self,
@@ -72,10 +97,11 @@ class DDPTransform(BaseDistributedTransform):
         self.collective = collective
 
     def apply(self, model: BaseModel, **kwargs) -> BaseModel:
+        """Apply DDP wrapping to the model."""
         if self.collective.world_size <= 1:
             logger.info("Single rank detected, skipping DDP wrapping")
             return model
-        """Apply DDP wrapping to model."""
+
         logger.info("Wrapping model with DDP")
 
         # Move model to device
@@ -98,7 +124,14 @@ class DDPTransform(BaseDistributedTransform):
 
 @dataclass
 class MixedPrecisionConfig:
-    """Configuration for FSDP mixed precision policy."""
+    """Configuration for FSDP mixed precision policy.
+
+    Attributes:
+        param_dtype: Datatype for parameter storage (e.g., 'bfloat16').
+        reduce_dtype: Datatype for gradient reduction (e.g., 'float32').
+        output_dtype: Datatype for forward pass outputs.
+        cast_forward_inputs: If True, automatically casts inputs to param_dtype.
+    """
 
     # Parameter storage dtype (e.g., float16, bfloat16, float32)
     param_dtype: str | None = None
@@ -112,7 +145,12 @@ class MixedPrecisionConfig:
 
 @dataclass
 class OffloadConfig:
-    """Configuration for FSDP offloading policy."""
+    """Configuration for FSDP offloading policy.
+
+    Attributes:
+        cpu_offload: If True, offloads parameters to CPU memory.
+        pin_memory: If True, pins CPU memory for faster transfers.
+    """
 
     # Whether to enable CPU offloading
     cpu_offload: bool = False
@@ -122,7 +160,16 @@ class OffloadConfig:
 
 @dataclass
 class FullyShardTransformConfig(ModelTransformConfig):
-    """Configuration for FSDP2 (fully_shard) transform."""
+    """Configuration for FSDP2 (fully_shard) transform.
+
+    Attributes:
+        reshard_after_forward: Whether to discard parameters after forward pass.
+        mixed_precision: Mixed precision policy configuration.
+        offload: CPU offloading policy configuration.
+        use_hybrid_sharding: If True, uses Hybrid Sharding (shard within node,
+            replicate across nodes).
+        sync_grad_accum: If True, always synchronizes gradients during accumulation.
+    """
 
     # Whether to reshard parameters after forward pass
     reshard_after_forward: bool | int = False
@@ -138,7 +185,16 @@ class FullyShardTransformConfig(ModelTransformConfig):
 
 @register_model_transform("fully_shard", FullyShardTransformConfig)
 class FullyShardTransform(BaseDistributedTransform):
-    """FSDP2 (fully_shard) transform."""
+    """Transform that wraps a model with FSDP2 (Fully Sharded Data Parallel).
+
+    FSDP2 shards model parameters, gradients, and optimizer states across ranks,
+    enabling the training of models much larger than the memory of a single GPU.
+
+    Args:
+        cfg: FSDP2 configuration.
+        collective: Distributed collective (MeshCollective required).
+        device: Target compute device.
+    """
 
     def __init__(
         self,
@@ -153,10 +209,11 @@ class FullyShardTransform(BaseDistributedTransform):
             self.mesh = self._create_hybrid_mesh()
 
     def apply(self, model: BaseModel, **kwargs) -> BaseModel:
+        """Apply FSDP2 sharding to the model."""
         if self.collective.world_size <= 1:
             logger.info("Single rank detected, skipping FSDP2 wrapping")
             return model
-        """Apply FSDP2 (fully_shard) wrapping to model."""
+
         logger.info("Wrapping model with FSDP2 (fully_shard)")
 
         # Move model to device
@@ -218,6 +275,7 @@ class FullyShardTransform(BaseDistributedTransform):
 
         @contextmanager
         def accumulation_context(is_last_microbatch):
+            """Context manager for FSDP gradient accumulation."""
             if self.cfg.sync_grad_accum:
                 fsdp_model.set_requires_gradient_sync(True)
                 yield
@@ -256,7 +314,7 @@ class FullyShardTransform(BaseDistributedTransform):
         return dtype_map[dtype_str]
 
     def _create_hybrid_mesh(self):
-        """Create a hybrid sharding mesh (HSDP) with custom sharding world size."""
+        """Create a hybrid sharding mesh (HSDP) from the collective's DP mesh."""
         if not isinstance(self.collective, MeshCollective):
             raise ValueError("Hybrid sharding requires MeshCollective")
 

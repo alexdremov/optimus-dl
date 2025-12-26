@@ -177,3 +177,4 @@ _version.py
 .ruff_cache
 
 cache/
+\nsite/

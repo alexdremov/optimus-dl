@@ -1,8 +1,25 @@
+"""Rotary Positional Embeddings (RoPE) implementation.
+
+This module provides utilities for computing and applying Rotary Positional
+Embeddings, as used in models like Llama and Qwen.
+"""
+
 import torch
 from torch.distributed.tensor import DTensor
 
 
 def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0) -> torch.Tensor:
+    """Precompute the frequency tensor for complex exponential (cis).
+
+    Args:
+        dim: Dimension of the head.
+        end: Maximum sequence length.
+        theta: Base frequency for the positional encoding.
+
+    Returns:
+        Tensor of shape (end, dim // 2, 2) representing the real and imaginary
+        parts of the frequencies.
+    """
     freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
     t = torch.arange(end, device=freqs.device)  # type: ignore
     freqs = torch.outer(t, freqs).float()  # type: ignore
@@ -13,9 +30,14 @@ def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0) -> torch.Te
 
 
 def _reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-    """
-    freqs_cis: complex - (seq_len, head_dim / 2)
-    x: complex - (bsz, seq_len, head_dim / 2)
+    """Reshape freqs_cis for broadcasting with x.
+
+    Args:
+        freqs_cis: Frequency tensor of shape (seq_len, head_dim // 2, 2).
+        x: Input tensor to apply RoPE to.
+
+    Returns:
+        Reshaped frequency tensor compatible with x.
     """
     ndim = x.ndim
     assert 1 < ndim
@@ -30,7 +52,21 @@ def _reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor) -> torch.Te
     return freqs_cis.view(*shape)
 
 
-def apply_rotary_emb(q, k, freqs_cis):
+def apply_rotary_emb(
+    q: torch.Tensor, k: torch.Tensor, freqs_cis: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Apply Rotary Positional Embeddings to Query and Key tensors.
+
+    Handles both standard Tensors and distributed DTensors.
+
+    Args:
+        q: Query tensor.
+        k: Key tensor.
+        freqs_cis: Precomputed frequency tensor.
+
+    Returns:
+        Tuple of (q, k) with rotary embeddings applied.
+    """
     # q, k: (B, T, nh, hs)
     # freq_cis: (T, hs)
     # return: (B, T, nh, hs), (B, T, nh, hs)
@@ -43,18 +79,18 @@ def apply_rotary_emb(q, k, freqs_cis):
 
     q_in = q.to_local() if is_q_dtensor else q
     k_in = k.to_local() if is_k_dtensor else k
-    freqs_cis = freqs_cis.to_local() if is_freqs_cis_dtensor else freqs_cis
+    freqs_cis_in = freqs_cis.to_local() if is_freqs_cis_dtensor else freqs_cis
 
     q_in = q_in.float().reshape(*q_in.shape[:-1], -1, 2)
     k_in = k_in.float().reshape(*k_in.shape[:-1], -1, 2)
 
-    freqs_cis = _reshape_for_broadcast(freqs_cis, q_in)
+    freqs_cis_res = _reshape_for_broadcast(freqs_cis_in, q_in)
 
     # Perform manual "complex" multiplication
-    q_cos = q_in[..., 0] * freqs_cis[..., 0] - q_in[..., 1] * freqs_cis[..., 1]
-    q_sin = q_in[..., 0] * freqs_cis[..., 1] + q_in[..., 1] * freqs_cis[..., 0]
-    k_cos = k_in[..., 0] * freqs_cis[..., 0] - k_in[..., 1] * freqs_cis[..., 1]
-    k_sin = k_in[..., 0] * freqs_cis[..., 1] + k_in[..., 1] * freqs_cis[..., 0]
+    q_cos = q_in[..., 0] * freqs_cis_res[..., 0] - q_in[..., 1] * freqs_cis_res[..., 1]
+    q_sin = q_in[..., 0] * freqs_cis_res[..., 1] + q_in[..., 1] * freqs_cis_res[..., 0]
+    k_cos = k_in[..., 0] * freqs_cis_res[..., 0] - k_in[..., 1] * freqs_cis_res[..., 1]
+    k_sin = k_in[..., 0] * freqs_cis_res[..., 1] + k_in[..., 1] * freqs_cis_res[..., 0]
 
     # Combine the results back into the interleaved format expected by q and k
     q_out = torch.stack((q_cos, q_sin), dim=-1).reshape(q_in.shape).flatten(3)

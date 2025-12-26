@@ -17,15 +17,30 @@ logger = logging.getLogger(__name__)
 
 
 class FileFinder:
-    """Discovers files from a Hugging Face Hub dataset repository."""
+    """Discovers files from a Hugging Face Hub dataset repository.
+
+    This class handles the logic for listing files in a dataset repo, filtering
+    them by split/pattern, and optionally parsing `README.md` metadata to identify
+    split-specific files (common in modern HF datasets).
+
+    Args:
+        config: Dataset configuration.
+        seed: Random seed for shuffling file list order.
+    """
 
     def __init__(self, config: DatasetConfig, seed: int):
         self.config = config
         self.seed = seed
 
     def get_files(self) -> list[str]:
-        """
-        Retrieves and filters the list of files to process from the Hugging Face hub.
+        """Retrieve and filter the list of files to process.
+
+        First attempts to use metadata from `README.md` to find files for the
+        requested split/config. If that fails or is not applicable, falls back
+        to file name pattern matching.
+
+        Returns:
+            List of file paths relative to the repository root.
         """
         logger.info(
             f"Listing files for {self.config.repo_id} split={self.config.split}"
@@ -81,6 +96,7 @@ class FileFinder:
         return files
 
     def _get_files_from_metadata(self, all_files: list[str]) -> list[str] | None:
+        """Parse dataset metadata from README.md to find relevant files."""
         if "README.md" not in all_files:
             return None
 
@@ -157,15 +173,32 @@ class FileFinder:
 
 
 class FileReader:
-    """Reads raw text documents from different file formats."""
+    """Reads raw text documents from different file formats.
+
+    Supports reading text columns from:
+    - Parquet files (`.parquet`)
+    - JSON Lines files (`.jsonl`)
+    - JSON files (`.json`)
+
+    Handles automatic downloading from the Hub if files are remote.
+
+    Args:
+        config: Processing configuration (defines text column name).
+        dataset_config: Dataset configuration (defines cache dir, repo ID).
+    """
 
     def __init__(self, config: ProcessingConfig, dataset_config: DatasetConfig):
         self.text_column = config.text_column
         self.dataset_config = dataset_config
 
     def read_texts(self, file_path: str) -> Generator[str, None, None]:
-        """
-        Downloads a file from the Hub and yields text documents from it.
+        """Download and read a file, yielding text documents one by one.
+
+        Args:
+            file_path: Path to the file in the repo.
+
+        Yields:
+            String content of each document found in the file.
         """
         try:
             local_path = hf_hub_download(

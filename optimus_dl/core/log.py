@@ -31,9 +31,11 @@ def setup_logging(
         Configured logger instance
 
     Example:
-        >>> logger = setup_logging(level="DEBUG", log_file="app.log")
-        >>> logger.info("Application started")
-        >>> logger.error("Something went wrong!")
+        ```python
+        logger = setup_logging(level="DEBUG", log_file="app.log")
+        logger.info("Application started")
+        logger.error("Something went wrong!")
+        ```
     """
     warnings.filterwarnings(
         "ignore",
@@ -133,9 +135,11 @@ def warn_once(logger: logging.Logger, message: str) -> None:
         message: Warning message to log (only logged once).
 
     Example:
-        >>> logger = logging.getLogger(__name__)
-        >>> warn_once(logger, "This feature is deprecated")
-        >>> warn_once(logger, "This feature is deprecated")  # Won't log again
+        ```python
+        logger = logging.getLogger(__name__)
+        warn_once(logger, "This feature is deprecated")
+        warn_once(logger, "This feature is deprecated")  # Won't log again
+        ```
     """
     if not hasattr(warn_once, "logged_messages"):
         warn_once.logged_messages = set()

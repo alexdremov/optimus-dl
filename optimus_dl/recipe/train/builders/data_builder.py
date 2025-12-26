@@ -19,17 +19,40 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DataBuilderConfig(RegistryConfig):
+    """Configuration for DataBuilder."""
+
     pass
 
 
 class DataBuilder:
-    """Mixin for building data pipelines."""
+    """Builder class for constructing training and evaluation data pipelines.
+
+    Manages the creation of `DataPipeline` objects, ensuring correct distributed
+    sharding and iterator behavior (e.g., infinite loop for training, resettable
+    for evaluation).
+
+    Args:
+        cfg: Builder configuration.
+        data_config: Configuration for datasets and transforms.
+    """
 
     def __init__(self, cfg: DataBuilderConfig, data_config: DataConfig, **kwargs):
         self.data_config = data_config
 
     def build_train_data(self, collective: Collective, **kwargs) -> DataPipeline | None:
-        """Build training data pipeline."""
+        """Build the training data pipeline.
+
+        Automatically injects rank and world_size for sharding. The resulting
+        loader is configured to restart automatically on StopIteration, creating
+        an infinite stream.
+
+        Args:
+            collective: Distributed collective for sharding info.
+            **kwargs: Additional arguments passed to dataset builders.
+
+        Returns:
+            A DataPipeline containing the dataset and loader.
+        """
         kwargs["rank"] = collective.dp_rank
         kwargs["world_size"] = collective.dp_world_size
         train_data = build_data_pipeline(self.data_config.train_datasets, **kwargs)
@@ -47,7 +70,19 @@ class DataBuilder:
     def build_eval_data(
         self, collective: Collective, **kwargs
     ) -> dict[str, DataPipeline | None]:
-        """Build evaluation data pipelines."""
+        """Build evaluation data pipelines.
+
+        Constructs a dictionary of pipelines for multiple evaluation datasets.
+        Uses `LoaderIterResettable` to allow repeated iteration over the same
+        validation sets.
+
+        Args:
+            collective: Distributed collective.
+            **kwargs: Additional arguments.
+
+        Returns:
+            Dictionary mapping dataset names to DataPipelines.
+        """
         kwargs["rank"] = collective.dp_rank
         kwargs["world_size"] = collective.dp_world_size
         eval_data = build_data_pipeline_dict(self.data_config.eval_datasets, **kwargs)
@@ -69,10 +104,17 @@ class DataBuilder:
 
 
 class LoaderIterResettable(torchdata.nodes.Loader):
+    """A Loader that automatically resets its iterator on `__iter__`.
+
+    This is essential for evaluation loops where the dataloader is re-used
+    multiple times.
+    """
+
     def __init__(self, root, restart_on_stop_iteration: bool = True):
         super().__init__(root=root, restart_on_stop_iteration=restart_on_stop_iteration)
 
     def __iter__(self):
+        """Reset the iterator state and return a new iterator."""
         iter = super().__iter__()
         iter.reset()
         return iter

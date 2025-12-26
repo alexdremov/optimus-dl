@@ -44,9 +44,17 @@ def _tokenize_file_worker(args: tuple) -> list[list[int]]:
 
 
 class TokenProcessor:
-    """
-    A resumable generator that yields tokenized documents from a list of files.
-    Manages multiprocessing and state for checkpointing.
+    """A resumable generator that yields tokenized documents from a list of files.
+
+    Manages a pool of workers to tokenize files in parallel. Features:
+    - **Parallelism**: Uses multiprocessing to speed up tokenization.
+    - **Buffering**: Accumulates a buffer of documents for local shuffling.
+    - **Resumability**: Tracks file progress and buffer state to allow
+      checkpointing and resuming after interruptions.
+
+    Args:
+        files: List of file paths to process.
+        config: Data preparation configuration.
     """
 
     def __init__(self, files: list[str], config: DataPrepConfig):

@@ -8,7 +8,15 @@ from .base import BaseLRScheduler, BaseLRSchedulerConfig
 
 @dataclass
 class LinearWarmupLRConfig(BaseLRSchedulerConfig):
-    """Configuration for linear warmup learning rate scheduler"""
+    """Configuration for linear warmup learning rate scheduler.
+
+    Attributes:
+        warmup_steps: Number of iterations for the linear warmup.
+        warmup_percent: Fraction of total iterations for warmup (used if
+            warmup_steps is None).
+        target_lr: Final learning rate after warmup (defaults to base_lr).
+        start_lr: Initial learning rate at step 0.
+    """
 
     warmup_steps: int | None = None
     warmup_percent: float | None = 0.05  # Percentage of total steps for warmup
@@ -18,11 +26,17 @@ class LinearWarmupLRConfig(BaseLRSchedulerConfig):
 
 @register_lr_scheduler("linear_warmup", LinearWarmupLRConfig)
 class LinearWarmupLR(BaseLRScheduler):
-    """
-    Linear warmup learning rate scheduler.
+    """Linear warmup learning rate scheduler.
 
-    Linearly increases learning rate from start_lr to target_lr over warmup_steps,
-    then maintains target_lr.
+    Linearly increases the learning rate from `start_lr` to `target_lr` over a
+    specified number of steps. Once the warmup phase is complete, the learning
+    rate is held constant at `target_lr`.
+
+    Args:
+        cfg: Scheduler configuration.
+        optimizer: Managed optimizer.
+        iterations: Total training iterations (used to calculate warmup steps
+            if configured by percentage).
     """
 
     def __init__(
@@ -39,7 +53,7 @@ class LinearWarmupLR(BaseLRScheduler):
         self.target_lrs = [cfg.target_lr or base_lr for base_lr in self.base_lrs]
 
     def get_lr(self) -> list[float]:
-        """Calculate learning rates using linear warmup formula"""
+        """Calculate learning rates using the linear warmup formula."""
         if self.warmup_steps == 0 or self._step_count > self.warmup_steps:
             # No warmup or post-warmup: maintain target learning rate
             return self.target_lrs.copy()
@@ -52,7 +66,7 @@ class LinearWarmupLR(BaseLRScheduler):
             ]
 
     def state_dict(self) -> dict[str, any]:
-        """Return scheduler state"""
+        """Return the scheduler's state, including warmup-specific parameters."""
         state = super().state_dict()
         state.update(
             {
@@ -64,7 +78,7 @@ class LinearWarmupLR(BaseLRScheduler):
         return state
 
     def load_state_dict(self, state_dict: dict[str, any]) -> None:
-        """Load scheduler state"""
+        """Restore the scheduler's state."""
         super().load_state_dict(state_dict)
         self.warmup_steps = state_dict["warmup_steps"]
         self.start_lr = state_dict["start_lr"]

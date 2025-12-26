@@ -28,6 +28,20 @@ class CrossEntropyCriterionConfig(RegistryConfigStrict):
 
 @register_criterion("cross_entropy", CrossEntropyCriterionConfig)
 class CrossEntropyCriterion(BaseCriterion):
+    """Standard Cross Entropy loss with distributed and kernel optimizations.
+
+    This criterion implements standard Cross Entropy but adds support for:
+    - **Loss Parallelism**: Computes loss directly on sharded logits (DTensors) to
+      save memory and communication.
+    - **Liger Kernel**: Optional high-performance kernel for faster computation
+      and lower memory usage on GPUs.
+    - **Metrics**: Automatically logs accuracy, perplexity, and token counts.
+
+    Args:
+        cfg: Configuration for cross entropy.
+        collective: Collective object for distributed operations.
+    """
+
     def __init__(
         self, cfg: CrossEntropyCriterionConfig, collective: Collective, **kwargs
     ):
@@ -49,6 +63,18 @@ class CrossEntropyCriterion(BaseCriterion):
                     )
 
     def __call__(self, model, batch):
+        """Compute the cross entropy loss.
+
+        Automatically handles target shifting (labels = inputs[1:]) and manages
+        distributed loss computation if the model output is a DTensor.
+
+        Args:
+            model: The language model.
+            batch: Dictionary containing 'input_ids'.
+
+        Returns:
+            Computed loss tensor.
+        """
         input_ids = batch.pop("input_ids")
 
         batch["input_ids"] = input_ids[:, :-1]
@@ -128,7 +154,11 @@ class CrossEntropyCriterion(BaseCriterion):
 
     @torch.no_grad()
     def accuracy_metric(self, logits, targets):
-        """Compute accuracy for the given logits and targets."""
+        """Compute top-1 accuracy.
+
+        Handles both standard Tensors and distributed DTensors. For DTensors, it
+        performs a distributed max across tensor-parallel ranks.
+        """
         is_dtensor = isinstance(logits, DTensor)
         if is_dtensor:
             assert isinstance(self.collective, MeshCollective)

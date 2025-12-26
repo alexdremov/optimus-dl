@@ -12,6 +12,18 @@ logger = logging.getLogger(__name__)
 
 
 class CausalSelfAttention(nn.Module):
+    """Standard causal self-attention layer as used in GPT-2.
+
+    Includes support for dropout and causal masking.
+
+    Attributes:
+        c_attn: Combined Linear layer for query, key, and value projections.
+        c_proj: Linear layer for output projection.
+        n_head: Number of attention heads.
+        n_embd: Embedding dimensionality.
+        dropout: Dropout probability.
+    """
+
     def __init__(self, config):
         super().__init__()
         assert config.n_embd % config.n_head == 0
@@ -26,7 +38,15 @@ class CausalSelfAttention(nn.Module):
         self.n_embd = config.n_embd
         self.dropout = config.dropout
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Perform the forward pass of causal self-attention.
+
+        Args:
+            x: Input tensor of shape (batch, seq_len, embed_dim).
+
+        Returns:
+            Output tensor of shape (batch, seq_len, embed_dim).
+        """
         B, T, C = (
             x.size()
         )  # batch size, sequence length, embedding dimensionality (n_embd)
@@ -62,12 +82,23 @@ class CausalSelfAttention(nn.Module):
 
 
 class RotarySelfAttention(nn.Module):
-    """
-    Generalized Rotary Self-Attention supporting:
-    - Grouped Query Attention (GQA)
-    - Rotary Embeddings (RoPE)
-    - Optional Q/K Normalization (Qwen style)
-    - Configurable Bias
+    """Generalized Rotary Self-Attention.
+
+    Supports several modern features:
+    - **Grouped Query Attention (GQA)**: For improved inference efficiency.
+    - **Rotary Positional Embeddings (RoPE)**: For better positional encoding.
+    - **Q/K Normalization**: Optional RMSNorm on Query/Key for training stability.
+
+    Attributes:
+        wq: Linear projection for Query.
+        wk: Linear projection for Key.
+        wv: Linear projection for Value.
+        wo: Linear projection for Output.
+        q_norm: Optional RMSNorm for Query.
+        k_norm: Optional RMSNorm for Key.
+        n_head: Number of Query heads.
+        n_kv_head: Number of Key/Value heads.
+        head_dim: Dimensionality of each head.
     """
 
     def __init__(
@@ -105,7 +136,16 @@ class RotarySelfAttention(nn.Module):
         self.attn_dropout = nn.Dropout(dropout)
         self.resid_dropout = nn.Dropout(dropout)
 
-    def forward(self, x, freqs_cis):
+    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
+        """Perform the forward pass with RoPE and GQA.
+
+        Args:
+            x: Input tensor.
+            freqs_cis: Precomputed frequencies for RoPE.
+
+        Returns:
+            Output tensor after attention and projection.
+        """
         B, T, C = x.size()
 
         xq = self.wq(x)

@@ -9,14 +9,13 @@ def bootstrap_module(
     exclude_patterns: list[str] | None = None,
     silent_errors: bool = False,
 ) -> None:
-    """
-    Automatically imports all files and nested submodules of a given module.
+    """Automatically imports all files and nested submodules of a given module.
 
     Args:
-        module_name: The full module name to import submodules for
-        path: The filesystem path for the module. If None, derived from module_name
-        exclude_patterns: List of patterns to exclude from import
-        silent_errors: If True, log errors instead of raising them
+        module_name: The full module name to import submodules for.
+        path: The filesystem path for the module. If None, derived from module_name.
+        exclude_patterns: List of patterns to exclude from import.
+        silent_errors: If True, log errors instead of raising them.
     """
     if exclude_patterns is None:
         exclude_patterns = ["test_", "tests", "__pycache__", ".pyc"]

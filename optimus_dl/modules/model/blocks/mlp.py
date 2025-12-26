@@ -1,5 +1,6 @@
 import logging
 
+import torch
 import torch.nn as nn
 
 logger = logging.getLogger(__name__)
@@ -14,12 +15,16 @@ except ImportError:
 
 
 class SwiGLUMLP(nn.Module):
-    """
-    SwiGLU MLP variant used in Llama, Qwen, Mistral, etc.
-    Features:
-    - 3 Linear layers: w1 (gate), w2 (up), c_proj (down).
-    - Activation: SiLU (Swish).
-    - Optional Liger Kernel support.
+    """SwiGLU MLP variant used in Llama, Qwen, and Mistral.
+
+    Consists of three linear layers (gate, up, down) and a SiLU (Swish)
+    activation. Supports optional Liger kernel for performance.
+
+    Attributes:
+        w1: Gate projection layer.
+        w2: Up projection layer.
+        c_proj: Down projection layer.
+        use_liger: Whether Liger kernel is enabled.
     """
 
     def __init__(
@@ -56,7 +61,15 @@ class SwiGLUMLP(nn.Module):
             )
             self.use_liger = False
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Perform the forward pass.
+
+        Args:
+            x: Input tensor.
+
+        Returns:
+            Output tensor.
+        """
         if self.use_liger and x.device.type != "cpu":
             x_swiglu = liger_swiglu(self.w1(x), self.w2(x))
         else:
@@ -66,11 +79,15 @@ class SwiGLUMLP(nn.Module):
 
 
 class GELUMLP(nn.Module):
-    """
-    Standard GPT-2 style MLP.
-    Features:
-    - 2 Linear layers: c_fc (expand), c_proj (contract).
-    - Activation: GELU.
+    """Standard GPT-2 style MLP with GELU activation.
+
+    Consists of an expansion layer, GELU activation, and a contraction layer.
+
+    Attributes:
+        c_fc: Expansion projection layer.
+        gelu: GELU activation layer.
+        c_proj: Contraction projection layer.
+        dropout: Dropout layer.
     """
 
     def __init__(
@@ -89,7 +106,15 @@ class GELUMLP(nn.Module):
         self.c_proj = nn.Linear(hidden_dim, n_embd, bias=bias)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Perform the forward pass.
+
+        Args:
+            x: Input tensor.
+
+        Returns:
+            Output tensor.
+        """
         x = self.c_fc(x)
         x = self.gelu(x)
         x = self.c_proj(x)

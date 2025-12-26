@@ -11,7 +11,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class CompileTransformConfig(ModelTransformConfig):
-    """Configuration for torch.compile model transform."""
+    """Configuration for torch.compile model transform.
+
+    Attributes:
+        compile_kwargs: Arguments for `torch.compile`, such as `mode`, `backend`,
+            or `fullgraph`.
+        activation_memory_budget: Optional budget for activation memory management
+            during compilation.
+    """
 
     compile_kwargs: dict = field(
         default_factory=dict,
@@ -29,17 +36,25 @@ class CompileTransformConfig(ModelTransformConfig):
 
 @register_model_transform("compile", CompileTransformConfig)
 class CompileTransform(BaseModelTransform):
-    """Model transform that applies torch.compile to the model's forward method."""
+    """Model transform that applies torch.compile to the entire model.
+
+    Graph compilation can significantly improve performance by fusing kernels
+    and reducing CPU overhead. It should typically be the last transform
+    applied.
+
+    Args:
+        cfg: Compilation configuration.
+    """
 
     def apply(self, model: BaseModel, **kwargs) -> BaseModel:
-        """Apply torch.compile to the model's forward method.
+        """Apply torch.compile to the model.
 
         Args:
-            model: The model to compile
-            **kwargs: Additional arguments (unused)
+            model: The model to compile.
+            **kwargs: Unused.
 
         Returns:
-            The model with compiled forward method
+            The compiled model wrapper.
         """
         import torch._functorch.config
 

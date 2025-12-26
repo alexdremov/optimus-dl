@@ -7,7 +7,7 @@ and GPU timing (using CUDA events for accurate GPU kernel timing).
 
 import time
 from collections.abc import Callable, Iterator
-from typing import Any, TypeVar
+from typing import TypeVar
 
 import torch
 
@@ -29,9 +29,11 @@ def measured_iter(itr: Iterator[T]) -> Iterator[tuple[float, T]]:
         time in milliseconds since the previous iteration.
 
     Example:
-        >>> data = [1, 2, 3, 4, 5]
-        >>> for elapsed, item in measured_iter(iter(data)):
-        ...     print(f"Item {item} took {elapsed:.2f}ms")
+        ```python
+        data = [1, 2, 3, 4, 5]
+        for elapsed, item in measured_iter(iter(data)):
+            print(f"Item {item} took {elapsed:.2f}ms")
+        ```
     """
     start = time.perf_counter_ns()
     for elem in itr:
@@ -54,9 +56,11 @@ def measured_next(itr: Iterator[T]) -> tuple[float, T]:
         time in milliseconds to get the next element.
 
     Example:
-        >>> data_iter = iter(dataloader)
-        >>> elapsed, batch = measured_next(data_iter)
-        >>> print(f"Data loading took {elapsed:.2f}ms")
+        ```python
+        data_iter = iter(dataloader)
+        elapsed, batch = measured_next(data_iter)
+        print(f"Data loading took {elapsed:.2f}ms")
+        ```
     """
     start = time.perf_counter_ns()
     elem = next(itr)
@@ -89,14 +93,16 @@ def measured_lambda(
         - result: Return value of the function call
 
     Example:
-        >>> def forward_pass():
-        ...     return model(input_ids)
-        >>>
-        >>> # CPU timing
-        >>> elapsed, output = measured_lambda(forward_pass, cuda_events=False)
-        >>>
-        >>> # GPU timing (more accurate for GPU ops)
-        >>> elapsed, output = measured_lambda(forward_pass, cuda_events=True)
+        ```python
+        def forward_pass():
+            return model(input_ids)
+
+        # CPU timing
+        elapsed, output = measured_lambda(forward_pass, cuda_events=False)
+
+        # GPU timing (more accurate for GPU ops)
+        elapsed, output = measured_lambda(forward_pass, cuda_events=True)
+        ```
     """
     if not enabled:
         return 0, f()

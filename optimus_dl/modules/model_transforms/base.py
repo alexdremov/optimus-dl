@@ -8,31 +8,36 @@ logger = logging.getLogger(__name__)
 
 
 class BaseModelTransform(ABC):
-    """Base class for model transformations.
+    """Abstract base class for all model transformations.
 
-    Model transforms are applied after the model is built to modify or enhance it.
-    Examples include torch.compile, quantization, pruning, etc.
+    Model transforms are applied after the model is built but before training
+    begins. They modify the model's structure, wrapping it with distributed
+    wrappers (DDP, FSDP), applying graph compilation (torch.compile), or
+    injecting activation checkpointing.
+
+    Transforms are registered in the `model_transform` registry and can be
+    chained together in the configuration.
     """
 
     def __init__(self, cfg: Any = None, **kwargs):
-        """Initialize the model transform.
+        """Initialize the transform.
 
         Args:
-            cfg: Configuration for the transform
-            **kwargs: Additional keyword arguments
+            cfg: Configuration object for the transform.
+            **kwargs: Additional keyword arguments.
         """
         self.cfg = cfg
 
     @abstractmethod
     def apply(self, model: BaseModel, **kwargs) -> BaseModel:
-        """Apply the transformation to the model.
+        """Apply the transformation to the given model.
 
         Args:
-            model: The model to transform
-            **kwargs: Additional arguments that may be needed for transformation
+            model: The model to transform.
+            **kwargs: Additional arguments (e.g., collective, device).
 
         Returns:
-            The transformed model (may be the same instance or a new wrapper)
+            The transformed model (either modified in-place or a new wrapper).
         """
         pass
 

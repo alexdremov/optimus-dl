@@ -15,11 +15,25 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ShuffleTransformConfig(RegistryConfigStrict):
+    """Configuration for data shuffling.
+
+    Attributes:
+        buffer_size: Number of items to hold in the shuffling buffer. Larger
+            buffers provide better shuffling but use more memory.
+        seed: Random seed for shuffling.
+    """
+
     buffer_size: int = 1024
     seed: int = 42
 
 
 class ShuffleTransformNode(BaseNode):
+    """Internal node for performing buffer-based shuffling.
+
+    Fills an internal buffer from the source node and yields items selected
+    randomly from that buffer.
+    """
+
     def __init__(
         self, node: BaseNode, cfg: ShuffleTransformConfig, rank: int, *args, **kwargs
     ):
@@ -33,6 +47,7 @@ class ShuffleTransformNode(BaseNode):
         self.rng = np.random.default_rng(cfg.seed + rank * 41)
 
     def reset(self, initial_state: dict | None = None):
+        """Restore the shuffle buffer and RNG state."""
         super().reset(initial_state)
         self.buffer = []
         self.terminated = False
@@ -49,6 +64,7 @@ class ShuffleTransformNode(BaseNode):
             self.node.reset()
 
     def get_state(self):
+        """Collect current buffer, terminated flag, and RNG state for checkpointing."""
         return {
             "buffer": self.buffer,
             "cfg": self.cfg,
@@ -59,6 +75,7 @@ class ShuffleTransformNode(BaseNode):
         }
 
     def next(self):
+        """Yield a randomly selected item from the shuffle buffer."""
         while len(self.buffer) < self.cfg.buffer_size and not self.terminated:
             try:
                 self.buffer.append(self.node.next())
@@ -72,10 +89,22 @@ class ShuffleTransformNode(BaseNode):
 
 @register_transform("shuffle", ShuffleTransformConfig)
 class ShuffleTransform(BaseTransform):
+    """Transform that shuffles data items using an internal buffer.
+
+    Ensures that items are yielded in a randomized order within a sliding window
+    of `buffer_size`. Seed is automatically adjusted per rank to ensure variety
+    in distributed training.
+
+    Args:
+        cfg: Shuffling configuration.
+        rank: Distributed rank.
+    """
+
     def __init__(self, cfg: ShuffleTransformConfig, rank: int, **kwargs):
         super().__init__(**kwargs)
         self.cfg = cfg
         self.rank = rank
 
     def build(self, source: BaseNode) -> BaseNode:
+        """Apply the shuffling transformation to a source node."""
         return ShuffleTransformNode(source, self.cfg, rank=self.rank)

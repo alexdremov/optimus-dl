@@ -12,6 +12,15 @@ from .base import BaseDataset
 
 @dataclass
 class TokenizedFlatDatasetConfig(RegistryConfigStrict):
+    """Configuration for flat tokenized datasets.
+
+    Attributes:
+        dtype: Numpy dtype of the token files.
+        files: List of paths to tokenized `.npy` or raw binary files.
+        seq_len: Sequence length for each batch.
+        batch_size: Number of sequences per batch.
+    """
+
     dtype: str = "np.uint16"
     files: list[str] = field(
         default_factory=list,
@@ -22,6 +31,19 @@ class TokenizedFlatDatasetConfig(RegistryConfigStrict):
 
 @register_dataset("tokenized_flat", TokenizedFlatDatasetConfig)
 class TokenizedFlatDataset(BaseDataset):
+    """Dataset that treats multiple token files as a single contiguous stream.
+
+    This dataset memory-maps all provided files and calculates a global token
+    offset. It then partitions this global stream into equal segments for each
+    distributed rank. This is ideal for pre-training on very large corpora
+    where data is stored as raw token IDs.
+
+    Args:
+        cfg: Flat tokenized dataset configuration.
+        rank: Distributed rank.
+        world_size: Total number of ranks.
+    """
+
     def __init__(
         self, cfg: TokenizedFlatDatasetConfig, rank: int, world_size: int, **kwargs
     ):
@@ -34,6 +56,7 @@ class TokenizedFlatDataset(BaseDataset):
         self.world_size = world_size
 
     def _remap_files(self):
+        """Memory-map all files and calculate rank-specific token boundaries."""
         # Safe dtype conversion without eval()
         dtype_map = {
             "np.uint8": np.uint8,
@@ -72,11 +95,13 @@ class TokenizedFlatDataset(BaseDataset):
 
     @property
     def file_index(self):
+        """Find the index of the file containing the current token offset."""
         if self.index >= self.cumlens[-1]:
             return None
         return np.min(np.arange(len(self.files_mapped))[self.index < self.cumlens])
 
     def reset(self, initial_state: dict | None = None):
+        """Restore dataset state or recalculate boundaries for a fresh start."""
         super().reset(initial_state)
 
         initial_state = initial_state or {}
@@ -96,6 +121,7 @@ class TokenizedFlatDataset(BaseDataset):
         self.limit = initial_state.get("limit", self.limit)
 
     def get_state(self):
+        """Return current token offset for checkpointing."""
         return {
             "files": self.files,
             "index": self.index,
@@ -107,6 +133,7 @@ class TokenizedFlatDataset(BaseDataset):
         }
 
     def _take_at_most(self, size):
+        """Read at most `size` tokens from the current file, advancing the pointer."""
         file_index = self.file_index
         if file_index is None:
             raise StopIteration
@@ -121,6 +148,7 @@ class TokenizedFlatDataset(BaseDataset):
         return chunk
 
     def next(self):
+        """Yield the next batch of sequences."""
         target_size = self.batch_size * self.seq_len
         result = self._take_at_most(target_size)
 

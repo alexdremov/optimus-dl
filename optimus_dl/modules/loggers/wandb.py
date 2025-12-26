@@ -1,5 +1,4 @@
-"""
-Weights & Biases (wandb) metrics logger implementation.
+"""Weights & Biases (wandb) metrics logger implementation.
 
 This logger integrates with Weights & Biases for experiment tracking,
 supporting both online and offline modes.
@@ -28,7 +27,19 @@ except ImportError:
 
 @dataclass
 class WandbLoggerConfig(MetricsLoggerConfig):
-    """Configuration for Weights & Biases logger."""
+    """Configuration for Weights & Biases logger.
+
+    Attributes:
+        project: Name of the WandB project.
+        entity: WandB entity (user or team) to log to.
+        mode: WandB run mode: 'online', 'offline', or 'disabled'.
+        save_code: If True, saves the main script and its dependencies.
+        group: Name for grouping related runs.
+        job_type: Label for the type of run (e.g., 'train', 'eval').
+        name: Display name for the run. If None, uses experiment name.
+        log_model: If True, automatically logs model checkpoints as artifacts.
+        log_gradients: If True, logs gradient distributions (requires model reference).
+    """
 
     # WandB specific settings
     project: str | None = None
@@ -52,14 +63,18 @@ class WandbLogger(BaseMetricsLogger):
 
     Logs training metrics, configuration, and optionally model artifacts
     to Weights & Biases for experiment tracking and visualization.
+
+    Supports resuming runs by storing and reloading the WandB `run_id` from
+    the training state dict.
     """
 
     def __init__(self, cfg: WandbLoggerConfig, state_dict=None, **kwargs):
         """Initialize WandB logger.
 
         Args:
-            cfg: WandB logger configuration
-            **kwargs: Additional keyword arguments
+            cfg: WandB logger configuration.
+            state_dict: Optional state containing 'run_id' for resuming.
+            **kwargs: Additional keyword arguments.
         """
         super().__init__(cfg, **kwargs)
 
@@ -77,7 +92,10 @@ class WandbLogger(BaseMetricsLogger):
         self.run = None
 
     def setup(self, experiment_name: str, config: dict[str, Any]) -> None:
-        """Setup WandB run with experiment configuration."""
+        """Initialize a WandB run with experiment metadata and configuration.
+
+        If `self.run_id` is present, attempts to resume the existing run.
+        """
         if not self.enabled:
             return
 
@@ -109,12 +127,12 @@ class WandbLogger(BaseMetricsLogger):
     def log_metrics(
         self, metrics: dict[str, Any], step: int, group: str = "train"
     ) -> None:
-        """Log metrics to WandB.
+        """Flatten and log metrics to WandB.
 
         Args:
-            metrics: Dictionary of metric names to values
-            step: Training step/iteration number
-            group: Metrics group (e.g., 'train', 'eval/validation')
+            metrics: Dictionary of metric names to values.
+            step: Training step/iteration number.
+            group: Metrics group (e.g., 'train', 'eval').
         """
         if not self.enabled:
             return
@@ -145,7 +163,7 @@ class WandbLogger(BaseMetricsLogger):
             logger.error(f"Failed to log metrics to WandB: {e}")
 
     def close(self) -> None:
-        """Close WandB run."""
+        """Finalize and close the WandB run."""
         if self.run is not None:
             try:
                 self.run.finish()
@@ -156,6 +174,7 @@ class WandbLogger(BaseMetricsLogger):
                 self.run = None
 
     def state_dict(self):
+        """Return the current run ID for resuming later."""
         return {
             "run_id": self.run.id if self.run is not None else None,
         }

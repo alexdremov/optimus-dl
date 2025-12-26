@@ -27,6 +27,21 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class GPTConfig(RegistryConfigStrict):
+    """Configuration for GPT-style language models.
+
+    Attributes:
+        block_size: Maximum sequence length.
+        vocab_size: Size of the vocabulary.
+        n_layer: Number of transformer blocks.
+        n_head: Number of attention heads.
+        n_embd: Embedding dimensionality.
+        dropout: Dropout probability.
+        bias: Whether to use bias in linear layers and norms.
+        tie_word_embeddings: Whether to share weights between token embeddings
+            and the LM head.
+        shard_every_ith_layer: Control FSDP sharding granularity.
+    """
+
     block_size: int = 1024
     vocab_size: int = (
         50304  # GPT-2 vocab_size of 50257, padded up to nearest multiple of 64 for efficiency
@@ -43,6 +58,8 @@ class GPTConfig(RegistryConfigStrict):
 
 
 class MLP(nn.Module):
+    """Standard GPT-2 MLP with GELU activation."""
+
     def __init__(self, config):
         super().__init__()
         self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias)
@@ -59,6 +76,8 @@ class MLP(nn.Module):
 
 
 class Block(nn.Module):
+    """A single Transformer block with self-attention and MLP."""
+
     def __init__(self, config):
         super().__init__()
         self.ln_1 = LayerNorm(config.n_embd, bias=config.bias)
@@ -82,6 +101,16 @@ BLACKLIST_WEIGHT_MODULES = (
 
 @register_model("gpt2", GPTConfig)
 class GPT(BaseModel):
+    """GPT Language Model architecture.
+
+    Implements a decoder-only transformer with causal self-attention, absolute
+    position embeddings, and standard GPT-2 layer ordering (LayerNorm before
+    attention/MLP).
+
+    Args:
+        config: GPT model configuration.
+    """
+
     def __init__(self, config):
         super().__init__()
         assert config.vocab_size is not None
@@ -117,6 +146,7 @@ class GPT(BaseModel):
                 )
 
     def _init_weights(self, module):
+        """Standard Gaussian initialization for weights."""
         if isinstance(module, nn.Linear):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
             if module.bias is not None:
@@ -125,6 +155,7 @@ class GPT(BaseModel):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
     def forward(self, input_ids, **kwargs):
+        """Compute model output for the given input tokens."""
         idx = input_ids
 
         device = idx.device
@@ -147,13 +178,13 @@ class GPT(BaseModel):
         return {"logits": logits}
 
     def make_parameter_groups(self):
-        """
-        Separate parameters into two groups:
-        1. Parameters that will experience weight decay (weights of Linear layers).
-        2. Parameters that will NOT experience weight decay (biases, LayerNorm, Embedding).
+        """Divide parameters into decayed and non-decayed groups.
+
+        Excludes biases and 1D parameters (normalization weights, embeddings)
+        from weight decay. Handles weight tying correctly.
 
         Returns:
-            List of parameter groups for the optimizer.
+            List of dictionaries for PyTorch optimizer.
         """
 
         # separate out all parameters to those that will and won't experience regularizing weight decay
@@ -212,10 +243,16 @@ class GPT(BaseModel):
 
     @torch.no_grad()
     def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
-        """
-        Take a conditioning sequence of indices idx (LongTensor of shape (b,t)) and complete
-        the sequence max_new_tokens times, feeding the predictions back into the model each time.
-        Most likely you'll want to make sure to be in model.eval() mode of operation for this.
+        """Autoregressive generation of new tokens.
+
+        Args:
+            idx: Starting token sequence (LongTensor).
+            max_new_tokens: Number of tokens to generate.
+            temperature: Sampling temperature.
+            top_k: Optional top-k sampling threshold.
+
+        Returns:
+            LongTensor containing original and generated tokens.
         """
         for _ in range(max_new_tokens):
             # if the sequence context is growing too long we must crop it at block_size
@@ -243,6 +280,7 @@ class GPT(BaseModel):
         return idx
 
     def fully_shard(self, **fsdp_kwargs):
+        """Apply FSDP sharding to each transformer block."""
         for i, module in enumerate(self.transformer.h):
             reshard_after_forward = fsdp_kwargs.get("reshard_after_forward", False)
             if i % self.config.shard_every_ith_layer == 0:

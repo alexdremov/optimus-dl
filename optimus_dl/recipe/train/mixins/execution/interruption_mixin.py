@@ -10,7 +10,17 @@ logger = logging.getLogger(__name__)
 
 
 class TrainingInterruptionMixin:
-    """Mixin for handling training interruptions and errors."""
+    """Mixin for gracefully handling training interruptions.
+
+    Provides a mechanism to catch `KeyboardInterrupt` (Ctrl+C) and trigger a
+    safe shutdown sequence, which typically involves saving a final checkpoint
+    to ensure progress is not lost.
+
+    Args:
+        save_freq: Frequency of regular checkpoints. If 0, saving is disabled.
+        output_path: Path where checkpoints are saved.
+        checkpoint_callback: Callable to execute for saving the checkpoint.
+    """
 
     def __init__(
         self,
@@ -28,12 +38,12 @@ class TrainingInterruptionMixin:
         collective: Collective | None,
         **kwargs: Any,
     ) -> None:
-        """Handle KeyboardInterrupt during training.
+        """Handle interruption by saving a final checkpoint.
 
         Args:
-            iteration: Current iteration
-            collective: Collective for distributed training
-            **kwargs: Additional arguments passed to checkpoint saving callback
+            iteration: The current training iteration count.
+            collective: The distributed collective instance.
+            **kwargs: Additional arguments to pass to the checkpoint callback.
         """
         logger.info("Training interrupted by user")
 

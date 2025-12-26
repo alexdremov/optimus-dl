@@ -26,11 +26,23 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class EvaluatorConfig(RegistryConfig):
+    """Configuration for the Evaluator."""
+
     pass
 
 
 class Evaluator:
-    """Mixin for evaluation functionality."""
+    """Manager for running periodic evaluations during training.
+
+    Handles iterating over validation datasets, computing loss and other metrics,
+    and aggregating results across distributed ranks.
+
+    Args:
+        cfg: Evaluator configuration.
+        eval_freq: Frequency of evaluation runs (in iterations).
+        eval_iterations: Max number of batches to process per evaluation dataset.
+            If None, processes the entire dataset.
+    """
 
     def __init__(
         self,
@@ -50,7 +62,18 @@ class Evaluator:
         eval_data: dict[str, Any],
         collective: Any = None,
     ) -> None | dict:
-        """Run evaluation if iteration matches eval_freq."""
+        """Run evaluation if the current iteration matches the frequency.
+
+        Args:
+            iteration: Current training step.
+            model: The model to evaluate.
+            criterion: The loss function.
+            eval_data: Dictionary mapping dataset names to dataloaders.
+            collective: Distributed collective for metric aggregation.
+
+        Returns:
+            Dictionary of computed metrics if evaluation ran, else None.
+        """
         if self.eval_freq <= 0 or iteration % self.eval_freq != 0:
             return None
 
@@ -74,16 +97,20 @@ class Evaluator:
         max_iterations: int | None = None,
         collective: Any = None,
     ):
-        """Run evaluation on all eval datasets and optionally log metrics.
+        """Execute the evaluation loop for all provided datasets.
+
+        Sets the model to eval mode, disables gradients, and runs the forward pass
+        for each batch. Metrics are aggregated globally.
 
         Args:
-            model: Model to evaluate
-            criterion: Loss criterion for evaluation
-            eval_data_dict: Dictionary of evaluation datasets
-            max_iterations: Maximum iterations per dataset
-            loggers: List of loggers to send metrics to (optional)
-            iteration: Current training iteration for logging
-            collective: Collective for distributed aggregation (optional)
+            model: Model to evaluate.
+            criterion: Loss function.
+            eval_data_dict: Dictionary of {name: dataloader}.
+            max_iterations: Limit on number of batches.
+            collective: Distributed collective.
+
+        Returns:
+            Nested dictionary of results: {dataset_name: {metric_name: value}}.
         """
         model.eval()
         total_metrics = {}

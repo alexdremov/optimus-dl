@@ -17,6 +17,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TxtLinesDatasetConfig(RegistryConfigStrict):
+    """Configuration for line-based text datasets.
+
+    Attributes:
+        file_link: Local path or HTTP(S) URL to the text file.
+        cache_dir: Directory to cache downloaded files.
+        skip_empty_lines: If True, lines that are empty or only whitespace are ignored.
+    """
+
     file_link: str = MISSING
     cache_dir: str = field(default_factory=tempfile.gettempdir)
     skip_empty_lines: bool = True
@@ -24,6 +32,24 @@ class TxtLinesDatasetConfig(RegistryConfigStrict):
 
 @register_dataset("txt_lines", TxtLinesDatasetConfig)
 class TxtLinesDataset(BaseDataset):
+    """Dataset that reads and shards a text file line-by-line.
+
+    This dataset handles:
+    - **Remote Loading**: Automatically downloads files from URLs and caches them.
+    - **Line Filtering**: Optional removal of empty lines.
+    - **Distributed Sharding**: Partitions the total number of lines equally
+      across ranks.
+
+    Note:
+      This dataset loads the entire file into memory on each rank. It is intended
+      for small to medium-sized text files (e.g., TinyShakespeare).
+
+    Args:
+        cfg: Text lines dataset configuration.
+        rank: Distributed rank.
+        world_size: Total number of ranks.
+    """
+
     def __init__(
         self, cfg: TxtLinesDatasetConfig, rank: int, world_size: int, **kwargs
     ):
@@ -39,6 +65,7 @@ class TxtLinesDataset(BaseDataset):
         self.limit = 0
 
     def _prepare_data(self):
+        """Download (if needed) and shard the text data into lines."""
         # 1. Resolve path / download
         local_path = self.file_link
         if self.file_link.startswith("http://") or self.file_link.startswith(
@@ -101,6 +128,7 @@ class TxtLinesDataset(BaseDataset):
         self.limit = max(0, min(self.limit, total_lines))
 
     def next(self):
+        """Yield the next line of text."""
         if self.index >= self.limit:
             raise StopIteration
 
@@ -109,6 +137,7 @@ class TxtLinesDataset(BaseDataset):
         return {"text": line}
 
     def reset(self, initial_state: dict | None = None):
+        """Restore dataset state or prepare the file for a fresh start."""
         super().reset(initial_state)
         initial_state = initial_state or {}
 
@@ -125,6 +154,7 @@ class TxtLinesDataset(BaseDataset):
         assert initial_state.get("world_size", self.world_size) == self.world_size
 
     def get_state(self):
+        """Return current line index for checkpointing."""
         return {
             "index": self.index,
             "file_link": self.file_link,

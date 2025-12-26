@@ -18,14 +18,20 @@ logger = logging.getLogger(__name__)
 
 
 class EvalRecipe:
-    """Recipe for evaluating LLM Baselines models using lm_eval harness."""
+    """Recipe for evaluating LLM Baselines models using lm_eval harness.
+
+    Orchestrates the evaluation process:
+    1.  Loads a model from a checkpoint or configuration.
+    2.  Wraps it in a `LLMBaselinesModel` adapter for `lm_eval`.
+    3.  Runs specified evaluation tasks (e.g., Hellaswag, MMLU).
+    4.  Saves results to JSON.
+
+    Args:
+        cfg: Evaluation configuration.
+    """
 
     def __init__(self, cfg: EvalConfig):
-        """Initialize evaluation recipe.
-
-        Args:
-            cfg: Evaluation configuration
-        """
+        """Initialize evaluation recipe."""
         self.cfg = cfg
         self.model = None
         self.tokenizer = None
@@ -39,10 +45,16 @@ class EvalRecipe:
         self.tokenizer_config = cfg.common.tokenizer
 
     def build_eval_model(self, collective: Collective) -> LLMBaselinesModel:
-        """Build and load model from checkpoint for evaluation.
+        """Build and load the model for evaluation.
+
+        Loads the model from the configured checkpoint path, initializes the
+        tokenizer, and wraps them in the `LLMBaselinesModel` adapter.
+
+        Args:
+            collective: Distributed collective for model initialization context.
 
         Returns:
-            Loaded LLMBaselinesModel instance
+            An initialized `LLMBaselinesModel` ready for `lm_eval`.
         """
         if self.model is None:
             assert (self.cfg.common.checkpoint_path is not None) ^ (
@@ -54,7 +66,7 @@ class EvalRecipe:
                 logger.info(
                     f"Loading model from checkpoint: {self.cfg.common.checkpoint_path}"
                 )
-                base_model, _ = self.ch.build_model_from_checkpoint(
+                base_model, _ = self.checkpoint_manager.build_model_from_checkpoint(
                     checkpoint_path=self.cfg.common.checkpoint_path, device=device
                 )
             else:
@@ -79,10 +91,13 @@ class EvalRecipe:
         return self.model
 
     def run_lm_eval(self) -> dict:
-        """Run lm_eval harness evaluation.
+        """Run standard benchmarks using the lm_eval harness.
+
+        Sets up the distributed environment (even if single-device), builds the
+        model, executes the tasks, and saves results.
 
         Returns:
-            Dictionary with evaluation results
+            Dictionary containing evaluation metrics and results.
         """
         try:
             from lm_eval import evaluator

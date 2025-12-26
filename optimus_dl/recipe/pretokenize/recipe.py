@@ -22,10 +22,17 @@ logger = logging.getLogger(__name__)
 
 
 class DataPrepRecipe:
-    """
-    Orchestrates the data preparation process, including finding files,
-    tokenizing them in parallel, and writing them to numpy shards.
-    Supports resumption from checkpoints.
+    """Recipe for preparing and tokenizing datasets.
+
+    Orchestrates the entire ETL pipeline:
+    1.  **Extract**: Finds files from a Hugging Face Hub repository using `FileFinder`.
+    2.  **Transform**: Tokenizes text documents in parallel using `TokenProcessor`.
+    3.  **Load**: Writes tokenized data into sharded numpy files using `Sharder`.
+
+    Handles resumption from interruptions via atomic checkpointing.
+
+    Args:
+        config: Data preparation configuration.
     """
 
     def __init__(self, config: DataPrepConfig):
@@ -59,7 +66,11 @@ class DataPrepRecipe:
         return tokenizer
 
     def run(self):
-        """Executes the entire data preparation pipeline."""
+        """Executes the data preparation pipeline.
+
+        Finds files, resumes from checkpoint if available, and processes data
+        until completion. Finalizes by writing the `index.json`.
+        """
         file_finder = FileFinder(self.config.dataset, self.config.processing.seed)
         files = file_finder.get_files()
         if not files:

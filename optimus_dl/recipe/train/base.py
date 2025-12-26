@@ -146,39 +146,54 @@ class TrainRecipe(
 
     # Delegate methods
     def build_model(self, *args, **kwargs) -> BaseModel:
+        """Delegate to ModelBuilder."""
         return self.model_builder.build_model(*args, **kwargs)
 
     def build_optimizer(self, *args, **kwargs) -> Optimizer:
+        """Delegate to OptimizerBuilder."""
         return self.optimizer_builder.build_optimizer(*args, **kwargs)
 
     def build_lr_scheduler(self, *args, **kwargs):
+        """Delegate to SchedulerBuilder."""
         return self.scheduler_builder.build_lr_scheduler(*args, **kwargs)
 
     def build_criterion(self, *args, **kwargs) -> BaseCriterion:
+        """Delegate to CriterionBuilder."""
         return self.criterion_builder.build_criterion(*args, **kwargs)
 
     def build_train_data(self, *args, **kwargs):
+        """Delegate to DataBuilder for training data."""
         return self.data_builder.build_train_data(*args, **kwargs)
 
     def build_eval_data(self, *args, **kwargs):
+        """Delegate to DataBuilder for evaluation data."""
         return self.data_builder.build_eval_data(*args, **kwargs)
 
     def build_loggers(self, *args, **kwargs):
+        """Delegate to LoggerManager for building loggers."""
         return self.logger_manager.build_loggers(*args, **kwargs)
 
     def setup_loggers(self, experiment_name: str, full_config: dict | None = None):
-        """Override to pass full config to logger manager."""
+        """Setup logging with experiment configuration.
+
+        Args:
+            experiment_name: Name of the current experiment.
+            full_config: Full configuration dictionary. If None, uses self.cfg.
+        """
         if full_config is None:
             full_config = self.cfg if hasattr(self.cfg, "__dict__") else dict(self.cfg)
         return self.logger_manager.setup_loggers(experiment_name, full_config)
 
     def log_metrics_to_loggers(self, *args, **kwargs):
+        """Delegate metrics logging to LoggerManager."""
         return self.logger_manager.log_metrics_to_loggers(*args, **kwargs)
 
     def close_loggers(self, *args, **kwargs):
+        """Delegate logger cleanup to LoggerManager."""
         return self.logger_manager.close_loggers(*args, **kwargs)
 
     def save_checkpoint_if_needed(self, *args, **kwargs):
+        """Check save frequency and delegate to CheckpointManager."""
         config_dict = self.cfg if hasattr(self.cfg, "__dict__") else dict(self.cfg)
         kwargs["full_config"] = config_dict
         kwargs["checkpoint_dir"] = self.cfg.common.output_path
@@ -187,6 +202,7 @@ class TrainRecipe(
         return self.checkpoint_manager.save_checkpoint_if_needed(*args, **kwargs)
 
     def save_checkpoint(self, *args, **kwargs):
+        """Save a checkpoint via CheckpointManager."""
         config_dict = self.cfg if hasattr(self.cfg, "__dict__") else dict(self.cfg)
         kwargs["full_config"] = config_dict
         if "checkpoint_dir" not in kwargs:
@@ -196,6 +212,7 @@ class TrainRecipe(
         return self.checkpoint_manager.save_checkpoint(*args, **kwargs)
 
     def load_checkpoint_if_exists(self, *args, **kwargs):
+        """Try to resume from latest checkpoint in output path."""
         if "checkpoint_dir" not in kwargs:
             kwargs["checkpoint_dir"] = self.cfg.common.output_path
         if "logger_manager" not in kwargs:
@@ -203,11 +220,13 @@ class TrainRecipe(
         return self.checkpoint_manager.load_checkpoint_if_exists(*args, **kwargs)
 
     def load_checkpoint(self, *args, **kwargs):
+        """Load a specific checkpoint."""
         if "logger_manager" not in kwargs:
             kwargs["logger_manager"] = self.logger_manager
         return self.checkpoint_manager.load_checkpoint(*args, **kwargs)
 
     def run_evaluation_if_needed(self, *args, **kwargs):
+        """Check eval frequency and run evaluation via Evaluator."""
         return self.evaluator.run_evaluation_if_needed(*args, **kwargs)
 
     def set_exp_name(self):
@@ -241,6 +260,7 @@ class TrainRecipe(
         logger.info("Configuration validation passed")
 
     def setup_context(self):
+        """Setup global training context (precision, etc.)."""
         torch.set_float32_matmul_precision("highest")
         if torch.cuda.is_available():
             torch.backends.cuda.matmul.fp32_precision = "ieee"
