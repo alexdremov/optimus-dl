@@ -191,7 +191,7 @@ class CompositeDataset(BaseDataset):
     - **Weighted Sampling**: Using a rank-safe multinomial sampler.
     - **Exhaustion Policies**: Can stop training when one/all datasets are
       exhausted or cycle through them indefinitely.
-    - **Hierarchical Checkpointing**: Correctingly saves and restores the state
+    - **Hierarchical Checkpointing**: Correctly saves and restores the state
       of all sub-datasets and the global sampling state.
 
     Args:
