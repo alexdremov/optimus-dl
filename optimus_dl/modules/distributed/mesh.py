@@ -30,6 +30,7 @@ class MeshCollective(Collective):
 
     This class orchestrates complex parallel topologies by nesting process groups.
     It supports a 3D parallelism strategy:
+
     - **dp_replicate**: Inter-node data parallelism (replication).
     - **dp_shard**: Intra-node data parallelism (FSDP-style sharding).
     - **tp**: Tensor Parallelism (typically intra-node).

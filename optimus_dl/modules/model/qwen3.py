@@ -101,6 +101,7 @@ class Qwen3(GPT):
     """Qwen3 Language Model architecture.
 
     Extends the framework's GPT base with Qwen-specific features:
+
     - **Q/K Normalization**: Applies RMSNorm to Query and Key tensors before
       attention computation to improve training stability.
     - **Configurable Biases**: Supports bias in attention and MLP layers.

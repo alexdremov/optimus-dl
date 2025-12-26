@@ -31,6 +31,7 @@ class CrossEntropyCriterion(BaseCriterion):
     """Standard Cross Entropy loss with distributed and kernel optimizations.
 
     This criterion implements standard Cross Entropy but adds support for:
+
     - **Loss Parallelism**: Computes loss directly on sharded logits (DTensors) to
       save memory and communication.
     - **Liger Kernel**: Optional high-performance kernel for faster computation

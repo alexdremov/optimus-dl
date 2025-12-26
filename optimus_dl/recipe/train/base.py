@@ -52,6 +52,7 @@ class TrainRecipe(
     """Main training recipe that orchestrates all training components.
 
     This class uses composition to coordinate specialized builders and managers:
+
     - ModelBuilder: Builds models and applies transforms
     - OptimizerBuilder: Builds optimizers
     - CriterionBuilder: Builds loss criteria
@@ -62,6 +63,7 @@ class TrainRecipe(
     - Evaluator: Handles evaluation runs and metrics
 
     It inherits from training logic mixins for the core loop execution:
+
     - TrainingContextMixin: Sets up training context (AMP, scaler, etc.)
     - TrainingIterationMixin: Orchestrates complete training iterations
     - TrainingInterruptionMixin: Handles training interruptions and errors

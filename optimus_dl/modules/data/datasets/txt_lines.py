@@ -35,6 +35,7 @@ class TxtLinesDataset(BaseDataset):
     """Dataset that reads and shards a text file line-by-line.
 
     This dataset handles:
+
     - **Remote Loading**: Automatically downloads files from URLs and caches them.
     - **Line Filtering**: Optional removal of empty lines.
     - **Distributed Sharding**: Partitions the total number of lines equally

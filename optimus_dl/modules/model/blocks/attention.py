@@ -85,6 +85,7 @@ class RotarySelfAttention(nn.Module):
     """Generalized Rotary Self-Attention.
 
     Supports several modern features:
+
     - **Grouped Query Attention (GQA)**: For improved inference efficiency.
     - **Rotary Positional Embeddings (RoPE)**: For better positional encoding.
     - **Q/K Normalization**: Optional RMSNorm on Query/Key for training stability.

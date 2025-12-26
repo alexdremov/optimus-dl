@@ -46,6 +46,7 @@ class MetricGroup:
 
     This class manages a group of related metrics (e.g., 'train' or 'eval'). It
     handles:
+
     - **Sampling Frequency**: Only triggers logging every `log_freq` steps.
     - **Priority Sorting**: Ensures consistent ordering of metrics in output.
     - **State Management**: Can reset metrics after logging and serialize the

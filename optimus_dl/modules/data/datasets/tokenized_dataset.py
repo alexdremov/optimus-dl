@@ -36,6 +36,7 @@ class TokenizedDataset(BaseDataset):
 
     This dataset expects data prepared by `scripts/prepare_data.py`, consisting
     of multiple `.npy` shards and a global `index.json`. It provides:
+
     - **Memory Mapping**: Efficiently reads shards using `mmap_mode="r"`.
     - **Document Partitioning**: Automatically shards the document list across
       distributed ranks.

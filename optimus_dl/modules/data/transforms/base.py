@@ -18,6 +18,7 @@ class BaseTransform:
     transformation. Transforms can be chained together using CompositeTransform.
 
     Subclasses should implement:
+
     - `build()`: Apply the transform to a data source and return a new node
 
     Example:
