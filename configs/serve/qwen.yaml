@@ -1,0 +1,17 @@
+# @package @_global_
+defaults:
+  - _self_
+
+serve:
+  port: 8000
+  host: "127.0.0.1"
+
+common:
+  checkpoint_path: null
+  model:
+    _name: preset_hfqwen3
+    hf_model_name: Qwen/Qwen3-0.6B
+  tokenizer:
+    _name: transformers
+    name: ${common.model.hf_model_name}
+    add_eos: false
