@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build_and_test:
 
@@ -61,6 +65,12 @@ jobs:
 
     - name: Install build
       run: pip install .[dev] --cache-dir ~/.cache/pip
+
+    - name: Check style
+      run: |
+        ruff check .
+        black --check .
+        isort --check-only .
 
     - name: Test with pytest
       run: |
