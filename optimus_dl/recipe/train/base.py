@@ -338,7 +338,7 @@ class TrainRecipe(
             )
             if is_restart:
                 # cases when training run but did not produce any artifacts is
-                # indistingushable from the case when training is not started at all
+                # indistinguishable from the case when training is not started at all
                 assert metadata is not None, "Misaligned is_restart flag"
 
             logger.info(f"Considering this run as {is_restart = }")
