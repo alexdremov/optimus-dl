@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  build_and_test:
 
     runs-on: ubuntu-latest
 
