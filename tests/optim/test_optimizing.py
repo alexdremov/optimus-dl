@@ -33,7 +33,7 @@ def test_default_optimizers_decrease_loss(optimizer_config):
 
     # Perform a few optimization steps
     initial_loss = None
-    for _step in range(10):
+    for _ in range(100):
         optimizer.zero_grad()
         output = model(x)
         loss = criterion(output, target)
@@ -44,4 +44,10 @@ def test_default_optimizers_decrease_loss(optimizer_config):
 
     # Loss should decrease
     final_loss = loss.item()
+    print(
+        f"{optimizer_config['_name']}: final_loss",
+        final_loss,
+        "initial_loss",
+        initial_loss,
+    )
     assert final_loss < initial_loss
