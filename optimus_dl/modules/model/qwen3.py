@@ -52,7 +52,7 @@ class Qwen3Config(GPTConfig):
         metadata={"description": "Specific bias flag for attention projections."},
     )
     tie_word_embeddings: bool = field(
-        default=False,
+        default=True,
         metadata={"description": "Tie input and output embeddings."},
     )
     n_kv_head: int | None = field(
