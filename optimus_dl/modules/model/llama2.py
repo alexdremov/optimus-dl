@@ -1,17 +1,18 @@
 """
 Llama style Language Model.
 References:
-1) Llama inference code:
+
+- Llama inference code:
 https://github.com/facebookresearch/llama/blob/main/llama/model.py
-2) Mistral one file ref:
+- Mistral one file ref:
 https://github.com/mistralai/mistral-src/blob/main/one_file_ref.py
-3) Llama paper:
+- Llama paper:
 https://arxiv.org/pdf/2302.13971.pdf
 
 Main differences from GPT2:
-* Uses RMSNorm instead of LayerNorm
-* Uses a slightly different MLP (SwiGLU)
-* rotary embeddings (RoPE)
+- Uses RMSNorm instead of LayerNorm
+- Uses a slightly different MLP (SwiGLU)
+- rotary embeddings (RoPE)
 """
 
 import logging
@@ -34,34 +35,58 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class LlamaConfig(GPTConfig):
-    """Configuration for Llama-style models.
+    """Configuration for Llama-style models."""
 
-    Attributes:
-        sequence_length: Maximum context length.
-        rmsnorm_eps: Epsilon for RMSNorm.
-        bias: Whether to use bias (usually False for Llama).
-        n_kv_head: Number of Key/Value heads (for GQA).
-        intermediate_size: Dimension of SwiGLU hidden layer.
-        multiple_of: Round SwiGLU hidden dim to a multiple of this value.
-        rope_theta: Base frequency for rotary embeddings.
-        use_liger_rmsnorm: Whether to use Liger-kernel for RMSNorm.
-        use_liger_swiglu: Whether to use Liger-kernel for SwiGLU.
-    """
-
-    sequence_length: int = 16000
-    rmsnorm_eps: float = 1e-5
-    bias: bool = False
-    tie_word_embeddings: bool = True
-    n_kv_head: int | None = None
-    intermediate_size: int | None = None
+    sequence_length: int = field(
+        default=16000,
+        metadata={"description": "Maximum context length."},
+    )
+    rmsnorm_eps: float = field(
+        default=1e-5,
+        metadata={"description": "Epsilon for RMSNorm."},
+    )
+    bias: bool = field(
+        default=False,
+        metadata={"description": "Whether to use bias (usually False for Llama)."},
+    )
+    tie_word_embeddings: bool = field(
+        default=True,
+        metadata={"description": "Whether to tie input and output embeddings."},
+    )
+    n_kv_head: int | None = field(
+        default=None,
+        metadata={
+            "description": "Number of Key/Value heads (for GQA). If None, will be set to num_attention_heads."
+        },
+    )
+    intermediate_size: int | None = field(
+        default=None,
+        metadata={
+            "description": "Dimension of SwiGLU hidden layer. If None, will be set based on multiple_of"
+        },
+    )
     multiple_of: int = field(
         default=256,
-        metadata={"help": "make SwiGLU hidden layer size multiple of large power of 2"},
+        metadata={
+            "description": "Make SwiGLU hidden layer size multiple of large power of 2"
+        },
     )
-    rope_theta: float = 10000.0
-    # Liger Kernel flags (None = auto-enable if available)
-    use_liger_rmsnorm: bool | None = None
-    use_liger_swiglu: bool | None = None
+    rope_theta: float = field(
+        default=10000.0,
+        metadata={"description": "Base frequency for rotary embeddings."},
+    )
+    use_liger_rmsnorm: bool | None = field(
+        default=None,
+        metadata={
+            "description": "Enable Liger-kernel for RMSNorm. None = auto-enable if available."
+        },
+    )
+    use_liger_swiglu: bool | None = field(
+        default=None,
+        metadata={
+            "description": "Enable Liger-kernel for SwiGLU. None = auto-enable if available."
+        },
+    )
 
 
 class LlamaBlock(nn.Module):
@@ -117,7 +142,7 @@ class Llama(GPT):
         config: Llama model configuration.
     """
 
-    def __init__(self, config: LlamaConfig):
+    def __init__(self, config: LlamaConfig, **kwargs):
         super().__init__(config)
         assert config.vocab_size is not None
         assert config.sequence_length is not None

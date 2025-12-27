@@ -11,25 +11,18 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class CompileTransformConfig(ModelTransformConfig):
-    """Configuration for torch.compile model transform.
-
-    Attributes:
-        compile_kwargs: Arguments for `torch.compile`, such as `mode`, `backend`,
-            or `fullgraph`.
-        activation_memory_budget: Optional budget for activation memory management
-            during compilation.
-    """
+    """Configuration for torch.compile model transform."""
 
     compile_kwargs: dict = field(
         default_factory=dict,
         metadata={
-            "help": "Arguments for torch.compile. See https://pytorch.org/docs/stable/generated/torch.compile.html"
+            "description": "Arguments for torch.compile. See https://pytorch.org/docs/stable/generated/torch.compile.html"
         },
     )
     activation_memory_budget: float | None = field(
         default=None,
         metadata={
-            "help": "Activation memory budget for torch.compile. See https://pytorch.org/blog/activation-checkpointing-techniques/"
+            "description": "Activation memory budget for torch.compile. See https://pytorch.org/blog/activation-checkpointing-techniques/"
         },
     )
 

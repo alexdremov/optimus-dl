@@ -13,19 +13,21 @@ class EvalCommonConfig:
 
     checkpoint_path: str | None = field(
         default=MISSING,
-        metadata={"help": "Path to checkpoint directory or metadata file"},
+        metadata={"description": "Path to checkpoint directory or metadata file"},
     )
     model: Any = field(
         default=None,
         metadata={
-            "help": "Model to build (if you want to load model not from checkpoint)"
+            "description": "Model to build (if you want to load model not from checkpoint)"
         },
     )
     use_gpu: bool = field(
         default=True,
-        metadata={"help": "Use gpu if available"},
+        metadata={"description": "Use gpu if available"},
     )
-    seed: int = field(default=42, metadata={"help": "Random seed for evaluation"})
+    seed: int = field(
+        default=42, metadata={"description": "Random seed for evaluation"}
+    )
     tokenizer: Any = MISSING
 
 
@@ -35,17 +37,19 @@ class LMEvalConfig:
 
     tasks: list[str] = field(
         default_factory=lambda: ["hellaswag"],
-        metadata={"help": "List of lm_eval tasks to evaluate on"},
+        metadata={"description": "List of lm_eval tasks to evaluate on"},
     )
     num_fewshot: int = field(
-        default=0, metadata={"help": "Number of few-shot examples"}
+        default=0, metadata={"description": "Number of few-shot examples"}
     )
-    batch_size: int = field(default=1, metadata={"help": "Batch size for evaluation"})
+    batch_size: int = field(
+        default=1, metadata={"description": "Batch size for evaluation"}
+    )
     limit: int | None = field(
-        default=None, metadata={"help": "Limit number of examples per task"}
+        default=None, metadata={"description": "Limit number of examples per task"}
     )
     output_path: str | None = field(
-        default=None, metadata={"help": "Path to save evaluation results"}
+        default=None, metadata={"description": "Path to save evaluation results"}
     )
 
 

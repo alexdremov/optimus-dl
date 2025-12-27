@@ -23,38 +23,68 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Qwen3Config(GPTConfig):
-    """Configuration for Qwen3-style models.
+    """Configuration for Qwen3-style models."""
 
-    Attributes:
-        sequence_length: Maximum context length.
-        rmsnorm_eps: Epsilon for RMSNorm.
-        rope_theta: Base frequency for rotary embeddings (Qwen3 uses 5M).
-        head_dim: Dimensionality of each attention head.
-        bias: Global bias flag for linear layers.
-        attention_bias: Specific bias flag for attention projections.
-        n_kv_head: Number of Key/Value heads.
-        intermediate_size: Dimension of SwiGLU hidden layer.
-        multiple_of: SwiGLU rounding factor.
-        use_liger_rmsnorm: Enable Liger-kernel for RMSNorm.
-        use_liger_swiglu: Enable Liger-kernel for SwiGLU.
-    """
-
-    sequence_length: int = 32768
-    rmsnorm_eps: float = 1e-6
-    rope_theta: float = 5000000.0  # Qwen3 default
-    head_dim: int | None = None
-    bias: bool = False  # Global bias flag
-    attention_bias: bool = True  # Qwen3 usually has bias in attention
-    tie_word_embeddings: bool = True
-    n_kv_head: int | None = None
-    intermediate_size: int | None = None
+    sequence_length: int = field(
+        default=32768,
+        metadata={"description": "Maximum context length."},
+    )
+    rmsnorm_eps: float = field(
+        default=1e-6,
+        metadata={"description": "Epsilon for RMSNorm."},
+    )
+    rope_theta: float = field(
+        default=5000000.0,
+        metadata={"description": "Base frequency for rotary embeddings."},
+    )
+    head_dim: int | None = field(
+        default=None,
+        metadata={
+            "description": "Dimensionality of each attention head. If None, will be set to hidden_size // num_attention_heads."
+        },
+    )
+    bias: bool = field(
+        default=False,
+        metadata={"description": "Global bias flag for linear layers."},
+    )
+    attention_bias: bool = field(
+        default=True,
+        metadata={"description": "Specific bias flag for attention projections."},
+    )
+    tie_word_embeddings: bool = field(
+        default=False,
+        metadata={"description": "Tie input and output embeddings."},
+    )
+    n_kv_head: int | None = field(
+        default=None,
+        metadata={
+            "description": "Number of Key/Value heads. If None, will be set to num_attention_heads."
+        },
+    )
+    intermediate_size: int | None = field(
+        default=None,
+        metadata={
+            "description": "Dimension of SwiGLU hidden layer. If None, will be set based on multiple_of"
+        },
+    )
     multiple_of: int = field(
         default=256,
-        metadata={"help": "make SwiGLU hidden layer size multiple of large power of 2"},
+        metadata={
+            "description": "Make SwiGLU hidden layer size multiple of large power of 2"
+        },
     )
-    # Liger Kernel flags (None = auto-enable if available)
-    use_liger_rmsnorm: bool | None = None
-    use_liger_swiglu: bool | None = None
+    use_liger_rmsnorm: bool | None = field(
+        default=None,
+        metadata={
+            "description": "Enable Liger-kernel for RMSNorm. None = auto-enable if available."
+        },
+    )
+    use_liger_swiglu: bool | None = field(
+        default=None,
+        metadata={
+            "description": "Enable Liger-kernel for SwiGLU. None = auto-enable if available."
+        },
+    )
 
 
 class Qwen3Block(nn.Module):
@@ -111,7 +141,7 @@ class Qwen3(GPT):
         config: Qwen3 model configuration.
     """
 
-    def __init__(self, config: Qwen3Config):
+    def __init__(self, config: Qwen3Config, **kwargs):
         super().__init__(config)
         assert config.vocab_size is not None
         assert config.sequence_length is not None

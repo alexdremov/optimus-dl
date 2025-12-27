@@ -9,7 +9,7 @@ https://github.com/huggingface/transformers/blob/main/src/transformers/models/gp
 
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import torch
 import torch.nn as nn
@@ -27,33 +27,38 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class GPTConfig(RegistryConfigStrict):
-    """Configuration for GPT-style language models.
+    """Configuration for GPT-style language models."""
 
-    Attributes:
-        block_size: Maximum sequence length.
-        vocab_size: Size of the vocabulary.
-        n_layer: Number of transformer blocks.
-        n_head: Number of attention heads.
-        n_embd: Embedding dimensionality.
-        dropout: Dropout probability.
-        bias: Whether to use bias in linear layers and norms.
-        tie_word_embeddings: Whether to share weights between token embeddings
-            and the LM head.
-        shard_every_ith_layer: Control FSDP sharding granularity.
-    """
-
-    block_size: int = 1024
-    vocab_size: int = (
-        50304  # GPT-2 vocab_size of 50257, padded up to nearest multiple of 64 for efficiency
+    block_size: int = field(
+        default=1024,
+        metadata={
+            "description": "Maximum context length. Determines max pos embeddings"
+        },
     )
-    n_layer: int = 12
-    n_head: int = 12
-    n_embd: int = 768
-    dropout: float = 0.0
-    bias: bool = True
-    tie_word_embeddings: bool = True
-    shard_every_ith_layer: int = (
-        1  # Shard every i-th layer, 1 means all layers are sharded (if global reshard_after_forward is True)
+    vocab_size: int = field(default=50304, metadata={"description": "Vocabulary size"})
+    n_layer: int = field(
+        default=12, metadata={"description": "Number of transformer blocks"}
+    )
+    n_head: int = field(
+        default=12, metadata={"description": "Number of attention heads"}
+    )
+    n_embd: int = field(
+        default=768, metadata={"description": "Embedding dimensionality"}
+    )
+    dropout: float = field(default=0.0, metadata={"description": "Dropout probability"})
+    bias: bool = field(
+        default=False,
+        metadata={"description": "Whether to use bias in linear layers and norms"},
+    )
+    tie_word_embeddings: bool = field(
+        default=True,
+        metadata={"description": "Share weights between token embeddings and LM head"},
+    )
+    shard_every_ith_layer: int = field(
+        default=1,
+        metadata={
+            "description": "Control FSDP sharding granularity. Shard every i-th layer, 1 means all layers are sharded (if global reshard_after_forward is True)"
+        },
     )
 
 
@@ -111,7 +116,7 @@ class GPT(BaseModel):
         config: GPT model configuration.
     """
 
-    def __init__(self, config):
+    def __init__(self, config, **kwargs):
         super().__init__()
         assert config.vocab_size is not None
         assert config.block_size is not None

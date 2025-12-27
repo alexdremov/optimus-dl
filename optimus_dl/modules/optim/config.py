@@ -23,9 +23,11 @@ class AmpConfig:
 class OptimizationConfig:
     optimizer: RegistryConfig
 
-    iterations: int = field(default=1000, metadata={"help": "Total train steps"})
-    acc_steps: int = field(default=1, metadata={"help": "Steps to accumulate gradient"})
+    iterations: int = field(default=1000, metadata={"description": "Total train steps"})
+    acc_steps: int = field(
+        default=1, metadata={"description": "Steps to accumulate gradient"}
+    )
     clip_grad_norm: float | None = field(
-        default=None, metadata={"help": "Clip gradient norm"}
+        default=None, metadata={"description": "Clip gradient norm"}
     )
     amp: AmpConfig = field(default_factory=AmpConfig)
