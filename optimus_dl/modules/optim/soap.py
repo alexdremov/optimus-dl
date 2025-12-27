@@ -13,7 +13,7 @@ from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.optim import register_optimizer
 
 # https://github.com/nikhilvyas/SOAP/blob/main/soap.py
-# Parts of the code are modifications of Pytorch's AdamW optimizer
+# Parts of the code are modifications of PyTorch's AdamW optimizer
 # Parts of the code are modifications of code from https://github.com/jiaweizzhao/GaLore/blob/master/galore_torch/galore_projector.py
 
 
