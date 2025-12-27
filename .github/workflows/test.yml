@@ -3,9 +3,10 @@ name: Python Test
 on:
   pull_request:
     branches: [ "main" ]
+    types: [opened, synchronize, reopened, labeled]
 
-permissions:
-  contents: write
+# No global permissions - each job declares what it needs
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -14,6 +15,16 @@ concurrency:
 jobs:
   format:
     runs-on: ubuntu-latest
+    # Only run auto-formatting for maintainers or approved PRs
+    if: |
+      github.event.pull_request.author_association == 'OWNER' ||
+      github.event.pull_request.author_association == 'MEMBER' ||
+      github.event.pull_request.author_association == 'COLLABORATOR' ||
+      contains(github.event.pull_request.labels.*.name, 'safe-to-test')
+    
+    permissions:
+      contents: write  # Only this job needs write access to commit formatting changes
+      pull-requests: write  # Needed to update PR
 
     steps:
       - uses: actions/checkout@v6
@@ -21,6 +32,8 @@ jobs:
           # On pull_request events, checkout the PR branch (not a detached merge ref)
           ref: ${{ github.head_ref }}
           fetch-depth: 0
+          # Use a token with limited scope for safer operations
+          persist-credentials: true
 
       - uses: actions/setup-python@v5
         with:
@@ -41,17 +54,35 @@ jobs:
         run: ruff check --fix .
 
       - name: Commit back (if changed)
+        id: auto-commit
         uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: "style: auto-format (black + isort + ruff)"
           branch: ${{ github.head_ref }}
+      
+      - name: Fail if changes were committed
+        if: steps.auto-commit.outputs.changes_detected == 'true'
+        run: |
+          echo "::error::Code formatting changes were committed. A new workflow run will start automatically with the formatted code."
+          exit 1
 
   build_and_test:
+    # Only run if format completed successfully (not skipped)
+    # This ensures external PRs without approval don't get a passing test check
+    if: needs.format.result == 'success'
     needs: format
     runs-on: ubuntu-latest
+    # Allow tests to run for everyone, but they run in a read-only context
+    
+    permissions:
+      contents: read  # Only read access needed for tests
 
     steps:
     - uses: actions/checkout@v6
+      with:
+        # For pull_request, checkout the merge commit (safer - uses merge ref)
+        # This avoids executing untrusted code with write permissions
+        persist-credentials: false
 
     - name: Aggressive free disk space
       run: |
