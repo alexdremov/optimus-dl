@@ -22,7 +22,7 @@ def test_default_optimizers_decrease_loss(optimizer_config):
     """Test that the created optimizer can perform optimization steps"""
     # Create a simple optimization problem
     torch.manual_seed(42)
-    x = torch.randn(10, 5, requires_grad=True)
+    x = torch.randn(10, 5)
     target = torch.randn(10, 1)
 
     is_muon = optimizer_config["_name"] == "muon"
