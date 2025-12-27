@@ -84,6 +84,3 @@ data:
         split: validation
         # streaming: false
       transform: ${data.scratch.base_transforms}
-
-distributed:
-  aboba: 2
