@@ -53,9 +53,3 @@ optimization:
     precondition_frequency: 10
     max_precond_dim: 10000
 ```
-
-## Choosing an Optimizer
-
-- **AdamW**: Best default choice for most transformer and deep learning models. Well-tested and reliable with good convergence properties.
-- **Muon**: Momentum-based optimizer that can provide faster convergence for certain architectures. The Newton-Schulz iterations help with gradient normalization and can be particularly effective when training models with varying gradient scales across layers.
-- **SOAP**: Advanced second-order optimizer that can provide better training efficiency for large models by using Shampoo preconditioning. The preconditioner adapts to the curvature of the loss landscape, which can be beneficial for models with complex parameter interactions. Note that it requires more memory due to preconditioner storage.
