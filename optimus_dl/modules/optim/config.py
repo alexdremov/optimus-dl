@@ -1,3 +1,7 @@
+"""
+General optimizer config
+"""
+
 from dataclasses import dataclass, field
 
 from optimus_dl.core.registry import RegistryConfig
