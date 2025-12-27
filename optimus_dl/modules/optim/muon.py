@@ -14,9 +14,24 @@ from optimus_dl.modules.optim import register_optimizer
 
 @dataclass
 class MuonConfig(RegistryConfigStrict):
-    """
-    Configuration for Muon optimizer.
-    Parameters are consistent with PyTorch implementation.
+    """Configuration for Muon optimizer.
+
+    Muon is a momentum-based optimizer that uses Newton-Schulz iteration for
+    preconditioning. It's designed for efficient training of large models.
+
+    Attributes:
+        lr: Learning rate for parameter updates.
+        weight_decay: Weight decay (L2 penalty) coefficient applied to parameters.
+        momentum: Momentum factor for the moving average of gradients.
+        nesterov: Whether to use Nesterov momentum.
+        ns_coefficients: Coefficients (a, b, c) for Newton-Schulz iteration algorithm.
+            These control the convergence and stability of the preconditioning step.
+            Default values are tuned for typical use cases.
+        eps: Small constant added for numerical stability in computations.
+        ns_steps: Number of Newton-Schulz iteration steps to perform for preconditioning.
+            Higher values can improve accuracy but increase computational cost.
+        adjust_lr_fn: Optional learning rate adjustment function name. If provided,
+            applies dynamic learning rate scaling during training.
     """
 
     lr: float = 1e-3
