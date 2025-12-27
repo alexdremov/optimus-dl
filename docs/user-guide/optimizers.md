@@ -9,7 +9,7 @@ For a complete list of available optimizers and their configurations, see the [O
 While any PyTorch optimizer can be used, Optimus-DL provides convenient configs and wrappers for the following:
 
 - [`adamw`](../reference/modules/optim/adamw.md): The AdamW optimizer, a standard choice for training transformer models, with options for weight decay and other hyperparameters. It is the default optimizer for most training recipes.
-- [`muon`](../reference/modules/optim/muon.md): The Muon optimizer, a momentum-based optimizer from PyTorch with Newton-Schulz iterations for improved convergence.
+- [`muon`](../reference/modules/optim/muon.md): The Muon optimizer, a momentum-based optimizer with Newton-Schulz iterations for improved convergence.
 - [`soap`](../reference/modules/optim/soap.md): The SOAP (Shampoo with Adam in the Preconditioner subspace) optimizer, a second-order optimizer that uses Shampoo preconditioning combined with Adam updates for improved training efficiency.
 
 ## Optimizer Configuration
