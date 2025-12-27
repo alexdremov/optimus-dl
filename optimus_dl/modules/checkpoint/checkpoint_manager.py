@@ -265,7 +265,7 @@ class CheckpointManager:
     def load_checkpoint(
         self,
         checkpoint_path: str,
-        model: BaseModel,
+        model: BaseModel | None,
         optimizer: Optimizer | None,
         collective: Collective,
         lr_scheduler=None,
@@ -320,6 +320,8 @@ class CheckpointManager:
             state_dict["model"] = dcp_state_dict.get_model_state_dict(
                 model, options=dcp_state_dict.StateDictOptions()
             )
+        else:
+            optimizer = None
 
         if optimizer is not None:
             state_dict["optimizer"] = dcp_state_dict.get_optimizer_state_dict(
