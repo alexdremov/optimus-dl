@@ -47,7 +47,7 @@ class GPTConfig(RegistryConfigStrict):
     )
     dropout: float = field(default=0.0, metadata={"description": "Dropout probability"})
     bias: bool = field(
-        default=False,
+        default=True,
         metadata={"description": "Whether to use bias in linear layers and norms"},
     )
     tie_word_embeddings: bool = field(
