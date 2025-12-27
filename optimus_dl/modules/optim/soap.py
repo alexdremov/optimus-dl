@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from itertools import chain
 
 import torch
-import torch.optim
 import torch.optim as optim
 
 from optimus_dl.core.registry import RegistryConfigStrict
