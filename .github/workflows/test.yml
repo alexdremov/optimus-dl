@@ -54,16 +54,22 @@ jobs:
         run: ruff check --fix .
 
       - name: Commit back (if changed)
+        id: auto-commit
         uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: "style: auto-format (black + isort + ruff)"
           branch: ${{ github.head_ref }}
+      
+      - name: Fail if changes were committed
+        if: steps.auto-commit.outputs.changes_detected == 'true'
+        run: |
+          echo "::error::Code formatting changes were committed. A new workflow run will start automatically with the formatted code."
+          exit 1
 
   build_and_test:
-    # Run if format completed successfully OR was skipped
-    if: |
-      always() &&
-      (needs.format.result == 'success' || needs.format.result == 'skipped')
+    # Only run if format completed successfully (not skipped)
+    # This ensures external PRs without approval don't get a passing test check
+    if: needs.format.result == 'success'
     needs: format
     runs-on: ubuntu-latest
     # Allow tests to run for everyone, but they run in a read-only context
