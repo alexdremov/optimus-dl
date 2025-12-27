@@ -2,7 +2,7 @@ name: Python Test
 
 on:
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "dev" ]
     types: [opened, synchronize, reopened, labeled]
 
 # No global permissions - each job declares what it needs
