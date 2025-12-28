@@ -236,11 +236,11 @@ class FileReader:
 
             with tqdm(
                 total=total_rows,
-                desc=f"Reading {local_path.name}",
+                desc=f"Reading {local_path.name} (streaming)",
                 unit="row",
                 leave=False,
             ) as pbar:
-                for batch in parquet_file.iter_batches(columns=[self.text_column]):
+                for batch in parquet_file.iter_batches(columns=[self.text_column], batch_size=100):
                     # batch is a RecordBatch, convert to dict or pandas
                     # We can access columns directly as arrays
                     column_data = batch[self.text_column]
@@ -260,7 +260,7 @@ class FileReader:
             if self.text_column in df.columns:
                 for text in tqdm(
                     df[self.text_column],
-                    desc=f"Reading {local_path.name}",
+                    desc=f"Reading {local_path.name} (inefficient)",
                     unit="row",
                     leave=False,
                 ):
