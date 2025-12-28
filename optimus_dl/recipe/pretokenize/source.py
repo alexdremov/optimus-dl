@@ -236,7 +236,7 @@ class FileReader:
 
             with tqdm(
                 total=total_rows,
-                desc=f"Reading {local_path}",
+                desc=f"Reading {local_path.name}",
                 unit="row",
                 leave=False,
             ) as pbar:
@@ -260,7 +260,7 @@ class FileReader:
             if self.text_column in df.columns:
                 for text in tqdm(
                     df[self.text_column],
-                    desc=f"Reading {local_path}",
+                    desc=f"Reading {local_path.name}",
                     unit="row",
                     leave=False,
                 ):
@@ -272,7 +272,7 @@ class FileReader:
         file_size = local_path.stat().st_size
         with tqdm(
             total=file_size,
-            desc=f"Reading {local_path}",
+            desc=f"Reading {local_path.name}",
             unit="B",
             unit_scale=True,
             leave=False,
