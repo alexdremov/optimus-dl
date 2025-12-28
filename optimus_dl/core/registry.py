@@ -24,8 +24,8 @@ Example:
     ```
 """
 
-import functools
 from dataclasses import dataclass
+import functools
 from typing import Any, TypeVar, overload
 
 import omegaconf

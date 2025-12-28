@@ -21,7 +21,7 @@ jobs:
       github.event.pull_request.author_association == 'MEMBER' ||
       github.event.pull_request.author_association == 'COLLABORATOR' ||
       contains(github.event.pull_request.labels.*.name, 'safe-to-test')
-    
+
     permissions:
       contents: write  # Only this job needs write access to commit formatting changes
       pull-requests: write  # Needed to update PR
@@ -32,8 +32,7 @@ jobs:
           # On pull_request events, checkout the PR branch (not a detached merge ref)
           ref: ${{ github.head_ref }}
           fetch-depth: 0
-          # Use a token with limited scope for safer operations
-          persist-credentials: true
+          token: ${{ secrets.PAT }}
 
       - uses: actions/setup-python@v5
         with:
@@ -59,7 +58,7 @@ jobs:
         with:
           commit_message: "style: auto-format (black + isort + ruff)"
           branch: ${{ github.head_ref }}
-      
+
       - name: Fail if changes were committed
         if: steps.auto-commit.outputs.changes_detected == 'true'
         run: |
@@ -73,7 +72,7 @@ jobs:
     needs: format
     runs-on: ubuntu-latest
     # Allow tests to run for everyone, but they run in a read-only context
-    
+
     permissions:
       contents: read  # Only read access needed for tests
 
