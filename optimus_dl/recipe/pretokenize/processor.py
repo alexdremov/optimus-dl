@@ -246,7 +246,7 @@ class TokenProcessor:
             self.pool = ctx.Pool(
                 self.num_proc,
                 initializer=_init_worker_context,
-                initargs=(self.tokenizer_config),
+                initargs=(self.tokenizer_config,),
             )
             logger.info(f"Initialized processing pool with {self.num_proc} workers.")
 
