@@ -188,7 +188,7 @@ class CheckpointManager:
                 **kwargs,
             )
             start_iteration = metadata["iteration"] + 1
-            logger.info(f"Starting with iteration {start_iteration}")
+            logger.info(f"Starting with iteration = {start_iteration}")
             return start_iteration, metadata
         except Exception as e:
             logger.warning(f"Failed to load checkpoint: {e}")

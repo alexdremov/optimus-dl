@@ -14,7 +14,10 @@ from omegaconf import (
     MISSING,
 )
 
-from optimus_dl.core.registry import RegistryConfig
+from optimus_dl.core.registry import (
+    RegistryConfig,
+    RegistryConfigStrict,
+)
 from optimus_dl.modules.checkpoint import (
     CheckpointManagerConfig,
     LoadStrategy,
@@ -109,7 +112,7 @@ class TrainRecipeConfig:
 
 
 @dataclass
-class TrainConfig(RegistryConfig):
+class TrainConfig(RegistryConfigStrict):
     """Complete training configuration.
 
     This is the root configuration class for training. It contains all component

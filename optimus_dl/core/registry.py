@@ -25,6 +25,7 @@ Example:
 """
 
 import functools
+import logging
 from dataclasses import dataclass
 from typing import (
     Any,
@@ -35,6 +36,7 @@ from typing import (
 import omegaconf
 
 # Global registry storage: maps registry_name -> {component_name -> (class, config_class)}
+logger = logging.getLogger(__name__)
 registries = {}
 
 
@@ -53,25 +55,19 @@ class RegistryConfigStrict:
 
 
 @dataclass
-class RegistryConfig(RegistryConfigStrict, dict[str, Any]):
-    """Flexible configuration class for registry components.
+class RegistryConfig(dict[str, Any]):
+    """Flexible configuration base class for registry components.
 
     This extends RegistryConfigStrict to allow arbitrary additional fields
     via dictionary inheritance. Use this when you need custom configuration
-    parameters beyond static fields.
+    parameters beyond static fields or for dynamic configurations.
 
     Attributes:
         _name: The registered name of the component to instantiate.
         extra_fields: Additional fields can be added as dictionary keys.
+    """
 
-    Example:
-        ```python
-        config = RegistryConfig(_name="my_model", n_layers=12, hidden_size=768)
-        config["n_layers"]  # 12
-
-        ```"""
-
-    ...
+    _name: str | None = None
 
 
 C = TypeVar("C", bound=type)
@@ -83,6 +79,29 @@ CorrectCfg = (
     | omegaconf.ListConfig
     | dict
 )
+
+
+def _get_cfg_path(cfg: CorrectCfg) -> list[str] | None:
+    """Get the path of the configuration object."""
+    if (
+        not omegaconf.OmegaConf.is_config(cfg)
+        or not hasattr(cfg, "_metadata")
+        or not hasattr(cfg, "_parent")
+    ):
+        return None
+
+    path = []
+    cfg_met = []
+    while cfg is not None and cfg._metadata.key is not None:
+        path.append(str(cfg._metadata.key))
+
+        if cfg in cfg_met:
+            logger.error(f"Circular reference detected in config: {'.'.join(path)}")
+            return None
+
+        cfg_met.append(cfg)
+        cfg = cfg._parent
+    return path[::-1]
 
 
 def make_registry(registry_name: str, base_class: type | type[Any] | None = None):
@@ -287,19 +306,39 @@ def make_registry(registry_name: str, base_class: type | type[Any] | None = None
             ```"""
         if cfg is None:
             return None
+        cfg_orig = cfg
         if isinstance(cfg, str):
             name: str = cfg
+            cfg = {}
         else:
             if not omegaconf.OmegaConf.is_config(cfg):
                 cfg = omegaconf.OmegaConf.structured(cfg)
             name: str = cfg["_name"]
         assert name in registry, f"Unknown {name} in {registry_name} registry"
         registered_class, structured_cfg = registry[name]
+        structured_cfg_original = structured_cfg
+        is_strict = False
         if type(structured_cfg) is type:
+            is_strict = issubclass(structured_cfg, RegistryConfigStrict)
             structured_cfg = omegaconf.OmegaConf.merge(
                 omegaconf.OmegaConf.structured(structured_cfg), structured_cfg()
             )
         if structured_cfg is not None:
+            if is_strict:
+                expected_keys = set(structured_cfg.keys())
+                try:
+                    actual_keys = set(cfg.keys())
+                except AttributeError as e:
+                    raise ValueError(
+                        f"Cannot get true keys for config {type(cfg)}: {cfg}"
+                    ) from e
+
+                maybe_path = ".".join(_get_cfg_path(cfg_orig) or ["<root>"])
+                assert actual_keys.issubset(expected_keys), (
+                    f"For {maybe_path} {structured_cfg_original} expected keys {expected_keys}, "
+                    f"got {actual_keys},\n"
+                    f"diff: {actual_keys - expected_keys}"
+                )
             cfg = omegaconf.OmegaConf.merge(
                 structured_cfg, omegaconf.OmegaConf.to_container(cfg=cfg, resolve=True)
             )
