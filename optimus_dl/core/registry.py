@@ -326,15 +326,12 @@ def make_registry(registry_name: str, base_class: type | type[Any] | None = None
         if structured_cfg is not None:
             if is_strict:
                 expected_keys = set(structured_cfg.keys())
-                if isinstance(cfg, dict) or isinstance(cfg, omegaconf.DictConfig):
+                try:
                     actual_keys = set(cfg.keys())
-                else:
-                    try:
-                        actual_keys = set(cfg.keys())
-                    except AttributeError as e:
-                        raise ValueError(
-                            f"Cannot get true keys for config {type(cfg)}: {cfg}"
-                        ) from e
+                except AttributeError as e:
+                    raise ValueError(
+                        f"Cannot get true keys for config {type(cfg)}: {cfg}"
+                    ) from e
 
                 maybe_path = ".".join(_get_cfg_path(cfg_orig) or ["<root>"])
                 assert actual_keys.issubset(expected_keys), (
