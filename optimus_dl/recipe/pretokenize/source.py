@@ -217,6 +217,8 @@ class FileReader:
             repo_type="dataset",
             cache_dir=self.dataset_config.cache_dir,
         )
+        local_path = Path(local_path)
+        assert local_path.exists(), f"File not found: {local_path}"
 
         if file_path.endswith(".parquet"):
             yield from self._read_parquet(local_path)
@@ -234,7 +236,7 @@ class FileReader:
 
             with tqdm(
                 total=total_rows,
-                desc=f"Reading {local_path.name}",
+                desc=f"Reading {local_path}",
                 unit="row",
                 leave=False,
             ) as pbar:
