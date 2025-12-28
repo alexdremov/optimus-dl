@@ -9,6 +9,8 @@ import time
 from collections.abc import Generator
 from typing import Any
 
+from tqdm import tqdm
+
 from optimus_dl.core.registry import build
 
 from .config import DataPrepConfig
@@ -31,7 +33,7 @@ def _tokenize_file_worker(args: tuple) -> list[list[int]]:
     tokenized_docs = []
     logger.info(f"Worker: Starting processing of {file_path}")
     start_time = time.time()
-
+    
     try:
         tokenizer = build("tokenizer", tokenizer_cfg)
         file_reader = FileReader(proc_cfg, dataset_cfg)
@@ -43,12 +45,10 @@ def _tokenize_file_worker(args: tuple) -> list[list[int]]:
                 tokenized_docs.append(tokens)
                 doc_count += 1
                 if doc_count % 1000 == 0:
-                    logger.debug(f"Worker: Processed {doc_count} docs in {file_path}")
+                     logger.debug(f"Worker: Processed {doc_count} docs in {file_path}")
 
         elapsed = time.time() - start_time
-        logger.info(
-            f"Worker: Finished {file_path}. Extracted {len(tokenized_docs)} docs in {elapsed:.2f}s."
-        )
+        logger.info(f"Worker: Finished {file_path}. Extracted {len(tokenized_docs)} docs in {elapsed:.2f}s.")
 
     except Exception as e:
         logger.error(f"Error processing {file_path}: {e}", exc_info=True)
@@ -93,7 +93,7 @@ class TokenProcessor:
 
     def get_state(self) -> dict[str, Any]:
         """Returns the current state for checkpointing.
-
+        
         We save enough state to recompute the current block upon resumption.
         """
         return {
@@ -111,7 +111,7 @@ class TokenProcessor:
         self.block_rng_state = state.get("block_rng_state")
         self.docs_yielded_in_block = state.get("docs_yielded_in_block", 0)
         self.total_docs_yielded = state.get("total_docs_yielded", 0)
-
+        
         self._file_stream = None  # Force re-initialization
 
     def __iter__(self) -> Generator[list[int], None, None]:
@@ -143,18 +143,18 @@ class TokenProcessor:
             # Rewind file index to the start of the block
             self.file_idx = self.block_start_file_idx
             self._reset_file_stream()
-
+            
             # Re-fetch buffer
             buffer = self._fill_buffer()
-
+            
             # Restore RNG state
             if self.block_rng_state:
                 random.setstate(self.block_rng_state)
-
+            
             # Shuffle and skip
             random.shuffle(buffer)
             yield from self._yield_from_buffer(buffer, skip=self.docs_yielded_in_block)
-
+            
             # Reset resumption flag for subsequent blocks
             self.docs_yielded_in_block = 0
         else:
@@ -170,7 +170,7 @@ class TokenProcessor:
             # Save RNG state for this block
             self.block_rng_state = random.getstate()
             random.shuffle(buffer)
-
+            
             self.docs_yielded_in_block = 0
             yield from self._yield_from_buffer(buffer)
 
@@ -178,35 +178,26 @@ class TokenProcessor:
         """Consumes files from the stream until the buffer is full."""
         buffer = []
         target_size = self.processing_config.shuffle_buffer_size
-
-        logger.info(f"Filling shuffle buffer (target: {target_size} docs)...")
-        last_log_size = 0
-
-        while len(buffer) < target_size and self.file_idx < len(self.files):
-            try:
-                # Get documents from the next file in the stream
-                file_docs = next(self._file_stream)
-                self.file_idx += 1
-                if file_docs:
-                    buffer.extend(file_docs)
-
-                # Log progress if buffer grew significantly (e.g., every 10% or at least 1000 docs)
-                if len(buffer) - last_log_size >= max(1000, target_size // 10):
-                    logger.info(f"Buffer fill progress: {len(buffer)}/{target_size}")
-                    last_log_size = len(buffer)
-
-            except StopIteration:
-                break
-            except Exception as e:
-                logger.error(f"Error reading file stream: {e}")
-                self.file_idx += 1  # Skip file on error
-
-        logger.info(f"Shuffle buffer filled with {len(buffer)} docs.")
+        
+        with tqdm(total=target_size, desc="Refilling Buffer", unit="doc", leave=False) as pbar:
+            while len(buffer) < target_size and self.file_idx < len(self.files):
+                try:
+                    # Get documents from the next file in the stream
+                    file_docs = next(self._file_stream)
+                    self.file_idx += 1
+                    if file_docs:
+                        doc_count = len(file_docs)
+                        buffer.extend(file_docs)
+                        pbar.update(doc_count)
+                except StopIteration:
+                    break
+                except Exception as e:
+                    logger.error(f"Error reading file stream: {e}")
+                    self.file_idx += 1  # Skip file on error
+        
         return buffer
 
-    def _yield_from_buffer(
-        self, buffer: list[list[int]], skip: int = 0
-    ) -> Generator[list[int], None, None]:
+    def _yield_from_buffer(self, buffer: list[list[int]], skip: int = 0) -> Generator[list[int], None, None]:
         """Yields items from the buffer, updating state counters.
 
         Args:
@@ -216,7 +207,7 @@ class TokenProcessor:
         # Fast-forward: remove 'skip' items from the end (since pop() takes from end)
         if skip > 0:
             del buffer[len(buffer) - skip :]
-
+        
         while buffer:
             self.docs_yielded_in_block += 1
             self.total_docs_yielded += 1

@@ -121,10 +121,12 @@ class FileFinder:
 
         # Extract YAML front matter
         if not content.startswith("---"):
+            logger.warning(f"README.md does not contain YAML front matter (content.startswith('---')).")
             return None
 
         parts = content.split("---")
         if len(parts) < 3:
+            logger.warning(f"README.md does not contain valid YAML front matter (content.split('---')).")
             return None
 
         yaml_content = parts[1]
@@ -135,6 +137,7 @@ class FileFinder:
             return None
 
         if not isinstance(metadata, dict) or "configs" not in metadata:
+            logger.warning(f"Invalid metadata format in README.md: {metadata}")
             return None
 
         split_info = next(
@@ -147,6 +150,7 @@ class FileFinder:
         )
 
         if not split_info:
+            logger.warning(f"No split info found in README.md {self.config.config_name = }, {metadata["configs"] = }")
             return None
 
         patterns = [
