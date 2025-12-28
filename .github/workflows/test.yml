@@ -73,6 +73,9 @@ jobs:
     runs-on: ubuntu-latest
     # Allow tests to run for everyone, but they run in a read-only context
 
+    env:
+      UV_CACHE_DIR: /tmp/.uv-cache
+
     permissions:
       contents: read  # Only read access needed for tests
 
@@ -118,22 +121,28 @@ jobs:
       with:
         python-version: '3.12'
 
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+
     - uses: actions/cache@v5.0.1
       with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+        path: /tmp/.uv-cache
+        key: ${{ runner.os }}-uv-${{ hashFiles('pyproject.toml') }}
         restore-keys: |
-          ${{ runner.os }}-pip-
+          ${{ runner.os }}-uv-
 
-    - name: Install build
-      run: pip install .[dev] --cache-dir ~/.cache/pip
+    - name: Install the project
+      run: uv sync --extra dev
 
     - name: Check style
       run: |
-        ruff check .
-        black --check .
-        isort --check-only .
+        (rm optimus_dl/_version.py && touch optimus_dl/_version.py) || true  # just in case
+        uv run ruff check .
+        uv run black --check .
+        uv run isort --check-only --skip-gitignore .
 
     - name: Test with pytest
       run: |
-        pytest -n auto
+        uv run pytest -n auto
