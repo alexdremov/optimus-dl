@@ -121,6 +121,14 @@ class Sharder:
 
         shard_name = f"{self.output_name}_{self.shard_idx:010d}.npy"
         shard_path = self.output_dir / shard_name
+
+        num_tokens_in_shard = len(self.current_shard_tokens)
+        num_docs_in_shard = len(self.current_shard_doc_lens)
+
+        logger.info(
+            f"Saving shard {shard_name} ({num_tokens_in_shard:,} tokens, {num_docs_in_shard:,} docs)..."
+        )
+
         token_arr = np.array(self.current_shard_tokens, dtype=self.dtype)
         np.save(shard_path, token_arr)
 
@@ -128,9 +136,6 @@ class Sharder:
         lens_path = self.output_dir / lens_name
         lens_arr = np.array(self.current_shard_doc_lens, dtype=np.uint32)
         np.save(lens_path, lens_arr)
-
-        num_tokens_in_shard = len(token_arr)
-        num_docs_in_shard = len(lens_arr)
 
         metadata = {
             "file": shard_name,
@@ -142,9 +147,7 @@ class Sharder:
         self.file_metadata.append(metadata)
         self.total_tokens += num_tokens_in_shard
 
-        logger.debug(
-            f"Saved shard {shard_name} ({num_tokens_in_shard} tokens, {num_docs_in_shard} docs)"
-        )
+        logger.debug(f"Saved shard {shard_name} to disk.")
 
         # Reset current shard state
         self.shard_idx += 1

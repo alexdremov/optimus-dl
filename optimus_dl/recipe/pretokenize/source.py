@@ -52,14 +52,8 @@ class FileFinder:
         logger.info(
             f"Listing files for {self.config.repo_id} split={self.config.split}"
         )
-        try:
-            all_files = list_repo_files(
-                repo_id=self.config.repo_id, repo_type="dataset"
-            )
-            logger.info(f"Found {len(all_files)} files before filtering.")
-        except Exception as e:
-            logger.error(f"Could not list files for repo {self.config.repo_id}: {e}")
-            return []
+        all_files = list_repo_files(repo_id=self.config.repo_id, repo_type="dataset")
+        logger.info(f"Found {len(all_files)} files before filtering.")
 
         if self.config.file_pattern is not None:
             logger.info(f"Filtering files based on pattern: {self.config.file_pattern}")
@@ -217,16 +211,12 @@ class FileReader:
         Yields:
             String content of each document found in the file.
         """
-        try:
-            local_path = hf_hub_download(
-                repo_id=self.dataset_config.repo_id,
-                filename=file_path,
-                repo_type="dataset",
-                cache_dir=self.dataset_config.cache_dir,
-            )
-        except Exception as e:
-            logger.error(f"Failed to download {file_path}: {e}")
-            return
+        local_path = hf_hub_download(
+            repo_id=self.dataset_config.repo_id,
+            filename=file_path,
+            repo_type="dataset",
+            cache_dir=self.dataset_config.cache_dir,
+        )
 
         if file_path.endswith(".parquet"):
             yield from self._read_parquet(local_path)
@@ -264,21 +254,16 @@ class FileReader:
             logger.warning(
                 "PyArrow not available, falling back to non-streaming pandas read."
             )
-            try:
-                df = pd.read_parquet(local_path)
-                if self.text_column in df.columns:
-                    for text in tqdm(
-                        df[self.text_column],
-                        desc=f"Reading {local_path.name}",
-                        unit="row",
-                        leave=False,
-                    ):
-                        if isinstance(text, str) and text:
-                            yield text
-            except Exception as e:
-                logger.warning(f"Could not read Parquet file {local_path}: {e}")
-        except Exception as e:
-            logger.warning(f"Could not read Parquet file {local_path} streamingly: {e}")
+            df = pd.read_parquet(local_path)
+            if self.text_column in df.columns:
+                for text in tqdm(
+                    df[self.text_column],
+                    desc=f"Reading {local_path.name}",
+                    unit="row",
+                    leave=False,
+                ):
+                    if isinstance(text, str) and text:
+                        yield text
 
     def _read_jsonl(self, local_path: Path) -> Generator[str, None, None]:
         """Reads texts from a JSONL file."""
@@ -293,10 +278,7 @@ class FileReader:
             with open(local_path, encoding="utf-8") as f:
                 for line in f:
                     pbar.update(len(line))
-                    try:
-                        item = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
+                    item = json.loads(line)
 
                     if isinstance(item, dict):
                         text = item.get(self.text_column, "")

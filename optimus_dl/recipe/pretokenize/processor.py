@@ -34,26 +34,22 @@ def _tokenize_file_worker(args: tuple) -> list[list[int]]:
     logger.info(f"Worker: Starting processing of {file_path}")
     start_time = time.time()
 
-    try:
-        tokenizer = build("tokenizer", tokenizer_cfg)
-        file_reader = FileReader(proc_cfg, dataset_cfg)
+    tokenizer = build("tokenizer", tokenizer_cfg)
+    file_reader = FileReader(proc_cfg, dataset_cfg)
 
-        doc_count = 0
-        for text in file_reader.read_texts(file_path):
-            tokens = tokenizer.encode(text)
-            if tokens:
-                tokenized_docs.append(tokens)
-                doc_count += 1
-                if doc_count % 1000 == 0:
-                    logger.debug(f"Worker: Processed {doc_count} docs in {file_path}")
+    doc_count = 0
+    for text in file_reader.read_texts(file_path):
+        tokens = tokenizer.encode(text)
+        if tokens:
+            tokenized_docs.append(tokens)
+            doc_count += 1
+            if doc_count % 1000 == 0:
+                logger.debug(f"Worker: Processed {doc_count} docs in {file_path}")
 
-        elapsed = time.time() - start_time
-        logger.info(
-            f"Worker: Finished {file_path}. Extracted {len(tokenized_docs)} docs in {elapsed:.2f}s."
-        )
-
-    except Exception as e:
-        logger.error(f"Error processing {file_path}: {e}", exc_info=True)
+    elapsed = time.time() - start_time
+    logger.info(
+        f"Worker: Finished {file_path}. Extracted {len(tokenized_docs)} docs in {elapsed:.2f}s."
+    )
 
     return tokenized_docs
 
@@ -185,19 +181,13 @@ class TokenProcessor:
             total=target_size, desc="Refilling Buffer", unit="doc", leave=False
         ) as pbar:
             while len(buffer) < target_size and self.file_idx < len(self.files):
-                try:
-                    # Get documents from the next file in the stream
-                    file_docs = next(self._file_stream)
-                    self.file_idx += 1
-                    if file_docs:
-                        doc_count = len(file_docs)
-                        buffer.extend(file_docs)
-                        pbar.update(doc_count)
-                except StopIteration:
-                    break
-                except Exception as e:
-                    logger.error(f"Error reading file stream: {e}")
-                    self.file_idx += 1  # Skip file on error
+                # Get documents from the next file in the stream
+                file_docs = next(self._file_stream)
+                self.file_idx += 1
+                if file_docs:
+                    doc_count = len(file_docs)
+                    buffer.extend(file_docs)
+                    pbar.update(doc_count)
 
         return buffer
 
