@@ -5,6 +5,7 @@ Handles the tokenization of source files, including parallel processing and resu
 import logging
 import multiprocessing
 import random
+import time
 from collections.abc import Generator
 from typing import Any
 
@@ -28,14 +29,26 @@ def _tokenize_file_worker(args: tuple) -> list[list[int]]:
     """
     file_path, tokenizer_cfg, dataset_cfg, proc_cfg = args
     tokenized_docs = []
+    logger.info(f"Worker: Starting processing of {file_path}")
+    start_time = time.time()
+
     try:
         tokenizer = build("tokenizer", tokenizer_cfg)
         file_reader = FileReader(proc_cfg, dataset_cfg)
 
+        doc_count = 0
         for text in file_reader.read_texts(file_path):
             tokens = tokenizer.encode(text)
             if tokens:
                 tokenized_docs.append(tokens)
+                doc_count += 1
+                if doc_count % 1000 == 0:
+                    logger.debug(f"Worker: Processed {doc_count} docs in {file_path}")
+
+        elapsed = time.time() - start_time
+        logger.info(
+            f"Worker: Finished {file_path}. Extracted {len(tokenized_docs)} docs in {elapsed:.2f}s."
+        )
 
     except Exception as e:
         logger.error(f"Error processing {file_path}: {e}", exc_info=True)
@@ -51,7 +64,7 @@ class TokenProcessor:
     - **Parallelism**: Uses multiprocessing to speed up tokenization.
     - **Buffering**: Accumulates a buffer of documents for local shuffling.
     - **Resumability**: Tracks file progress and buffer state to allow
-      checkpointing and resuming after interruptions.
+      checkpointing and resuming after interruptions without saving the full buffer.
 
     Args:
         files: List of file paths to process.
@@ -67,35 +80,168 @@ class TokenProcessor:
 
         # State
         self.file_idx = 0
-        self.buffer: list[list[int]] = []
-        self.rng_state = random.getstate()
+        self.total_docs_yielded = 0
 
-        # Multiprocessing
+        # Resumption state (Block-based)
+        self.block_start_file_idx = 0
+        self.block_rng_state = None
+        self.docs_yielded_in_block = 0
+
+        # Internal stream state
         self.pool: multiprocessing.Pool | None = None
-        self._iterator: Generator | None = None
+        self._file_stream: Generator | None = None
 
     def get_state(self) -> dict[str, Any]:
-        """Returns the current state for checkpointing."""
+        """Returns the current state for checkpointing.
+
+        We save enough state to recompute the current block upon resumption.
+        """
         return {
             "file_idx": self.file_idx,
-            "buffer": self.buffer,
-            "rng_state": random.getstate(),
+            "block_start_file_idx": self.block_start_file_idx,
+            "block_rng_state": self.block_rng_state,
+            "docs_yielded_in_block": self.docs_yielded_in_block,
+            "total_docs_yielded": self.total_docs_yielded,
         }
 
     def load_state(self, state: dict[str, Any]):
         """Restores the state from a checkpoint."""
         self.file_idx = state.get("file_idx", 0)
-        self.buffer = state.get("buffer", [])
-        rng_state = state.get("rng_state")
-        if rng_state:
-            random.setstate(rng_state)
-        self._iterator = None  # Force re-initialization of the iterator
+        self.block_start_file_idx = state.get("block_start_file_idx", 0)
+        self.block_rng_state = state.get("block_rng_state")
+        self.docs_yielded_in_block = state.get("docs_yielded_in_block", 0)
+        self.total_docs_yielded = state.get("total_docs_yielded", 0)
 
-    def _init_iterator(self):
-        """Initializes the file iterator (parallel or sequential)."""
+        self._file_stream = None  # Force re-initialization
+
+    def __iter__(self) -> Generator[list[int], None, None]:
+        """Yields tokenized documents, handling buffering, shuffling, and resumption."""
+        self._start_pool()
+        try:
+            # 1. Handle Resumption if needed (partial block)
+            if self.docs_yielded_in_block > 0:
+                yield from self._process_block(resume=True)
+
+            # 2. Main Processing Loop (new blocks)
+            while self.file_idx < len(self.files):
+                yield from self._process_block(resume=False)
+
+        finally:
+            self._stop_pool()
+
+    def _process_block(self, resume: bool) -> Generator[list[int], None, None]:
+        """Generates, shuffles, and yields a block of documents.
+
+        Args:
+            resume: If True, reconstructs the previous block and fast-forwards.
+        """
+        if resume:
+            logger.info(
+                f"Resuming block from file_idx {self.block_start_file_idx}, "
+                f"skipping {self.docs_yielded_in_block} documents."
+            )
+            # Rewind file index to the start of the block
+            self.file_idx = self.block_start_file_idx
+            self._reset_file_stream()
+
+            # Re-fetch buffer
+            buffer = self._fill_buffer()
+
+            # Restore RNG state
+            if self.block_rng_state:
+                random.setstate(self.block_rng_state)
+
+            # Shuffle and skip
+            random.shuffle(buffer)
+            yield from self._yield_from_buffer(buffer, skip=self.docs_yielded_in_block)
+
+            # Reset resumption flag for subsequent blocks
+            self.docs_yielded_in_block = 0
+        else:
+            # Record start of a new block
+            self.block_start_file_idx = self.file_idx
+            if self._file_stream is None:
+                self._reset_file_stream()
+
+            buffer = self._fill_buffer()
+            if not buffer:
+                return
+
+            # Save RNG state for this block
+            self.block_rng_state = random.getstate()
+            random.shuffle(buffer)
+
+            self.docs_yielded_in_block = 0
+            yield from self._yield_from_buffer(buffer)
+
+    def _fill_buffer(self) -> list[list[int]]:
+        """Consumes files from the stream until the buffer is full."""
+        buffer = []
+        target_size = self.processing_config.shuffle_buffer_size
+
+        logger.info(f"Filling shuffle buffer (target: {target_size} docs)...")
+        last_log_size = 0
+
+        while len(buffer) < target_size and self.file_idx < len(self.files):
+            try:
+                # Get documents from the next file in the stream
+                file_docs = next(self._file_stream)
+                self.file_idx += 1
+                if file_docs:
+                    buffer.extend(file_docs)
+
+                # Log progress if buffer grew significantly (e.g., every 10% or at least 1000 docs)
+                if len(buffer) - last_log_size >= max(1000, target_size // 10):
+                    logger.info(f"Buffer fill progress: {len(buffer)}/{target_size}")
+                    last_log_size = len(buffer)
+
+            except StopIteration:
+                break
+            except Exception as e:
+                logger.error(f"Error reading file stream: {e}")
+                self.file_idx += 1  # Skip file on error
+
+        logger.info(f"Shuffle buffer filled with {len(buffer)} docs.")
+        return buffer
+
+    def _yield_from_buffer(
+        self, buffer: list[list[int]], skip: int = 0
+    ) -> Generator[list[int], None, None]:
+        """Yields items from the buffer, updating state counters.
+
+        Args:
+            buffer: List of documents.
+            skip: Number of documents to skip (already yielded).
+        """
+        # Fast-forward: remove 'skip' items from the end (since pop() takes from end)
+        if skip > 0:
+            del buffer[len(buffer) - skip :]
+
+        while buffer:
+            self.docs_yielded_in_block += 1
+            self.total_docs_yielded += 1
+            yield buffer.pop()
+
+    def _start_pool(self):
+        """Initializes the multiprocessing pool if needed."""
+        if self.num_proc > 1 and self.pool is None:
+            ctx = multiprocessing.get_context("spawn")
+            self.pool = ctx.Pool(self.num_proc)
+            logger.info(f"Initialized processing pool with {self.num_proc} workers.")
+
+    def _stop_pool(self):
+        """Closes the multiprocessing pool."""
+        if self.pool:
+            self.pool.close()
+            self.pool.join()
+            self.pool = None
+            self._file_stream = None
+
+    def _reset_file_stream(self):
+        """Creates a new iterator over the files starting from self.file_idx."""
         files_to_process = self.files[self.file_idx :]
         if not files_to_process:
-            self._iterator = iter([])
+            self._file_stream = iter([])
             return
 
         args_gen = (
@@ -103,69 +249,10 @@ class TokenProcessor:
             for f in files_to_process
         )
 
-        if self.num_proc > 1:
-            if self.pool is None:
-                ctx = multiprocessing.get_context("spawn")
-                self.pool = ctx.Pool(self.num_proc)
-                logger.info(
-                    f"Initialized processing pool with {self.num_proc} workers."
-                )
-            self._iterator = self.pool.imap(_tokenize_file_worker, args_gen)
+        if self.pool:
+            self._file_stream = self.pool.imap(_tokenize_file_worker, args_gen)
         else:
-            self._iterator = map(_tokenize_file_worker, args_gen)
-
-    def _fill_buffer(self):
-        """Refills the internal token buffer by consuming from the iterator."""
-        if self._iterator is None:
-            self._init_iterator()
-
-        target_size = self.processing_config.shuffle_buffer_size
-        while len(self.buffer) < target_size:
-            try:
-                # The iterator yields a list of documents from one file
-                file_docs = next(self._iterator)
-                if file_docs:
-                    self.buffer.extend(file_docs)
-                self.file_idx += 1
-            except StopIteration:
-                # Iterator is exhausted
-                break
-            except Exception as e:
-                logger.error(f"Error during file processing iteration: {e}")
-                self.file_idx += 1  # Skip the problematic file
-
-    def __iter__(self) -> Generator[list[int], None, None]:
-        """Yields tokenized documents, handling buffering and shuffling."""
-        try:
-            # Yield documents already in the buffer from a previous run
-            while self.buffer:
-                yield self.buffer.pop(0)
-
-            while self.file_idx < len(self.files):
-                self._fill_buffer()
-                if not self.buffer:
-                    break
-
-                random.shuffle(self.buffer)
-
-                # Yield a portion of the buffer to avoid holding too much in memory
-                # while still allowing for good shuffling.
-                yield_count = (
-                    len(self.buffer)
-                    if self.file_idx >= len(self.files)
-                    else max(1, len(self.buffer) // 2)
-                )
-
-                for _ in range(yield_count):
-                    if self.buffer:
-                        yield self.buffer.pop()
-                    else:
-                        break  # Buffer might be empty if yield_count was > len
-        finally:
-            if self.pool:
-                self.pool.close()
-                self.pool.join()
-                self.pool = None
+            self._file_stream = map(_tokenize_file_worker, args_gen)
 
     @property
     def progress(self) -> int:
