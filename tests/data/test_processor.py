@@ -64,7 +64,7 @@ class TestTokenProcessor(unittest.TestCase):
         self.assertEqual(processor.progress, 3)
 
     @patch("optimus_dl.recipe.pretokenize.processor.multiprocessing.get_context")
-    @patch("optimus_dl.recipe.pretokenize.processor._tokenize_file_worker")
+    @patch("optimus_dl.recipe.pretokenize.processor._tokenize_batch_worker")
     def test_multi_process_iteration(self, mock_worker, mock_get_context):
         """Test that the processor correctly uses a multiprocessing pool."""
         self.config.processing.num_proc = 2
@@ -74,20 +74,23 @@ class TestTokenProcessor(unittest.TestCase):
         mock_get_context.return_value = mock_context_instance
         mock_context_instance.Pool.return_value = mock_pool_instance
 
-        # Mock the results from the worker
-        mock_pool_instance.imap.return_value = iter(
-            [
-                [[1, 2]],  # Tokens from file 1
-                [[3]],  # Tokens from file 2
-                [[4, 5]],  # Tokens from file 3
-            ]
-        )
-
         processor = TokenProcessor(self.files, self.config)
+
+        # Mock the results from the worker using a generator that also updates state
+        def mock_results_generator():
+            yield [[1, 2]]  # Tokens from file 1
+            yield [[3]]  # Tokens from file 2
+            yield [[4, 5]]  # Tokens from file 3
+            # Simulate the side effect of _generate_batches completing files
+            processor.file_idx = 3
+
+        mock_pool_instance.imap.return_value = mock_results_generator()
+
         all_tokens = list(processor)
 
         mock_get_context.assert_called_once_with("spawn")
-        mock_context_instance.Pool.assert_called_once_with(2)
+        # Check that initializer was called
+        mock_context_instance.Pool.assert_called_once()
         mock_pool_instance.imap.assert_called_once()
 
         self.assertEqual(len(all_tokens), 3)

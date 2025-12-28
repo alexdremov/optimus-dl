@@ -3,6 +3,7 @@
 import fnmatch
 import json
 import logging
+import os
 import random
 from collections.abc import Generator
 from pathlib import Path
@@ -227,6 +228,8 @@ class FileReader:
 
     def _read_parquet(self, local_path: Path) -> Generator[str, None, None]:
         """Reads texts from a Parquet file using streaming."""
+        position = int(os.environ.get("TQDM_POSITION") or 0)
+        os.environ["TQDM_POSITION"] = str(position + 1)
         try:
             import pyarrow.parquet as pq
 
@@ -239,8 +242,11 @@ class FileReader:
                 desc=f"Reading {local_path.name} (streaming)",
                 unit="row",
                 leave=False,
+                position=position,
             ) as pbar:
-                for batch in parquet_file.iter_batches(columns=[self.text_column], batch_size=100):
+                for batch in parquet_file.iter_batches(
+                    columns=[self.text_column], batch_size=100
+                ):
                     # batch is a RecordBatch, convert to dict or pandas
                     # We can access columns directly as arrays
                     column_data = batch[self.text_column]
@@ -263,6 +269,7 @@ class FileReader:
                     desc=f"Reading {local_path.name} (inefficient)",
                     unit="row",
                     leave=False,
+                    position=position,
                 ):
                     if isinstance(text, str) and text:
                         yield text
@@ -270,12 +277,17 @@ class FileReader:
     def _read_jsonl(self, local_path: Path) -> Generator[str, None, None]:
         """Reads texts from a JSONL file."""
         file_size = local_path.stat().st_size
+
+        position = int(os.environ.get("TQDM_POSITION") or 0)
+        os.environ["TQDM_POSITION"] = str(position + 1)
+
         with tqdm(
             total=file_size,
             desc=f"Reading {local_path.name}",
             unit="B",
             unit_scale=True,
             leave=False,
+            position=position,
         ) as pbar:
             with open(local_path, encoding="utf-8") as f:
                 for line in f:

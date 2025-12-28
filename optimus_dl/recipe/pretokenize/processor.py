@@ -5,7 +5,6 @@ Handles the tokenization of source files, including parallel processing and resu
 import logging
 import multiprocessing
 import random
-import time
 from collections.abc import Generator
 from typing import Any
 
@@ -18,38 +17,45 @@ from .source import FileReader
 
 logger = logging.getLogger(__name__)
 
+# Global variable to cache the tokenizer in worker processes
+_worker_tokenizer = None
 
-def _tokenize_file_worker(args: tuple) -> list[list[int]]:
+
+def _init_worker_tokenizer(tokenizer_cfg):
+    """Initializes the tokenizer in the worker process."""
+    global _worker_tokenizer
+    try:
+        _worker_tokenizer = build("tokenizer", tokenizer_cfg)
+    except Exception as e:
+        logger.error(f"Failed to initialize tokenizer in worker: {e}", exc_info=True)
+        raise
+
+
+def _tokenize_batch_worker(args: tuple) -> list[list[int]]:
     """
-    Worker function to be executed in a separate process.
-    It reads texts from a file and tokenizes them.
+    Worker function to tokenize a batch of texts.
 
     Args:
-        args: A tuple containing (file_path, tokenizer_cfg, dataset_cfg, proc_cfg).
+        args: A tuple containing (text_batch, tokenizer_cfg).
     Returns:
         A list of tokenized documents.
     """
-    file_path, tokenizer_cfg, dataset_cfg, proc_cfg = args
+    text_batch, tokenizer_cfg = args
     tokenized_docs = []
-    logger.info(f"Worker: Starting processing of {file_path}")
-    start_time = time.time()
 
-    tokenizer = build("tokenizer", tokenizer_cfg)
-    file_reader = FileReader(proc_cfg, dataset_cfg)
+    global _worker_tokenizer
+    if _worker_tokenizer is None:
+        # Fallback if initializer wasn't called or failed (e.g. single process mode or different pool type)
+        _init_worker_tokenizer(tokenizer_cfg)
 
-    doc_count = 0
-    for text in file_reader.read_texts(file_path):
-        tokens = tokenizer.encode(text)
-        if tokens:
-            tokenized_docs.append(tokens)
-            doc_count += 1
-            if doc_count % 1000 == 0:
-                logger.debug(f"Worker: Processed {doc_count} docs in {file_path}")
+    try:
+        for text in text_batch:
+            tokens = _worker_tokenizer.encode(text)
+            if tokens:
+                tokenized_docs.append(tokens)
 
-    elapsed = time.time() - start_time
-    logger.info(
-        f"Worker: Finished {file_path}. Extracted {len(tokenized_docs)} docs in {elapsed:.2f}s."
-    )
+    except Exception as e:
+        logger.error(f"Error processing batch: {e}", exc_info=True)
 
     return tokenized_docs
 
@@ -63,6 +69,7 @@ class TokenProcessor:
     - **Buffering**: Accumulates a buffer of documents for local shuffling.
     - **Resumability**: Tracks file progress and buffer state to allow
       checkpointing and resuming after interruptions without saving the full buffer.
+    - **Streaming**: Reads files in batches to support large files without OOM.
 
     Args:
         files: List of file paths to process.
@@ -75,28 +82,30 @@ class TokenProcessor:
         self.dataset_config = config.dataset
         self.processing_config = config.processing
         self.num_proc = self.processing_config.num_proc
+        self.batch_size = 1000  # Number of docs per batch sent to workers
 
         # State
         self.file_idx = 0
+        self.doc_idx_in_file = 0  # Track progress within the current file
         self.total_docs_yielded = 0
 
         # Resumption state (Block-based)
         self.block_start_file_idx = 0
+        self.block_start_doc_idx = 0  # New: offset within the start file
         self.block_rng_state = None
         self.docs_yielded_in_block = 0
 
         # Internal stream state
         self.pool: multiprocessing.Pool | None = None
-        self._file_stream: Generator | None = None
+        self._batch_stream: Generator | None = None
 
     def get_state(self) -> dict[str, Any]:
-        """Returns the current state for checkpointing.
-
-        We save enough state to recompute the current block upon resumption.
-        """
+        """Returns the current state for checkpointing."""
         return {
             "file_idx": self.file_idx,
+            "doc_idx_in_file": self.doc_idx_in_file,
             "block_start_file_idx": self.block_start_file_idx,
+            "block_start_doc_idx": self.block_start_doc_idx,
             "block_rng_state": self.block_rng_state,
             "docs_yielded_in_block": self.docs_yielded_in_block,
             "total_docs_yielded": self.total_docs_yielded,
@@ -105,12 +114,14 @@ class TokenProcessor:
     def load_state(self, state: dict[str, Any]):
         """Restores the state from a checkpoint."""
         self.file_idx = state.get("file_idx", 0)
+        self.doc_idx_in_file = state.get("doc_idx_in_file", 0)
         self.block_start_file_idx = state.get("block_start_file_idx", 0)
+        self.block_start_doc_idx = state.get("block_start_doc_idx", 0)
         self.block_rng_state = state.get("block_rng_state")
         self.docs_yielded_in_block = state.get("docs_yielded_in_block", 0)
         self.total_docs_yielded = state.get("total_docs_yielded", 0)
 
-        self._file_stream = None  # Force re-initialization
+        self._batch_stream = None
 
     def __iter__(self) -> Generator[list[int], None, None]:
         """Yields tokenized documents, handling buffering, shuffling, and resumption."""
@@ -135,37 +146,35 @@ class TokenProcessor:
         """
         if resume:
             logger.info(
-                f"Resuming block from file_idx {self.block_start_file_idx}, "
+                f"Resuming block from file {self.block_start_file_idx} (offset {self.block_start_doc_idx}), "
                 f"skipping {self.docs_yielded_in_block} documents."
             )
-            # Rewind file index to the start of the block
+            # Restore iteration state to the start of the block
             self.file_idx = self.block_start_file_idx
-            self._reset_file_stream()
+            self.doc_idx_in_file = self.block_start_doc_idx
+            self._reset_batch_stream()
 
-            # Re-fetch buffer
             buffer = self._fill_buffer()
 
-            # Restore RNG state
             if self.block_rng_state:
                 random.setstate(self.block_rng_state)
 
-            # Shuffle and skip
             random.shuffle(buffer)
             yield from self._yield_from_buffer(buffer, skip=self.docs_yielded_in_block)
 
-            # Reset resumption flag for subsequent blocks
             self.docs_yielded_in_block = 0
         else:
             # Record start of a new block
             self.block_start_file_idx = self.file_idx
-            if self._file_stream is None:
-                self._reset_file_stream()
+            self.block_start_doc_idx = self.doc_idx_in_file
+
+            if self._batch_stream is None:
+                self._reset_batch_stream()
 
             buffer = self._fill_buffer()
             if not buffer:
                 return
 
-            # Save RNG state for this block
             self.block_rng_state = random.getstate()
             random.shuffle(buffer)
 
@@ -173,21 +182,27 @@ class TokenProcessor:
             yield from self._yield_from_buffer(buffer)
 
     def _fill_buffer(self) -> list[list[int]]:
-        """Consumes files from the stream until the buffer is full."""
+        """Consumes batches from the stream until the buffer is full."""
         buffer = []
         target_size = self.processing_config.shuffle_buffer_size
 
         with tqdm(
             total=target_size, desc="Refilling Buffer", unit="doc", leave=False
         ) as pbar:
-            while len(buffer) < target_size and self.file_idx < len(self.files):
-                # Get documents from the next file in the stream
-                file_docs = next(self._file_stream)
-                self.file_idx += 1
-                if file_docs:
-                    doc_count = len(file_docs)
-                    buffer.extend(file_docs)
-                    pbar.update(doc_count)
+            while len(buffer) < target_size:
+                try:
+                    # Get next batch of tokenized docs
+                    # Note: we check file_idx < len(self.files) in the generator
+                    batch_docs = next(self._batch_stream)
+                    if batch_docs:
+                        doc_count = len(batch_docs)
+                        buffer.extend(batch_docs)
+                        pbar.update(doc_count)
+                except StopIteration:
+                    break
+                except Exception as e:
+                    logger.error(f"Error reading batch stream: {e}")
+                    break
 
         return buffer
 
@@ -209,11 +224,65 @@ class TokenProcessor:
             self.total_docs_yielded += 1
             yield buffer.pop()
 
+    def _generate_batches(self) -> Generator[tuple, None, None]:
+        """Reads files and yields batches of raw text for processing.
+
+        This runs in the main process. It handles file progress tracking.
+        """
+        # Start from the current file_idx
+        # If we are resuming, we might need to skip docs in the current file
+        skip_count = self.doc_idx_in_file
+
+        while self.file_idx < len(self.files):
+            file_path = self.files[self.file_idx]
+            logger.info(f"Reading file: {file_path}")
+
+            try:
+                file_reader = FileReader(self.processing_config, self.dataset_config)
+                text_iterator = file_reader.read_texts(file_path)
+
+                # Fast-forward if needed
+                if skip_count > 0:
+                    logger.info(f"Skipping {skip_count} docs in {file_path}...")
+                    try:
+                        for _ in range(skip_count):
+                            next(text_iterator)
+                    except StopIteration:
+                        # File might have changed or end reached
+                        logger.warning(f"File {file_path} ended while skipping.")
+                    skip_count = 0  # Only skip for the first file in the sequence
+
+                batch = []
+                for text in text_iterator:
+                    batch.append(text)
+                    self.doc_idx_in_file += 1
+
+                    if len(batch) >= self.batch_size:
+                        yield (batch, self.tokenizer_config)
+                        batch = []
+
+                if batch:
+                    yield (batch, self.tokenizer_config)
+
+                # File finished
+                self.file_idx += 1
+                self.doc_idx_in_file = 0
+
+            except Exception as e:
+                logger.error(f"Error reading file {file_path}: {e}")
+                self.file_idx += 1
+                self.doc_idx_in_file = 0
+
     def _start_pool(self):
         """Initializes the multiprocessing pool if needed."""
         if self.num_proc > 1 and self.pool is None:
             ctx = multiprocessing.get_context("spawn")
-            self.pool = ctx.Pool(self.num_proc)
+            # We use an initializer to set up the tokenizer once per worker
+            self.pool = ctx.Pool(
+                self.num_proc,
+                initializer=_init_worker_tokenizer,
+                initargs=(self.tokenizer_config,),
+            )
             logger.info(f"Initialized processing pool with {self.num_proc} workers.")
 
     def _stop_pool(self):
@@ -222,24 +291,19 @@ class TokenProcessor:
             self.pool.close()
             self.pool.join()
             self.pool = None
-            self._file_stream = None
+            self._batch_stream = None
 
-    def _reset_file_stream(self):
-        """Creates a new iterator over the files starting from self.file_idx."""
-        files_to_process = self.files[self.file_idx :]
-        if not files_to_process:
-            self._file_stream = iter([])
-            return
-
-        args_gen = (
-            (f, self.tokenizer_config, self.dataset_config, self.processing_config)
-            for f in files_to_process
-        )
+    def _reset_batch_stream(self):
+        """Creates a new iterator over batches."""
+        # The generator _generate_batches manages file_idx and doc_idx_in_file state
+        # We pass the generator to imap
 
         if self.pool:
-            self._file_stream = self.pool.imap(_tokenize_file_worker, args_gen)
+            self._batch_stream = self.pool.imap(
+                _tokenize_batch_worker, self._generate_batches()
+            )
         else:
-            self._file_stream = map(_tokenize_file_worker, args_gen)
+            self._batch_stream = map(_tokenize_batch_worker, self._generate_batches())
 
     @property
     def progress(self) -> int:
