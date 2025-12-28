@@ -52,6 +52,9 @@ plugins:
             docstring_style: google
             show_root_heading: true
             show_source: true
+            extensions:
+              - dataclasses
+              - griffe_fieldz
   - gen-files:
       scripts:
         - docs/gen_doc_stubs.py

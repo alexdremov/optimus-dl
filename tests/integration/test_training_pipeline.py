@@ -2,12 +2,18 @@
 
 import os
 import tempfile
-from unittest.mock import Mock, patch
+from unittest.mock import (
+    Mock,
+    patch,
+)
 
 import torch
 import torch.nn as nn
 
-from optimus_dl.modules.loggers.jsonl import JsonlLogger, JsonlLoggerConfig
+from optimus_dl.modules.loggers.jsonl import (
+    JsonlLogger,
+    JsonlLoggerConfig,
+)
 from optimus_dl.modules.lr_scheduler.cosine_annealing import (
     CosineAnnealingLR,
     CosineAnnealingLRConfig,
@@ -17,7 +23,10 @@ from optimus_dl.modules.lr_scheduler.linear_warmup import (
     LinearWarmupLRConfig,
 )
 from optimus_dl.modules.metrics.common import AverageMetric
-from optimus_dl.modules.optim.adamw import AdamWConfig, make_adamw
+from optimus_dl.modules.optim.adamw import (
+    AdamWConfig,
+    make_adamw,
+)
 
 
 class TestTrainingPipelineIntegration:
@@ -279,7 +288,10 @@ class TestTrainingPipelineIntegration:
     @patch("optimus_dl.modules.loggers.wandb.wandb")
     def test_wandb_integration_pattern(self, mock_wandb):
         """Test typical Weights & Biases integration pattern."""
-        from optimus_dl.modules.loggers.wandb import WandbLogger, WandbLoggerConfig
+        from optimus_dl.modules.loggers.wandb import (
+            WandbLogger,
+            WandbLoggerConfig,
+        )
 
         # Setup mock wandb
         mock_run = Mock()

@@ -9,8 +9,14 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from optimus_dl.recipe.pretokenize.config import DatasetConfig, ProcessingConfig
-from optimus_dl.recipe.pretokenize.source import FileFinder, FileReader
+from optimus_dl.recipe.pretokenize.config import (
+    DatasetConfig,
+    ProcessingConfig,
+)
+from optimus_dl.recipe.pretokenize.source import (
+    FileFinder,
+    FileReader,
+)
 
 
 class TestFileFinder(unittest.TestCase):

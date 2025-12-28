@@ -198,7 +198,7 @@ class TrainRecipe(
         """Check save frequency and delegate to CheckpointManager."""
         config_dict = self.cfg if hasattr(self.cfg, "__dict__") else dict(self.cfg)
         kwargs["full_config"] = config_dict
-        kwargs["checkpoint_dir"] = self.cfg.common.output_path
+        kwargs["checkpoint_path"] = self.cfg.common.output_path
         kwargs["save_freq"] = self.cfg.common.save_freq
         kwargs["logger_manager"] = self.logger_manager
         return self.checkpoint_manager.save_checkpoint_if_needed(*args, **kwargs)
@@ -207,16 +207,16 @@ class TrainRecipe(
         """Save a checkpoint via CheckpointManager."""
         config_dict = self.cfg if hasattr(self.cfg, "__dict__") else dict(self.cfg)
         kwargs["full_config"] = config_dict
-        if "checkpoint_dir" not in kwargs:
-            kwargs["checkpoint_dir"] = self.cfg.common.output_path
+        if "checkpoint_path" not in kwargs:
+            kwargs["checkpoint_path"] = self.cfg.common.output_path
         if "logger_manager" not in kwargs:
             kwargs["logger_manager"] = self.logger_manager
         return self.checkpoint_manager.save_checkpoint(*args, **kwargs)
 
     def load_checkpoint_if_exists(self, *args, **kwargs):
         """Try to resume from latest checkpoint in output path."""
-        if "checkpoint_dir" not in kwargs:
-            kwargs["checkpoint_dir"] = self.cfg.common.output_path
+        if "checkpoint_path" not in kwargs:
+            kwargs["checkpoint_path"] = self.cfg.common.output_path
         if "logger_manager" not in kwargs:
             kwargs["logger_manager"] = self.logger_manager
         return self.checkpoint_manager.load_checkpoint_if_exists(*args, **kwargs)
@@ -272,6 +272,8 @@ class TrainRecipe(
     def run(self):
         """Run the complete training pipeline."""
         self.setup_context()
+        is_restart = self.checkpoint_manager.is_restart(self.cfg.common.output_path)
+
         with metrics_group("init"):
             log_event_start("perf/init")
             logger.info(f"Using output path : {self.cfg.common.output_path}")
@@ -289,7 +291,10 @@ class TrainRecipe(
                 setup_logging(logging.WARNING)
 
             model: BaseModel = self.build_model(
-                model_config=self.cfg.model, collective=collective
+                model_config=self.cfg.model,
+                collective=collective,
+                is_restart=is_restart,
+                checkpoint_manager=self.checkpoint_manager,
             )
 
             optimizer: Optimizer = self.build_optimizer(model.make_parameter_groups())
@@ -331,11 +336,13 @@ class TrainRecipe(
                 collective=collective,
                 data_sources=train_datapipeline.datasets,
             )
-            # cases when training run but did not produce any artifacts is
-            # is indistingushable from the case when training is not started at all
-            is_restarted = metadata is not None
-            logger.info(f"Considering this run as {is_restarted = }")
-            if not is_restarted and self.cfg.common.load_checkpoint is not None:
+            if is_restart:
+                # cases when training run but did not produce any artifacts is
+                # indistinguishable from the case when training is not started at all
+                assert metadata is not None, "Misaligned is_restart flag"
+
+            logger.info(f"Considering this run as {is_restart = }")
+            if not is_restart and self.cfg.common.load_checkpoint is not None:
                 # if checkpoint from output path was not loaded, we are sure that this launch is not
                 # re-scheduling / preemption re-start, so we can try loading model from load_checkpoint
                 metadata = self.load_checkpoint(

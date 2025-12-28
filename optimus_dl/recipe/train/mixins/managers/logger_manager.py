@@ -4,8 +4,15 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from optimus_dl.core.registry import RegistryConfig, build, make_registry
-from optimus_dl.modules.loggers import BaseMetricsLogger, MetricsLoggerConfig
+from optimus_dl.core.registry import (
+    RegistryConfig,
+    build,
+    make_registry,
+)
+from optimus_dl.modules.loggers import (
+    BaseMetricsLogger,
+    MetricsLoggerConfig,
+)
 
 logger = logging.getLogger(__name__)
 

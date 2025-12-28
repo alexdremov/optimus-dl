@@ -1,12 +1,19 @@
 """Distributed model transforms for training."""
 
 import logging
-from contextlib import contextmanager, nullcontext
+from contextlib import (
+    contextmanager,
+    nullcontext,
+)
 from dataclasses import dataclass
 from typing import Any
 
 import torch
-from torch.distributed.fsdp import CPUOffloadPolicy, MixedPrecisionPolicy, fully_shard
+from torch.distributed.fsdp import (
+    CPUOffloadPolicy,
+    MixedPrecisionPolicy,
+    fully_shard,
+)
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from optimus_dl.modules.distributed import Collective

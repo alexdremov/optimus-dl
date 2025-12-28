@@ -1,8 +1,11 @@
 import logging
 
-import pytest
 import torch
-from transformers import AutoConfig, AutoModelForCausalLM
+import pytest
+from transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+)
 
 from optimus_dl.modules.model import build_model
 

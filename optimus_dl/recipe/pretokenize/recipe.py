@@ -12,7 +12,10 @@ from tqdm import tqdm
 from optimus_dl.core.registry import build
 from optimus_dl.modules.tokenizer.base import BaseTokenizer
 
-from .checkpoint import CheckpointManager, CheckpointState
+from .checkpoint import (
+    CheckpointManager,
+    CheckpointState,
+)
 from .config import DataPrepConfig
 from .processor import TokenProcessor
 from .sharder import Sharder

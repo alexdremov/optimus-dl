@@ -3,7 +3,10 @@ from dataclasses import dataclass
 from torch.optim import Optimizer
 
 from . import register_lr_scheduler
-from .base import BaseLRScheduler, BaseLRSchedulerConfig
+from .base import (
+    BaseLRScheduler,
+    BaseLRSchedulerConfig,
+)
 
 
 @dataclass

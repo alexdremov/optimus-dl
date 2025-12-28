@@ -54,7 +54,7 @@ class TrainingInterruptionMixin:
 
                 # Call the checkpoint callback with the required parameters
                 self.checkpoint_callback(
-                    checkpoint_dir=self.output_path,
+                    checkpoint_path=self.output_path,
                     iteration=iteration,
                     collective=collective,
                     **kwargs,

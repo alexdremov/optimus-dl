@@ -1,5 +1,5 @@
-import pytest
 import torch
+import pytest
 import torch.nn as nn
 
 from optimus_dl.modules.optim import build_optimizer

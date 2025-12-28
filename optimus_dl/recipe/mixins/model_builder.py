@@ -5,10 +5,16 @@ from dataclasses import dataclass
 from typing import Any
 
 from optimus_dl.core.model_utils import get_num_parameters
-from optimus_dl.core.registry import RegistryConfig, build, make_registry
+from optimus_dl.core.registry import (
+    RegistryConfig,
+    make_registry,
+)
 from optimus_dl.modules.distributed import Collective
-from optimus_dl.modules.model import ModelConfig
-from optimus_dl.modules.model.base import BaseModel
+from optimus_dl.modules.model import (
+    BaseModel,
+    ModelConfig,
+    build_model,
+)
 from optimus_dl.modules.model_transforms import (
     ModelTransformConfig,
     build_model_transform,
@@ -63,7 +69,7 @@ class ModelBuilder:
                 "model_config is None. Use build_model_from_checkpoint for evaluation."
             )
 
-        model = build("model", model_config, **kwargs)
+        model = build_model(model_config, **kwargs)
         logger.info(
             f"Params num (before model transforms): {get_num_parameters(model):,}"
         )

@@ -1,8 +1,11 @@
-import pytest
 import torch
+import pytest
 import torch.nn as nn
 
-from optimus_dl.modules.optim.adamw import AdamWConfig, make_adamw
+from optimus_dl.modules.optim.adamw import (
+    AdamWConfig,
+    make_adamw,
+)
 
 
 class TestAdamWConfig:

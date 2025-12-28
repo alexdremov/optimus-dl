@@ -11,6 +11,9 @@ permissions:
 
 jobs:
   deploy:
+    env:
+      UV_CACHE_DIR: /tmp/.uv-cache
+
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -54,15 +57,20 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
       - uses: actions/cache@v5.0.1
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+          path: /tmp/.uv-cache
+          key: ${{ runner.os }}-uv-${{ hashFiles('pyproject.toml') }}
           restore-keys: |
-            ${{ runner.os }}-pip-
+            ${{ runner.os }}-uv-
 
-      - name: Install build
-        run: pip install .[docs] --cache-dir ~/.cache/pip
+      - name: Install the project
+        run: uv sync --extra docs
 
       - name: Deploy documentation
-        run: PYTHONPATH=. mkdocs gh-deploy --force
+        run: PYTHONPATH=. uv run mkdocs gh-deploy --force

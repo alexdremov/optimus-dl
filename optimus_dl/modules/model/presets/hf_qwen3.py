@@ -4,10 +4,16 @@ import logging
 from dataclasses import dataclass
 
 import torch
-from transformers import AutoConfig, AutoModelForCausalLM
+from transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+)
 
 from optimus_dl.modules.model import register_model
-from optimus_dl.modules.model.qwen3 import Qwen3, Qwen3Config
+from optimus_dl.modules.model.qwen3 import (
+    Qwen3,
+    Qwen3Config,
+)
 
 logger = logging.getLogger(__name__)
 

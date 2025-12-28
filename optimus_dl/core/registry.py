@@ -26,7 +26,11 @@ Example:
 
 import functools
 from dataclasses import dataclass
-from typing import Any, TypeVar, overload
+from typing import (
+    Any,
+    TypeVar,
+    overload,
+)
 
 import omegaconf
 
@@ -72,9 +76,16 @@ class RegistryConfig(RegistryConfigStrict, dict[str, Any]):
 
 C = TypeVar("C", bound=type)
 T = TypeVar("T")
+CorrectCfg = (
+    RegistryConfig
+    | RegistryConfigStrict
+    | omegaconf.DictConfig
+    | omegaconf.ListConfig
+    | dict
+)
 
 
-def make_registry(registry_name: str, base_class: type | None = None):
+def make_registry(registry_name: str, base_class: type | type[Any] | None = None):
     """Create or retrieve a component registry.
 
     This function creates a new registry or retrieves an existing one. Each registry
@@ -115,9 +126,6 @@ def make_registry(registry_name: str, base_class: type | None = None):
     else:
         registries[registry_name] = {}
         registry = registries[registry_name]
-
-    if base_class is None:
-        base_class = Any
 
     def register_arch(name: str, class_name: str, registered_class: type):
         """Register an architecture variant of a base class.
@@ -232,20 +240,20 @@ def make_registry(registry_name: str, base_class: type | None = None):
 
     @overload
     def build(
-        cfg: RegistryConfig | RegistryConfigStrict | dict,
+        cfg: CorrectCfg,
         cast_to: type[T],
         **kwargs: Any,
     ) -> T: ...
 
     @overload
     def build(
-        cfg: RegistryConfig | RegistryConfigStrict | dict,
+        cfg: CorrectCfg,
         cast_to: None = None,
         **kwargs: Any,
     ) -> Any: ...
 
     def build(
-        cfg: RegistryConfig | RegistryConfigStrict | dict | None,
+        cfg: CorrectCfg | None,
         cast_to: type[T] | None = None,
         **kwargs: Any,
     ) -> T | Any | None:
@@ -280,11 +288,11 @@ def make_registry(registry_name: str, base_class: type | None = None):
         if cfg is None:
             return None
         if isinstance(cfg, str):
-            name = cfg
+            name: str = cfg
         else:
             if not omegaconf.OmegaConf.is_config(cfg):
                 cfg = omegaconf.OmegaConf.structured(cfg)
-            name = cfg._name
+            name: str = cfg["_name"]
         assert name in registry, f"Unknown {name} in {registry_name} registry"
         registered_class, structured_cfg = registry[name]
         if type(structured_cfg) is type:
@@ -301,6 +309,10 @@ def make_registry(registry_name: str, base_class: type | None = None):
 
         if cast_to is not None:
             assert isinstance(obj, cast_to), f"Expected {cast_to}, got {type(obj)}"
+        if base_class is not None:
+            assert isinstance(
+                obj, base_class
+            ), f"Expected {base_class}, got {type(obj)}"
         return obj
 
     return registry, register, build
@@ -309,7 +321,7 @@ def make_registry(registry_name: str, base_class: type | None = None):
 @overload
 def build(
     registry_name: str,
-    cfg: RegistryConfig | RegistryConfigStrict | dict,
+    cfg: CorrectCfg,
     cast_to: type[T],
     **kwargs: Any,
 ) -> T: ...
@@ -318,7 +330,7 @@ def build(
 @overload
 def build(
     registry_name: str,
-    cfg: RegistryConfig | RegistryConfigStrict | dict,
+    cfg: CorrectCfg,
     cast_to: None = None,
     **kwargs: Any,
 ) -> Any: ...
@@ -326,7 +338,7 @@ def build(
 
 def build(
     registry_name: str,
-    cfg: RegistryConfig | RegistryConfigStrict | dict,
+    cfg: CorrectCfg | None,
     cast_to: type[T] | None = None,
     **kwargs: Any,
 ) -> T | Any | None:

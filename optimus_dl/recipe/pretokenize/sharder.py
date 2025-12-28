@@ -10,7 +10,10 @@ from typing import Any
 
 import numpy as np
 
-from .config import OutputConfig, ProcessingConfig
+from .config import (
+    OutputConfig,
+    ProcessingConfig,
+)
 
 logger = logging.getLogger(__name__)
 

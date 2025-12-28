@@ -5,7 +5,10 @@ available compute device (CUDA, MPS, XPU, or CPU) and initializing distributed
 training collectives.
 """
 
-from typing import Any, NamedTuple
+from typing import (
+    Any,
+    NamedTuple,
+)
 
 import torch
 

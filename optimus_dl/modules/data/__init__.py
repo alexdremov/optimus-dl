@@ -5,13 +5,19 @@ import torchdata.nodes
 from omegaconf import DictConfig
 
 from optimus_dl.core.bootstrap import bootstrap_module
-from optimus_dl.modules.data.datasets import build_dataset, register_dataset
+from optimus_dl.modules.data.datasets import (
+    build_dataset,
+    register_dataset,
+)
 from optimus_dl.modules.data.transforms.composite import (
     build_transform,
     register_transform,
 )
 
-from .config import DataConfig, DataPipelineConfig
+from .config import (
+    DataConfig,
+    DataPipelineConfig,
+)
 
 
 class DataPipeline(NamedTuple):

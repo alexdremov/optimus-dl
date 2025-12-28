@@ -1,8 +1,17 @@
-from unittest.mock import Mock, patch
+from unittest.mock import (
+    Mock,
+    patch,
+)
 
 from optimus_dl.modules.loggers.base import BaseMetricsLogger
-from optimus_dl.modules.loggers.jsonl import JsonlLogger, JsonlLoggerConfig
-from optimus_dl.modules.loggers.wandb import WandbLogger, WandbLoggerConfig
+from optimus_dl.modules.loggers.jsonl import (
+    JsonlLogger,
+    JsonlLoggerConfig,
+)
+from optimus_dl.modules.loggers.wandb import (
+    WandbLogger,
+    WandbLoggerConfig,
+)
 
 
 class TestJsonlLogger:

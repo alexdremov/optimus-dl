@@ -69,6 +69,7 @@ docs = [
     "mkdocstrings[python]>=0.24.0",
     "mkdocs-gen-files>=0.5.0",
     "mkdocs-literate-nav>=0.6.0",
+    "griffe-fieldz>=0.4.0",
 ]
 notebook = [
     "ipython>=8.37.0",
@@ -82,7 +83,7 @@ dev = [
     "isort>=6.0.1",
     "pytest>=8.4.1",
     "ruff>=0.14.10",
-    "pytest-xdist>=3.6.0"
+    "pytest-xdist>=3.6.0",
 ]
 
 [build-system]
@@ -127,12 +128,16 @@ extend-exclude = '''
 # isort configuration
 [tool.isort]
 profile = "black"
-line_length = 88
-multi_line_output = 3
+src_paths = "optimus_dl"
+force_to_top = ["omegaconf", "hydra", "torch", "numpy"]
 include_trailing_comma = true
-force_grid_wrap = 0
+combine_as_imports = true
+group_by_package = true
 use_parentheses = true
+multi_line_output = 3
+force_grid_wrap = 2
 ensure_newline_before_comments = true
+skip = ["optimus_dl/_version.py", ".venv"]
 
 # pytest configuration
 [tool.pytest.ini_options]
@@ -228,15 +233,11 @@ target-version = "py310"
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
+"optimus_dl/_version.py" = ["ALL"]
 "tests/**/*.py" = [
     "ARG001", # Unused function args -> fixtures nevertheless are functionally relevant
     "FBT", # Don't care about booleans as positional arguments in tests
     "PLR2004", # Magic value used in comparison, ...
     "S101", # asserts allowed in tests...
     "ARG005", # Unused lambda argument
-]
-
-[dependency-groups]
-dev = [
-    "pytest-xdist>=3.8.0",
 ]

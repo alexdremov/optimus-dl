@@ -1,15 +1,24 @@
 import copy
 import logging
-from dataclasses import dataclass, field
+from dataclasses import (
+    dataclass,
+    field,
+)
 from enum import StrEnum
 from typing import Any
 
 import torch
 from omegaconf import MISSING
 
-from optimus_dl.core.registry import RegistryConfig, RegistryConfigStrict
+from optimus_dl.core.registry import (
+    RegistryConfig,
+    RegistryConfigStrict,
+)
 
-from . import build_dataset, register_dataset
+from . import (
+    build_dataset,
+    register_dataset,
+)
 from .base import BaseDataset
 
 logger = logging.getLogger(__name__)
@@ -24,34 +33,37 @@ class StopCriteria(StrEnum):
 @dataclass
 class DatasetConfig:
     dataset: RegistryConfig = field(
-        default=MISSING, metadata={"help": "Dataset config to load"}
+        default=MISSING, metadata={"description": "Dataset config to load"}
     )
     weight: float = field(
-        default=1.0, metadata={"help": "Weight of the dataset for sampling"}
+        default=1.0, metadata={"description": "Weight of the dataset for sampling"}
     )
     cycle: bool = field(
         default=True,
-        metadata={"help": "Whether to cycle through the dataset after it is exhausted"},
+        metadata={
+            "description": "Whether to cycle through the dataset after it is exhausted"
+        },
     )
 
 
 @dataclass
 class CompositeDatasetConfig(RegistryConfigStrict):
     datasets: dict[str, DatasetConfig] = field(
-        default_factory=dict, metadata={"help": "Datasets to load: name -> config"}
+        default_factory=dict,
+        metadata={"description": "Datasets to load: name -> config"},
     )
     strict_load: bool = field(
         default=True,
         metadata={
-            "help": "Whether to raise an error if state dict does not contain all required keys"
+            "description": "Whether to raise an error if state dict does not contain all required keys"
         },
     )
     seed: int | None = field(
-        default=None, metadata={"help": "Random seed for sampling from datasets"}
+        default=None, metadata={"description": "Random seed for sampling from datasets"}
     )
     stop_criteria: StopCriteria = field(
         default=StopCriteria.CYCLE_FOREVER,
-        metadata={"help": "Stop criteria for the composite dataset"},
+        metadata={"description": "Stop criteria for the composite dataset"},
     )
 
 

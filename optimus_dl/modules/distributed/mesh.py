@@ -4,8 +4,15 @@ from typing import NamedTuple
 import torch
 import torch.distributed as dist
 from torch import Tensor
-from torch.distributed import ProcessGroup, ReduceOp, init_process_group
-from torch.distributed.device_mesh import DeviceMesh, init_device_mesh
+from torch.distributed import (
+    ProcessGroup,
+    ReduceOp,
+    init_process_group,
+)
+from torch.distributed.device_mesh import (
+    DeviceMesh,
+    init_device_mesh,
+)
 from typing_extensions import override
 
 from optimus_dl.modules.distributed.base import Collective

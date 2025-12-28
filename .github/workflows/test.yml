@@ -1,21 +1,90 @@
 name: Python Test
 
 on:
-  push:
-    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+    types: [opened, synchronize, reopened, labeled]
 
-permissions:
-  contents: read
+# No global permissions - each job declares what it needs
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
-
+  format:
     runs-on: ubuntu-latest
+    # Only run auto-formatting for maintainers or approved PRs
+    if: |
+      github.event.pull_request.author_association == 'OWNER' ||
+      github.event.pull_request.author_association == 'MEMBER' ||
+      github.event.pull_request.author_association == 'COLLABORATOR' ||
+      contains(github.event.pull_request.labels.*.name, 'safe-to-test')
+
+    permissions:
+      contents: write  # Only this job needs write access to commit formatting changes
+      pull-requests: write  # Needed to update PR
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # On pull_request events, checkout the PR branch (not a detached merge ref)
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          token: ${{ secrets.PAT }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install formatters
+        run: |
+          python -m pip install --upgrade pip
+          pip install black isort ruff
+
+      - name: Run isort
+        run: isort .
+
+      - name: Run black
+        run: black .
+
+      - name: Run ruff
+        run: ruff check --fix .
+
+      - name: Commit back (if changed)
+        id: auto-commit
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: "style: auto-format (black + isort + ruff)"
+          branch: ${{ github.head_ref }}
+
+      - name: Fail if changes were committed
+        if: steps.auto-commit.outputs.changes_detected == 'true'
+        run: |
+          echo "::error::Code formatting changes were committed. A new workflow run will start automatically with the formatted code."
+          exit 1
+
+  build_and_test:
+    # Only run if format completed successfully (not skipped)
+    # This ensures external PRs without approval don't get a passing test check
+    if: needs.format.result == 'success'
+    needs: format
+    runs-on: ubuntu-latest
+    # Allow tests to run for everyone, but they run in a read-only context
+
+    env:
+      UV_CACHE_DIR: /tmp/.uv-cache
+
+    permissions:
+      contents: read  # Only read access needed for tests
 
     steps:
     - uses: actions/checkout@v6
+      with:
+        # For pull_request, checkout the merge commit (safer - uses merge ref)
+        # This avoids executing untrusted code with write permissions
+        persist-credentials: false
 
     - name: Aggressive free disk space
       run: |
@@ -52,16 +121,28 @@ jobs:
       with:
         python-version: '3.12'
 
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+
     - uses: actions/cache@v5.0.1
       with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+        path: /tmp/.uv-cache
+        key: ${{ runner.os }}-uv-${{ hashFiles('pyproject.toml') }}
         restore-keys: |
-          ${{ runner.os }}-pip-
+          ${{ runner.os }}-uv-
 
-    - name: Install build
-      run: pip install .[dev] --cache-dir ~/.cache/pip
+    - name: Install the project
+      run: uv sync --extra dev
+
+    - name: Check style
+      run: |
+        (rm optimus_dl/_version.py && touch optimus_dl/_version.py) || true  # just in case
+        uv run ruff check .
+        uv run black --check .
+        uv run isort --check-only --skip-gitignore .
 
     - name: Test with pytest
       run: |
-        pytest -n auto
+        uv run pytest -n auto

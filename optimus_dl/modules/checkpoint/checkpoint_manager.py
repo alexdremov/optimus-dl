@@ -6,6 +6,7 @@ It also manages metadata, learning rate scheduler states, and data loader positi
 """
 
 import logging
+import pathlib
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,7 +22,11 @@ from torch.distributed.checkpoint.state_dict_loader import load as dcp_load
 from torch.distributed.checkpoint.state_dict_saver import save as dcp_save
 from torch.optim import Optimizer
 
-from optimus_dl.core.registry import RegistryConfig, build, make_registry
+from optimus_dl.core.registry import (
+    RegistryConfig,
+    build,
+    make_registry,
+)
 from optimus_dl.modules.distributed import Collective
 from optimus_dl.modules.lr_scheduler import BaseLRScheduler
 from optimus_dl.modules.metrics import (
@@ -33,6 +38,26 @@ from optimus_dl.modules.model.base import BaseModel
 from .load_strategy import LoadStrategy
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class CheckpointPath:
+    """Represents comprehensive checkpoint information.
+    This class holds paths to both the metadata and the actual checkpoint files.
+
+    Attributes:
+        metadata: Path to the metadata file (always single file)
+        checkpoint: Path to the actual checkpoint file or directory (can be sharded)
+    """
+
+    metadata: str
+    checkpoint: str
+
+    def per_rank_metadata(self, rank) -> str:
+        return self.metadata.replace("metadata_", f"per_rank_metadata_{rank}_")
+
+    def is_dcp_checkpoint(self):
+        return pathlib.Path(self.checkpoint).is_dir()
 
 
 @dataclass
@@ -48,16 +73,7 @@ class CheckpointManager:
     This class provides high-level orchestration for training checkpoints. It
     integrates with PyTorch DCP for efficient sharded I/O and handles the
     complexity of synchronizing metadata and per-rank states (like dataloaders).
-
-    Example:
-        ```python
-        manager = CheckpointManager(cfg)
-        # Save a checkpoint
-        manager.save_checkpoint(dir, model, optimizer, collective, config, iteration=100)
-        # Load it back
-        manager.load_checkpoint(dir, model, optimizer, collective)
-
-        ```"""
+    """
 
     def __init__(
         self,
@@ -72,12 +88,69 @@ class CheckpointManager:
         """
         self.cfg = cfg
 
+    def is_restart(self, checkpoint_path):
+        """Check if a checkpoint exists in the given directory.
+        Such case corresponds to the case when run was started, stopped and then restarted again.
+
+        Args:
+            checkpoint_path: Path for output checkpoints
+        """
+        return self.get_checkpoint(checkpoint_path) is not None
+
+    def get_checkpoint(self, path: str | pathlib.Path) -> CheckpointPath | None:
+        """Get a checkpoint from a path.
+        Path can be a directory, then the latest checkpoint is selected or a specific checkpoint directory or metadata file.
+        """
+        if not isinstance(path, pathlib.Path):
+            path = pathlib.Path(str(path))
+
+        path = path.expanduser().resolve()
+
+        if not path.exists():
+            return None
+
+        if path.name.startswith("checkpoint_"):
+            # this is exact checkpoint directory
+            metadata_name = path.name.replace("checkpoint_", "metadata_") + ".pt"
+            metadata_path = path.parent / metadata_name
+            if metadata_path.exists():
+                return CheckpointPath(metadata=str(metadata_path), checkpoint=str(path))
+
+        if (
+            path.name.startswith("metadata_")
+            and path.name.endswith(".pt")
+            and path.is_file()
+        ):
+            # this is exact metadata file
+            checkpoint_name = pathlib.Path(
+                path.name.replace("metadata_", "checkpoint_")
+            ).stem
+            checkpoint_path = path.parent / checkpoint_name
+            if checkpoint_path.exists():
+                return CheckpointPath(
+                    metadata=str(path), checkpoint=str(checkpoint_path)
+                )
+
+            # maybe not DCP?
+            checkpoint_path = path.parent / (checkpoint_name + ".pt")
+            if checkpoint_path.exists():
+                return CheckpointPath(
+                    metadata=str(path), checkpoint=str(checkpoint_path)
+                )
+
+        # this is a directory, find latest checkpoint
+        if path.is_dir():
+            latest_checkpoint = path / "metadata_latest.pt"
+            return self.get_checkpoint(latest_checkpoint)
+        else:
+            return None
+
     def load_checkpoint_if_exists(
         self,
-        checkpoint_dir: str,
+        checkpoint_path: str,
         model: BaseModel,
-        optimizer: Optimizer | None,
         collective: Collective,
+        optimizer: Optimizer | None = None,
         lr_scheduler: BaseLRScheduler | None = None,
         data_loaders: dict | None = None,
         load_strategy: LoadStrategy | None = None,
@@ -86,7 +159,7 @@ class CheckpointManager:
         """Attempt to find and load the latest checkpoint from a directory.
 
         Args:
-            checkpoint_dir: Directory to search for checkpoints.
+            checkpoint_path: Directory to search for checkpoints.
             model: Model to load weights into.
             optimizer: Optional optimizer to restore state.
             collective: Collective for distributed coordination.
@@ -99,13 +172,13 @@ class CheckpointManager:
             Tuple of (start_iteration, metadata). start_iteration defaults to 1 if no
             checkpoint is found.
         """
-        latest_checkpoint = self.find_latest_checkpoint(checkpoint_dir)
+        latest_checkpoint = self.get_checkpoint(checkpoint_path)
         if not latest_checkpoint:
             return 1, None
 
         try:
             metadata = self.load_checkpoint(
-                checkpoint_path=latest_checkpoint,
+                checkpoint_path=latest_checkpoint.checkpoint,
                 model=model,
                 optimizer=optimizer,
                 lr_scheduler=lr_scheduler,
@@ -125,7 +198,7 @@ class CheckpointManager:
         self,
         iteration: int,
         collective: Collective,
-        checkpoint_dir: str,
+        checkpoint_path: str | Path,
         save_freq: int,
         **kwargs: Any,
     ) -> bool:
@@ -135,7 +208,7 @@ class CheckpointManager:
 
         try:
             self.save_checkpoint(
-                checkpoint_dir=checkpoint_dir,
+                checkpoint_path=checkpoint_path,
                 iteration=iteration,
                 collective=collective,
                 **kwargs,
@@ -147,7 +220,7 @@ class CheckpointManager:
 
     def save_checkpoint(
         self,
-        checkpoint_dir: str,
+        checkpoint_path: str | Path,
         model: BaseModel,
         optimizer: Optimizer | None,
         collective: Collective,
@@ -160,7 +233,7 @@ class CheckpointManager:
         """Save training checkpoint using distributed checkpoint API.
 
         Args:
-            checkpoint_dir: Directory to save checkpoint
+            checkpoint_path: Directory to save checkpoint
             model: Model to save
             optimizer: Optimizer to save
             collective: Collective for distributed operations
@@ -170,7 +243,8 @@ class CheckpointManager:
             data_loaders: Optional data loaders to save state
             **kwargs: Additional metadata to save
         """
-        checkpoint_path = Path(checkpoint_dir)
+        if not isinstance(checkpoint_path, Path):
+            checkpoint_path = Path(checkpoint_path)
         checkpoint_path.mkdir(parents=True, exist_ok=True)
 
         logger.info(f"Saving state for model and optimizer at iteration {iteration}")
@@ -264,8 +338,8 @@ class CheckpointManager:
 
     def load_checkpoint(
         self,
-        checkpoint_path: str,
-        model: BaseModel,
+        checkpoint_path: str | Path,
+        model: BaseModel | None,
         optimizer: Optimizer | None,
         collective: Collective,
         lr_scheduler=None,
@@ -276,7 +350,10 @@ class CheckpointManager:
     ) -> dict:
         """Load training checkpoint using distributed checkpoint API."""
         load_strategy = load_strategy or LoadStrategy()
-        checkpoint_path_obj = Path(checkpoint_path)
+        checkpoint = self.get_checkpoint(checkpoint_path)
+
+        if checkpoint is None:
+            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
         logger.info(f"Loading checkpoint with restore strategy {load_strategy}")
 
@@ -309,9 +386,6 @@ class CheckpointManager:
         if not load_strategy.load_dataloaders:
             data_loaders = None
 
-        if not checkpoint_path_obj.exists():
-            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
-
         logger.info(f"Loading checkpoint from {checkpoint_path}")
 
         # Get state dicts for loading
@@ -320,6 +394,8 @@ class CheckpointManager:
             state_dict["model"] = dcp_state_dict.get_model_state_dict(
                 model, options=dcp_state_dict.StateDictOptions()
             )
+        else:
+            optimizer = None
 
         if optimizer is not None:
             state_dict["optimizer"] = dcp_state_dict.get_optimizer_state_dict(
@@ -330,7 +406,7 @@ class CheckpointManager:
         if len(state_dict) > 0:
             dcp_load(
                 state_dict=state_dict,
-                storage_reader=FileSystemReader(checkpoint_path),
+                storage_reader=FileSystemReader(checkpoint.checkpoint),
                 process_group=collective.process_group,
             )
 
@@ -349,17 +425,9 @@ class CheckpointManager:
 
         # Load metadata
         if collective.is_master:
-            metadata_name = (
-                checkpoint_path_obj.name.replace("checkpoint_", "metadata_") + ".pt"
+            metadata = torch.load(
+                checkpoint.metadata, map_location="cpu", weights_only=False
             )
-            metadata_path = checkpoint_path_obj.parent / metadata_name
-            if not metadata_path.exists():
-                logger.warning("No metadata found with checkpoint")
-                raise FileNotFoundError(
-                    f"Metadata file not found: {metadata_path}. "
-                    "Checkpoint loaded but metadata is missing."
-                )
-            metadata = torch.load(metadata_path, map_location="cpu", weights_only=False)
             metadatas = [metadata]
             collective.broadcast_objects(metadatas, source_rank=0)
         else:
@@ -382,9 +450,7 @@ class CheckpointManager:
         iteration = metadata["iteration"]
 
         rank = collective.rank
-        per_rank_metadata_path = (
-            checkpoint_path_obj.parent / f"per_rank_metadata_{rank}_{iteration:09d}.pt"
-        )
+        per_rank_metadata_path = checkpoint.per_rank_metadata(rank)
         per_rank_metadata = torch.load(
             per_rank_metadata_path, map_location="cpu", weights_only=False
         )
@@ -430,30 +496,12 @@ class CheckpointManager:
         logger.info(f"Checkpoint has {iteration = }")
         return metadata
 
-    def get_checkpoint_path(self, output_path, iteration: int) -> str:
-        """Generate checkpoint path for given iteration."""
-        output_dir = Path(output_path)
-        return str(output_dir / f"checkpoint_{iteration:09d}")
-
-    def find_latest_checkpoint(self, output_path) -> str | None:
-        """Find the latest checkpoint in output directory."""
-        output_dir = Path(output_path)
-        if not output_dir.exists():
-            return None
-
-        if "checkpoint_" in output_dir.name:
-            # Full checkpoint path
-            return str(output_dir)
-
-        # Try to find latest checkpoint
-        latest_path = output_dir / "checkpoint_latest"
-        if latest_path.exists():
-            return str(latest_path)
-
-        return None
-
     def build_model_from_checkpoint(
-        self, checkpoint_path: str, device: str | torch.device, **kwargs: Any
+        self,
+        checkpoint_path: str | Path,
+        device: str | torch.device,
+        model_key="model",
+        **kwargs: Any,
     ) -> tuple[BaseModel, dict]:
         """Build model and load from checkpoint.
 
@@ -465,174 +513,118 @@ class CheckpointManager:
         Returns:
             Tuple of (model, config) where config is the training config from checkpoint
         """
-        checkpoint_path_obj = Path(checkpoint_path)
-
-        # Find metadata file
-        metadata_path = self._find_metadata_file(checkpoint_path_obj)
-        if not metadata_path.exists():
-            raise FileNotFoundError(f"Metadata file not found: {metadata_path}")
+        checkpoint = self.get_checkpoint(checkpoint_path)
+        if checkpoint is None:
+            raise FileNotFoundError(f"Metadata file not found: {checkpoint}")
 
         # Load metadata
+        metadata_path = checkpoint.metadata
         metadata = torch.load(metadata_path, map_location="cpu", weights_only=False)
         config = metadata["config"]
 
-        logger.info(f"Loading model with config: {config.model}")
+        logger.info(f"Loading model with config: {config[model_key]}")
 
         # Build model using the config
-        model = build("model", config.model, **kwargs)
+        model = build("model", config[model_key], **kwargs)
         assert isinstance(model, BaseModel)
 
-        # Load model state dict from checkpoint
-        checkpoint_dir = self._find_checkpoint_dir(metadata_path)
-        if checkpoint_dir.exists():
-            self._load_model_state_dict(model, checkpoint_dir)
-        else:
-            logger.warning(f"Checkpoint directory not found: {checkpoint_dir}")
-            logger.warning("Model will use random weights")
+        self.load_model_state_dict(model, checkpoint.checkpoint)
 
         # Move model to device
         model = model.to(device)
         logger.info(f"Loaded model from {checkpoint_path} on {device}")
         return model, config
 
-    def _find_metadata_file(self, checkpoint_path: Path) -> Path:
-        """Find the metadata file from checkpoint path."""
-        if checkpoint_path.is_file() and checkpoint_path.name.startswith("metadata_"):
-            return checkpoint_path
-        elif checkpoint_path.is_dir():
-            # Look for latest metadata file
-            metadata_latest = checkpoint_path / "metadata_latest.pt"
-            if metadata_latest.exists():
-                return metadata_latest
-            # Look for any metadata file
-            metadata_files = list(checkpoint_path.glob("metadata_*.pt"))
-            if metadata_files:
-                return sorted(metadata_files)[-1]  # Return latest by name
-
-        raise FileNotFoundError(f"No metadata file found in {checkpoint_path}")
-
-    def _find_checkpoint_dir(self, metadata_path: Path) -> Path:
-        """Find checkpoint directory from metadata path."""
-        # Extract iteration from metadata filename
-        metadata_name = metadata_path.stem
-        if metadata_name == "metadata_latest":
-            checkpoint_name = "checkpoint_latest"
-        else:
-            iteration_str = metadata_name.replace("metadata_", "")
-            checkpoint_name = f"checkpoint_{iteration_str}"
-
-        return metadata_path.parent / checkpoint_name
-
-    def _load_model_state_dict(self, model: BaseModel, checkpoint_dir: Path) -> None:
+    def load_model_state_dict(self, model: BaseModel, checkpoint_path: str) -> None:
         """Load model state dict from checkpoint, handling both DCP and regular checkpoints."""
-        try:
-            # First check if this is a DCP checkpoint
-            if self._is_dcp_checkpoint(checkpoint_dir):
-                logger.info(f"Detected DCP checkpoint: {checkpoint_dir}")
-                self._load_dcp_checkpoint(model, checkpoint_dir)
+        checkpoint = self.get_checkpoint(checkpoint_path)
+        if checkpoint is None:
+            if not Path(checkpoint_path).exists():
+                raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
             else:
-                # Try to load regular PyTorch checkpoint
-                self._load_regular_checkpoint(model, checkpoint_dir)
+                checkpoint = Path(checkpoint_path)
+                is_dcp = Path(checkpoint_path).is_dir()
+        else:
+            is_dcp = checkpoint.is_dcp_checkpoint()
 
-        except Exception as e:
-            logger.error(f"Failed to load model weights: {e}")
-            logger.warning("Continuing with random weights")
+        if is_dcp:
+            logger.info(f"Detected DCP checkpoint: {checkpoint}")
+            self._load_dcp_checkpoint(model, checkpoint)
+        else:
+            # Try to load regular PyTorch checkpoint
+            self._load_regular_checkpoint(model, checkpoint)
 
-    def _is_dcp_checkpoint(self, checkpoint_dir: Path) -> bool:
-        """Check if checkpoint directory contains DCP checkpoint format."""
-        if not checkpoint_dir.exists() or not checkpoint_dir.is_dir():
-            return False
-
-        # Look for DCP-specific files
-        metadata_files = list(checkpoint_dir.glob("*.metadata"))
-        shard_files = list(checkpoint_dir.glob("__*.pt"))
-
-        return len(metadata_files) > 0 or len(shard_files) > 0
-
-    def _load_dcp_checkpoint(self, model: BaseModel, checkpoint_dir: Path) -> None:
+    def _load_dcp_checkpoint(
+        self, model: BaseModel, checkpoint: CheckpointPath | Path
+    ) -> None:
         """Convert and load DCP checkpoint using dcp_to_torch_save."""
-        try:
-            from torch.distributed.checkpoint.format_utils import dcp_to_torch_save
+        if isinstance(checkpoint, CheckpointPath):
+            assert checkpoint.is_dcp_checkpoint()
+            checkpoint_path = checkpoint.checkpoint
+        else:
+            assert isinstance(checkpoint, Path)
+            assert checkpoint.exists() and checkpoint.is_dir()
+            checkpoint_path = checkpoint
 
-            logger.info(
-                f"Converting DCP checkpoint to regular format: {checkpoint_dir}"
+        from torch.distributed.checkpoint.format_utils import dcp_to_torch_save
+
+        # Create temporary file for converted checkpoint
+        with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as tmp_file:
+            temp_path = tmp_file.name
+
+        try:
+            # Convert DCP checkpoint to regular torch format
+            dcp_to_torch_save(
+                dcp_checkpoint_dir=str(checkpoint_path),
+                torch_save_path=temp_path,
             )
 
-            # Create temporary file for converted checkpoint
-            with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as tmp_file:
-                temp_path = tmp_file.name
+            # Load the converted checkpoint
+            logger.info(f"Loading converted checkpoint from: {temp_path}")
+            state_dict = torch.load(temp_path, map_location="cpu", weights_only=False)
 
-            try:
-                # Convert DCP checkpoint to regular torch format
-                dcp_to_torch_save(
-                    dcp_checkpoint_dir=str(checkpoint_dir),
-                    torch_save_path=temp_path,
+            if "model" in state_dict:
+                model.load_state_dict(state_dict["model"], strict=True)
+                logger.info("Successfully loaded model weights from DCP checkpoint")
+            else:
+                # Try to load the state dict directly if no "model" key
+                model.load_state_dict(state_dict, strict=True)
+                logger.info(
+                    "Successfully loaded model weights from DCP checkpoint (direct)"
                 )
 
-                # Load the converted checkpoint
-                logger.info(f"Loading converted checkpoint from: {temp_path}")
-                state_dict = torch.load(
-                    temp_path, map_location="cpu", weights_only=False
-                )
+        finally:
+            # Clean up temporary file
+            if Path(temp_path).exists():
+                Path(temp_path).unlink()
 
-                if "model" in state_dict:
-                    model.load_state_dict(state_dict["model"], strict=True)
-                    logger.info("Successfully loaded model weights from DCP checkpoint")
-                else:
-                    # Try to load the state dict directly if no "model" key
-                    model.load_state_dict(state_dict, strict=True)
-                    logger.info(
-                        "Successfully loaded model weights from DCP checkpoint (direct)"
-                    )
-
-            finally:
-                # Clean up temporary file
-                if Path(temp_path).exists():
-                    Path(temp_path).unlink()
-
-        except ImportError:
-            logger.error("torch.distributed.checkpoint.format_utils not available")
-            logger.warning("Falling back to regular checkpoint loading")
-            self._load_regular_checkpoint(model, checkpoint_dir)
-        except Exception as e:
-            logger.error(f"Failed to convert DCP checkpoint: {e}")
-            logger.warning("Falling back to regular checkpoint loading")
-            self._load_regular_checkpoint(model, checkpoint_dir)
-
-    def _load_regular_checkpoint(self, model: BaseModel, checkpoint_dir: Path) -> None:
+    def _load_regular_checkpoint(
+        self, model: BaseModel, checkpoint: CheckpointPath | Path
+    ) -> None:
         """Load regular PyTorch checkpoint files."""
-        # Look for regular .pt files
-        state_files = list(checkpoint_dir.glob("*.pt"))
-
-        if state_files:
-            # Try to load the first state file (simplified approach)
-            for state_file in state_files:
-                try:
-                    logger.info(f"Attempting to load: {state_file}")
-                    state_dict = torch.load(
-                        state_file, map_location="cpu", weights_only=True
-                    )
-
-                    if "model" in state_dict:
-                        model.load_state_dict(state_dict["model"], strict=False)
-                        logger.info(f"Loaded model weights from {state_file}")
-                        return
-                    elif isinstance(state_dict, dict) and any(
-                        key.startswith(("module.", "model.", "_orig_mod."))
-                        or "." in key
-                        for key in state_dict.keys()
-                    ):
-                        # This looks like a model state dict
-                        model.load_state_dict(state_dict, strict=False)
-                        logger.info(f"Loaded model weights from {state_file} (direct)")
-                        return
-                except Exception as e:
-                    logger.warning(f"Failed to load {state_file}: {e}")
-                    continue
-
-            logger.warning("No valid model state found in checkpoint files")
+        if isinstance(checkpoint, CheckpointPath):
+            assert not checkpoint.is_dcp_checkpoint()
+            checkpoint_path = checkpoint.checkpoint
         else:
-            logger.warning(f"No state files found in {checkpoint_dir}")
+            assert isinstance(checkpoint, Path)
+            assert checkpoint.exists() and checkpoint.is_file()
+            checkpoint_path = checkpoint
+
+        # Look for regular .pt files
+        logger.info(f"Attempting to load: {checkpoint}")
+        state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+
+        if "model" in state_dict:
+            model.load_state_dict(state_dict["model"], strict=False)
+            logger.info(f"Loaded model weights from {checkpoint_path}")
+            return
+        elif isinstance(state_dict, dict) and any(
+            key.startswith(("module.", "model.", "_orig_mod.")) or "." in key
+            for key in state_dict.keys()
+        ):
+            # This looks like a model state dict
+            model.load_state_dict(state_dict, strict=False)
+            logger.info(f"Loaded model weights from {checkpoint_path} (direct)")
 
 
 _, register_checkpoint_manager, build_checkpoint_manager = make_registry(

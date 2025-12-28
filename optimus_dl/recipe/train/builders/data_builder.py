@@ -6,7 +6,10 @@ from typing import Any
 
 import torchdata.nodes
 
-from optimus_dl.core.registry import RegistryConfig, make_registry
+from optimus_dl.core.registry import (
+    RegistryConfig,
+    make_registry,
+)
 from optimus_dl.modules.data import (
     DataConfig,
     DataPipeline,

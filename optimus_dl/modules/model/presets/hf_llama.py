@@ -4,10 +4,16 @@ import logging
 from dataclasses import dataclass
 
 import torch
-from transformers import AutoConfig, AutoModelForCausalLM
+from transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+)
 
 from optimus_dl.modules.model import register_model
-from optimus_dl.modules.model.llama2 import Llama, LlamaConfig
+from optimus_dl.modules.model.llama2 import (
+    Llama,
+    LlamaConfig,
+)
 
 logger = logging.getLogger(__name__)
 

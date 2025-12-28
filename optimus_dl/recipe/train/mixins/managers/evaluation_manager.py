@@ -7,7 +7,10 @@ from typing import Any
 import torch
 
 from optimus_dl.core.profile import measured_next
-from optimus_dl.core.registry import RegistryConfig, make_registry
+from optimus_dl.core.registry import (
+    RegistryConfig,
+    make_registry,
+)
 from optimus_dl.modules.criterion import BaseCriterion
 from optimus_dl.modules.metrics import (
     compute_metrics,

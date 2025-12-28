@@ -3,7 +3,10 @@
 import shutil
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import (
+    MagicMock,
+    patch,
+)
 
 from optimus_dl.modules.tokenizer.base import BaseTokenizer
 from optimus_dl.recipe.pretokenize.config import DataPrepConfig

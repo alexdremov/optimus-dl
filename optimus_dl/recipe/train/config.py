@@ -4,12 +4,21 @@ This module defines the configuration classes for the training recipe, including
 all hyperparameters, component configurations, and training settings.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import (
+    dataclass,
+    field,
+)
 
-from omegaconf import II, MISSING
+from omegaconf import (
+    II,
+    MISSING,
+)
 
 from optimus_dl.core.registry import RegistryConfig
-from optimus_dl.modules.checkpoint import CheckpointManagerConfig, LoadStrategy
+from optimus_dl.modules.checkpoint import (
+    CheckpointManagerConfig,
+    LoadStrategy,
+)
 from optimus_dl.modules.criterion import CriterionConfig
 from optimus_dl.modules.data import DataConfig
 from optimus_dl.modules.distributed.config import DistributedConfig
@@ -33,51 +42,28 @@ class TrainRecipeConfig:
     This class contains all the common settings shared across training runs,
     including experiment metadata, logging frequency, checkpointing, evaluation,
     and distributed training settings.
-
-    Attributes:
-        exp_name: Unique name for this experiment. Used for organizing outputs
-            and logs. If MISSING, will be auto-generated.
-        exp_description: Optional description of the experiment.
-        exp_tags: List of tags for organizing experiments.
-        log_freq: How often (in iterations) to log training metrics.
-        seed: Random seed for reproducibility. Seeds PyTorch, NumPy, Python RNG.
-        data_seed: Separate seed for data-related randomness. Will be different
-            on each rank for data diversity in distributed training.
-        eval_iterations: Maximum number of validation iterations per evaluation
-            run. If None, evaluates on entire validation set.
-        eval_freq: How often (in iterations) to run evaluation. Set to 0 to disable.
-        save_freq: How often (in iterations) to save checkpoints. Defaults to
-            eval_freq if not specified.
-        output_path: Directory where checkpoints and logs are saved. Supports
-            environment variable interpolation (e.g., ${oc.env:OUTPUT_DIR}).
-        load_checkpoint: Path to a checkpoint to load at startup. If None, training
-            starts from scratch or resumes from latest checkpoint in output_path.
-        load_checkpoint_strategy: Strategy for what to load from the checkpoint
-            (model weights, optimizer state, etc.). See LoadStrategy for details.
-        use_gpu: Whether to use GPU if available. If False, uses CPU.
-        distributed: Configuration for distributed training mesh.
     """
 
     # Exp metadata
-    exp_name: str = field(default=MISSING, metadata={"help": "Experiment name"})
+    exp_name: str = field(default=MISSING, metadata={"description": "Experiment name"})
     exp_description: str | None = field(
-        default=None, metadata={"help": "Experiment description"}
+        default=None, metadata={"description": "Experiment description"}
     )
     exp_tags: list[str] = field(
-        default_factory=list, metadata={"help": "Experiment tags"}
+        default_factory=list, metadata={"description": "Experiment tags"}
     )
     log_freq: int = field(
-        default=16, metadata={"help": "Frequency of train metrics logging"}
+        default=16, metadata={"description": "Frequency of train metrics logging"}
     )
 
     # Reproducibility
     seed: int = field(
-        default=42, metadata={"help": "Seed to seed everything that's possible"}
+        default=42, metadata={"description": "Seed to seed everything that's possible"}
     )
     data_seed: int = field(
         default=42,
         metadata={
-            "help": "Seed to seed everything data-related. Will be different on each rank."
+            "description": "Seed to seed everything data-related. Will be different on each rank."
         },
     )
 
@@ -85,38 +71,40 @@ class TrainRecipeConfig:
     eval_iterations: int | None = field(
         default=None,
         metadata={
-            "help": "Max number of iterations of validation data for every subset"
+            "description": "Max number of iterations of validation data for every subset"
         },
     )
     eval_freq: int = field(
-        default=100, metadata={"help": "Frequency of evaluations. Zero disables"}
+        default=100, metadata={"description": "Frequency of evaluations. Zero disables"}
     )
     # Checkpointing
     save_freq: int = field(
         default=II(".eval_freq"),
-        metadata={"help": "Frequency of checkpoint savings. As eval_freq by default"},
+        metadata={
+            "description": "Frequency of checkpoint savings. As eval_freq by default"
+        },
     )
     output_path: str = field(
         default="${oc.env:PERSISTENT_PATH,'./outputs'}/${.exp_name}",
-        metadata={"help": "Directory to dump checkpoints to"},
+        metadata={"description": "Directory to dump checkpoints to"},
     )
 
     load_checkpoint: str | None = field(
         default=None,
         metadata={
-            "help": "Path to checkpoint to load from, what to load from it is controlled by load_checkpoint_strategy"
+            "description": "Path to checkpoint to load from, what to load from it is controlled by load_checkpoint_strategy"
         },
     )
     load_checkpoint_strategy: LoadStrategy = field(
         default_factory=LoadStrategy,
-        metadata={"help": "Strategy what to load from the checkpoint"},
+        metadata={"description": "Strategy what to load from the checkpoint"},
     )
 
     # Distributed
     use_gpu: bool = True
     distributed: DistributedConfig = field(
         default_factory=DistributedConfig,
-        metadata={"help": "Distributed training configuration (GPU, TP, etc.)"},
+        metadata={"description": "Distributed training configuration (GPU, TP, etc.)"},
     )
 
 
@@ -131,27 +119,6 @@ class TrainConfig(RegistryConfig):
     The configuration is hierarchical and supports OmegaConf interpolation for
     sharing values across components. The `args` field serves as a "scratch space"
     for high-level variables that can be referenced throughout the config.
-
-    Attributes:
-        args: Dictionary for high-level variables that can be referenced via
-            interpolation (e.g., ${args.batch_size}). This ensures consistency
-            across components.
-        common: Common training settings (logging, checkpointing, etc.).
-        model: Model configuration. Must specify `_name` to select model type.
-        data: Data pipeline configuration (sources, transforms, etc.).
-        criterion: Loss function configuration.
-        optimization: Optimization settings (batch size, learning rate, etc.).
-        lr_scheduler: Learning rate scheduler configuration. If None, no scheduler.
-        loggers: List of metrics logger configurations (WandB, TensorBoard, etc.).
-        model_transforms: List of model transforms to apply (DDP, FSDP, compile, etc.).
-        model_builder: Configuration for the model builder component.
-        optimizer_builder: Configuration for the optimizer builder component.
-        criterion_builder: Configuration for the criterion builder component.
-        data_builder: Configuration for the data builder component.
-        scheduler_builder: Configuration for the scheduler builder component.
-        logger_manager: Configuration for the logger manager component.
-        checkpoint_manager: Configuration for the checkpoint manager component.
-        evaluator: Configuration for the evaluator component.
 
     Example:
         ```python
@@ -178,13 +145,15 @@ class TrainConfig(RegistryConfig):
 
     # Metrics logging configuration
     loggers: list[MetricsLoggerConfig] | None = field(
-        default=None, metadata={"help": "List of metrics logger configurations"}
+        default=None, metadata={"description": "List of metrics logger configurations"}
     )
 
     # Model transforms configuration
     model_transforms: list[ModelTransformConfig] = field(
         default_factory=list,
-        metadata={"help": "List of model transforms to apply after model building"},
+        metadata={
+            "description": "List of model transforms to apply after model building"
+        },
     )
 
     # Dependency Injection Configs
