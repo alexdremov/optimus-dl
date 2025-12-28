@@ -13,6 +13,7 @@ from huggingface_hub import (
     hf_hub_download,
     list_repo_files,
 )
+from tqdm import tqdm
 
 from .config import (
     DatasetConfig,
@@ -121,12 +122,16 @@ class FileFinder:
 
         # Extract YAML front matter
         if not content.startswith("---"):
-            logger.warning(f"README.md does not contain YAML front matter (content.startswith('---')).")
+            logger.warning(
+                "README.md does not contain YAML front matter (content.startswith('---'))."
+            )
             return None
 
         parts = content.split("---")
         if len(parts) < 3:
-            logger.warning(f"README.md does not contain valid YAML front matter (content.split('---')).")
+            logger.warning(
+                "README.md does not contain valid YAML front matter (content.split('---'))."
+            )
             return None
 
         yaml_content = parts[1]
@@ -150,7 +155,9 @@ class FileFinder:
         )
 
         if not split_info:
-            logger.warning(f"No split info found in README.md {self.config.config_name = }, {metadata["configs"] = }")
+            logger.warning(
+                f"No split info found in README.md {self.config.config_name = }, {metadata['configs'] = }"
+            )
             return None
 
         patterns = [
@@ -160,10 +167,9 @@ class FileFinder:
         ]
 
         matched_files = []
-        for pattern in patterns:
-            for f in all_files:
-                if fnmatch.fnmatch(f, pattern):
-                    matched_files.append(f)
+        for pattern in tqdm(patterns, desc="Matching patterns", leave=False):
+            matched = fnmatch.filter(all_files, pattern)
+            matched_files.extend(matched)
 
         return matched_files
 
@@ -171,7 +177,7 @@ class FileFinder:
         """Filters files based on extension, split, and pattern."""
         filtered = []
 
-        for f in all_files:
+        for f in tqdm(all_files, desc="Filtering files", unit="file", leave=False):
             if not f.endswith((".parquet", ".jsonl", ".json")):
                 continue
             if pattern and not fnmatch.fnmatch(f, pattern):
@@ -228,32 +234,77 @@ class FileReader:
             yield from self._read_jsonl(local_path)
 
     def _read_parquet(self, local_path: Path) -> Generator[str, None, None]:
-        """Reads texts from a Parquet file."""
+        """Reads texts from a Parquet file using streaming."""
         try:
-            df = pd.read_parquet(local_path)
-            if self.text_column in df.columns:
-                for text in df[self.text_column]:
-                    if isinstance(text, str) and text:
-                        yield text
+            import pyarrow.parquet as pq
+
+            # Use iter_batches to stream the file instead of loading it entirely
+            parquet_file = pq.ParquetFile(local_path)
+            total_rows = parquet_file.metadata.num_rows
+
+            with tqdm(
+                total=total_rows,
+                desc=f"Reading {local_path.name}",
+                unit="row",
+                leave=False,
+            ) as pbar:
+                for batch in parquet_file.iter_batches(columns=[self.text_column]):
+                    # batch is a RecordBatch, convert to dict or pandas
+                    # We can access columns directly as arrays
+                    column_data = batch[self.text_column]
+                    # Iterate over the PyArrow array efficiently
+                    for item in column_data:
+                        # item is a pyarrow scalar, convert to python string
+                        text = item.as_py()
+                        if isinstance(text, str) and text:
+                            yield text
+                    pbar.update(batch.num_rows)
+
+        except ImportError:
+            logger.warning(
+                "PyArrow not available, falling back to non-streaming pandas read."
+            )
+            try:
+                df = pd.read_parquet(local_path)
+                if self.text_column in df.columns:
+                    for text in tqdm(
+                        df[self.text_column],
+                        desc=f"Reading {local_path.name}",
+                        unit="row",
+                        leave=False,
+                    ):
+                        if isinstance(text, str) and text:
+                            yield text
+            except Exception as e:
+                logger.warning(f"Could not read Parquet file {local_path}: {e}")
         except Exception as e:
-            logger.warning(f"Could not read Parquet file {local_path}: {e}")
+            logger.warning(f"Could not read Parquet file {local_path} streamingly: {e}")
 
     def _read_jsonl(self, local_path: Path) -> Generator[str, None, None]:
         """Reads texts from a JSONL file."""
-        with open(local_path, encoding="utf-8") as f:
-            for line in f:
-                try:
-                    item = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
+        file_size = local_path.stat().st_size
+        with tqdm(
+            total=file_size,
+            desc=f"Reading {local_path.name}",
+            unit="B",
+            unit_scale=True,
+            leave=False,
+        ) as pbar:
+            with open(local_path, encoding="utf-8") as f:
+                for line in f:
+                    pbar.update(len(line))
+                    try:
+                        item = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
 
-                if isinstance(item, dict):
-                    text = item.get(self.text_column, "")
-                    if isinstance(text, str) and text:
-                        yield text
-                elif isinstance(item, list):
-                    for sub_item in item:
-                        if isinstance(sub_item, dict):
-                            text = sub_item.get(self.text_column, "")
-                            if isinstance(text, str) and text:
-                                yield text
+                    if isinstance(item, dict):
+                        text = item.get(self.text_column, "")
+                        if isinstance(text, str) and text:
+                            yield text
+                    elif isinstance(item, list):
+                        for sub_item in item:
+                            if isinstance(sub_item, dict):
+                                text = sub_item.get(self.text_column, "")
+                                if isinstance(text, str) and text:
+                                    yield text

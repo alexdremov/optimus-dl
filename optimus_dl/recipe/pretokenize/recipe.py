@@ -80,7 +80,7 @@ class DataPrepRecipe:
             logger.error("No files found to process. Aborting.")
             return
 
-        logger.info(f"Found {len(files)} files to process: {files}")
+        logger.info(f"Found {len(files)} files to process.")
         processor = TokenProcessor(files, self.config)
 
         # Load checkpoint if one exists
@@ -94,9 +94,15 @@ class DataPrepRecipe:
 
         # Setup progress bars
         file_pbar = tqdm(
-            total=len(files), desc="Files", unit="file", initial=processor.progress
+            total=len(files),
+            desc="Files",
+            unit="file",
+            initial=processor.progress,
+            position=0,
         )
-        token_pbar = tqdm(desc="Tokens", unit="tok", initial=self.sharder.total_tokens)
+        token_pbar = tqdm(
+            desc="Tokens", unit="tok", initial=self.sharder.total_tokens, position=1
+        )
 
         last_file_progress = processor.progress
 
@@ -118,6 +124,9 @@ class DataPrepRecipe:
 
                 if shard_was_flushed:
                     # A shard was just written, which is a good time to save a checkpoint
+                    file_pbar.set_description(
+                        f"Files (Saved shard {self.sharder.shard_idx-1})"
+                    )
                     logger.debug(f"Shard flushed at file index {processor.progress}.")
                     state = CheckpointState(
                         processor_state=processor.get_state(),
@@ -127,8 +136,10 @@ class DataPrepRecipe:
                     self.checkpointer.save(state)
 
             # Finalize the process
+            file_pbar.set_description("Finalizing index...")
             self.sharder.finalize(self._get_final_config())
             self.checkpointer.clean()
+            file_pbar.set_description("Processing Complete")
 
         except KeyboardInterrupt:
             logger.info("\nInterruption detected. Saving final checkpoint...")
