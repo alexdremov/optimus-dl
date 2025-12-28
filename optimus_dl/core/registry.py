@@ -72,13 +72,7 @@ class RegistryConfig(dict[str, Any]):
 
 C = TypeVar("C", bound=type)
 T = TypeVar("T")
-CorrectCfg = (
-    RegistryConfig
-    | RegistryConfigStrict
-    | omegaconf.DictConfig
-    | omegaconf.ListConfig
-    | dict
-)
+CorrectCfg = RegistryConfig | RegistryConfigStrict | omegaconf.DictConfig | dict
 
 
 def _get_cfg_path(cfg: CorrectCfg) -> list[str] | None:
