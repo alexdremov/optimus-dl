@@ -23,7 +23,7 @@ model_transforms:
 
 lr_scheduler:
   warmup_steps: 300
-  n_warmup_fraction: null
+  warmup_steps_fraction: null
 
 # Experiment configuration
 common:

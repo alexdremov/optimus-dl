@@ -17,8 +17,8 @@ class WSDSchedulerConfig(BaseLRSchedulerConfig):
 
     Attributes:
         final_lr_factor: Factor of base_lr for the final learning rate.
-        n_warmup: Number of iterations for linear warmup.
-        n_warmup_fraction: Fraction of total iterations for warmup.
+        warmup_steps: Number of iterations for linear warmup.
+        warmup_steps_fraction: Fraction of total iterations for warmup.
         init_div_factor: Initial division factor for start of warmup (1/X).
         fract_decay: Fraction of total iterations dedicated to decay phase.
         decay_type: Strategy for decay ('linear', 'cosine', 'exp', etc.).
@@ -28,8 +28,8 @@ class WSDSchedulerConfig(BaseLRSchedulerConfig):
     """
 
     final_lr_factor: float = 0.0  # factor by which to reduce max_lr at the end
-    n_warmup: int | None = 300  # number of warmup iterations
-    n_warmup_fraction: float | None = None  # fraction of iterations used for warmup
+    warmup_steps: int | None = 300  # number of warmup iterations
+    warmup_steps_fraction: float | None = None  # fraction of iterations used for warmup
     init_div_factor: int = 100  # initial division factor for warmup
     fract_decay: float = 0.1  # fraction of iterations used for decay
     decay_type: str = (
@@ -66,15 +66,15 @@ class WSDScheduler(BaseLRScheduler):
         super().__init__(optimizer)
 
         assert (
-            cfg.n_warmup is not None or cfg.n_warmup_fraction is not None
-        ), "Either n_warmup or n_warmup_fraction must be specified"
-        if cfg.n_warmup is None:
-            assert cfg.n_warmup_fraction is not None
-            cfg.n_warmup = int(cfg.n_warmup_fraction * iterations)
+            cfg.warmup_steps is not None or cfg.warmup_steps_fraction is not None
+        ), "Either warmup_steps or warmup_steps_fraction must be specified"
+        if cfg.warmup_steps is None:
+            assert cfg.warmup_steps_fraction is not None
+            cfg.warmup_steps = int(cfg.warmup_steps_fraction * iterations)
 
         self.iterations = iterations
         self.final_lr_factor = cfg.final_lr_factor
-        self.n_warmup = cfg.n_warmup
+        self.warmup_steps = cfg.warmup_steps
         self.init_div_factor = cfg.init_div_factor
         self.fract_decay = cfg.fract_decay
         self.decay_type = cfg.decay_type
@@ -109,10 +109,10 @@ class WSDScheduler(BaseLRScheduler):
 
     def _get_lr_factor(self, step: int) -> float:
         """Identify current phase and compute the corresponding LR factor."""
-        if step < self.n_warmup:
+        if step < self.warmup_steps:
             # Warmup phase: linear interpolation from 1/init_div_factor to 1.0
-            return (step / self.n_warmup) + (
-                1 - step / self.n_warmup
+            return (step / self.warmup_steps) + (
+                1 - step / self.warmup_steps
             ) / self.init_div_factor
         elif step < self.n_hold:
             # Hold phase: constant at 1.0
@@ -202,7 +202,7 @@ class WSDScheduler(BaseLRScheduler):
             {
                 "iterations": self.iterations,
                 "final_lr_factor": self.final_lr_factor,
-                "n_warmup": self.n_warmup,
+                "warmup_steps": self.warmup_steps,
                 "init_div_factor": self.init_div_factor,
                 "fract_decay": self.fract_decay,
                 "decay_type": self.decay_type,
@@ -220,7 +220,7 @@ class WSDScheduler(BaseLRScheduler):
         super().load_state_dict(state_dict)
         self.iterations = state_dict["iterations"]
         self.final_lr_factor = state_dict["final_lr_factor"]
-        self.n_warmup = state_dict["n_warmup"]
+        self.warmup_steps = state_dict["warmup_steps"]
         self.init_div_factor = state_dict["init_div_factor"]
         self.fract_decay = state_dict["fract_decay"]
         self.decay_type = state_dict["decay_type"]
