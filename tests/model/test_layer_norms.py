@@ -1,7 +1,10 @@
 import torch
 import torch.nn as nn
 
-from optimus_dl.modules.model.blocks.layer_norms import LayerNorm, RMSNorm
+from optimus_dl.modules.model.blocks.layer_norms import (
+    LayerNorm,
+    RMSNorm,
+)
 
 
 class TestLayerNorm:

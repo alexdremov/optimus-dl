@@ -4,7 +4,10 @@
 import logging
 
 import hydra
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import (
+    OmegaConf,
+    DictConfig,
+)
 
 from optimus_dl.core.log import setup_logging
 from optimus_dl.recipe.pretokenize.config import DataPrepConfig

@@ -1,7 +1,7 @@
 import math
 
-import pytest
 import torch
+import pytest
 import torch.nn as nn
 
 from optimus_dl.modules.model.gpt2 import (
@@ -475,7 +475,10 @@ class TestGPT:
 
     def test_blacklist_weight_modules(self):
         """Test that BLACKLIST_WEIGHT_MODULES contains expected module types"""
-        from optimus_dl.modules.model.blocks.layer_norms import LayerNorm, RMSNorm
+        from optimus_dl.modules.model.blocks.layer_norms import (
+            LayerNorm,
+            RMSNorm,
+        )
 
         expected_types = [
             torch.nn.LayerNorm,

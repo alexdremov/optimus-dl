@@ -1,9 +1,15 @@
 import logging
-from dataclasses import dataclass, field
+from dataclasses import (
+    dataclass,
+    field,
+)
 from typing import Any
 
 import torchdata.nodes
-from omegaconf import MISSING, OmegaConf
+from omegaconf import (
+    OmegaConf,
+    MISSING,
+)
 from torchdata.nodes.base_node import BaseNode
 
 from optimus_dl.core.registry import RegistryConfigStrict

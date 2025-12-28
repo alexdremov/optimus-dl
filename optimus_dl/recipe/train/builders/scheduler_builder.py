@@ -6,7 +6,11 @@ from typing import Any
 
 from torch.optim import Optimizer
 
-from optimus_dl.core.registry import RegistryConfig, build, make_registry
+from optimus_dl.core.registry import (
+    RegistryConfig,
+    build,
+    make_registry,
+)
 from optimus_dl.modules.optim import OptimizationConfig
 
 logger = logging.getLogger(__name__)

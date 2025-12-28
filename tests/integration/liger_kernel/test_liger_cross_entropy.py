@@ -1,8 +1,8 @@
 import importlib.util
 import unittest
 
-import pytest
 import torch
+import pytest
 
 from optimus_dl.modules.criterion.cross_entropy import (
     CrossEntropyCriterion,

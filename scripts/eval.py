@@ -8,7 +8,10 @@ import hydra
 from omegaconf import DictConfig
 
 from optimus_dl.core.log import setup_logging
-from optimus_dl.recipe.eval import EvalConfig, EvalRecipe
+from optimus_dl.recipe.eval import (
+    EvalConfig,
+    EvalRecipe,
+)
 
 logger = logging.getLogger(__name__)
 

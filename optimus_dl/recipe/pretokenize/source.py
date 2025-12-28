@@ -9,9 +9,15 @@ from pathlib import Path
 
 import pandas as pd
 import yaml
-from huggingface_hub import hf_hub_download, list_repo_files
+from huggingface_hub import (
+    hf_hub_download,
+    list_repo_files,
+)
 
-from .config import DatasetConfig, ProcessingConfig
+from .config import (
+    DatasetConfig,
+    ProcessingConfig,
+)
 
 logger = logging.getLogger(__name__)
 

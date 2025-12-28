@@ -5,9 +5,16 @@ from dataclasses import dataclass
 from typing import Any
 
 from optimus_dl.core.model_utils import get_num_parameters
-from optimus_dl.core.registry import RegistryConfig, make_registry
+from optimus_dl.core.registry import (
+    RegistryConfig,
+    make_registry,
+)
 from optimus_dl.modules.distributed import Collective
-from optimus_dl.modules.model import BaseModel, ModelConfig, build_model
+from optimus_dl.modules.model import (
+    BaseModel,
+    ModelConfig,
+    build_model,
+)
 from optimus_dl.modules.model_transforms import (
     ModelTransformConfig,
     build_model_transform,

@@ -1,10 +1,13 @@
 import importlib.util
 import unittest
 
-import pytest
 import torch
+import pytest
 
-from optimus_dl.modules.model.llama2 import Llama, LlamaConfig
+from optimus_dl.modules.model.llama2 import (
+    Llama,
+    LlamaConfig,
+)
 
 LIGER_AVAILABLE = importlib.util.find_spec("liger_kernel") is not None
 

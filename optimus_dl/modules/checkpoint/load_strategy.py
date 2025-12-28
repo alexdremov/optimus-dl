@@ -6,7 +6,10 @@ want to load model weights but not optimizer state, or for resuming training wit
 different configurations.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import (
+    dataclass,
+    field,
+)
 
 
 @dataclass

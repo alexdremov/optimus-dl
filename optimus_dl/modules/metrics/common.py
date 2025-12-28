@@ -12,7 +12,10 @@ from typing import Any
 import numpy as np
 import torch
 
-from .base import BaseMetric, log_metric
+from .base import (
+    BaseMetric,
+    log_metric,
+)
 
 
 def safe_round(number: float | int | Any, ndigits: int | None) -> float | int:

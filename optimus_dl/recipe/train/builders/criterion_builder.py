@@ -3,8 +3,15 @@
 import logging
 from dataclasses import dataclass
 
-from optimus_dl.core.registry import RegistryConfig, build, make_registry
-from optimus_dl.modules.criterion import BaseCriterion, CriterionConfig
+from optimus_dl.core.registry import (
+    RegistryConfig,
+    build,
+    make_registry,
+)
+from optimus_dl.modules.criterion import (
+    BaseCriterion,
+    CriterionConfig,
+)
 
 logger = logging.getLogger(__name__)
 

@@ -6,7 +6,13 @@ from dataclasses import dataclass
 
 import torch
 import torch.optim
-from torch.optim._muon import DEFAULT_A, DEFAULT_B, DEFAULT_C, DEFAULT_NS_STEPS, EPS
+from torch.optim._muon import (
+    DEFAULT_A,
+    DEFAULT_B,
+    DEFAULT_C,
+    DEFAULT_NS_STEPS,
+    EPS,
+)
 
 from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.optim import register_optimizer

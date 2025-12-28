@@ -1,5 +1,8 @@
 import logging
-from dataclasses import dataclass, field
+from dataclasses import (
+    dataclass,
+    field,
+)
 
 from optimus_dl.modules.model.base import BaseModel
 from optimus_dl.modules.model_transforms import register_model_transform

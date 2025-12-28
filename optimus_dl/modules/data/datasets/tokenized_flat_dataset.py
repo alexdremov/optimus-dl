@@ -1,5 +1,8 @@
 import math
-from dataclasses import dataclass, field
+from dataclasses import (
+    dataclass,
+    field,
+)
 
 import numpy as np
 from omegaconf import MISSING

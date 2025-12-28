@@ -1,8 +1,11 @@
-from unittest.mock import Mock, patch
+from unittest.mock import (
+    Mock,
+    patch,
+)
 
 import numpy as np
-import pytest
 import torch
+import pytest
 
 from optimus_dl.modules.metrics.base import (
     BaseMetric,

@@ -1,8 +1,14 @@
-from abc import ABC, abstractmethod
+from abc import (
+    ABC,
+    abstractmethod,
+)
 
 import torch
 from torch import Tensor
-from torch.distributed import ProcessGroup, ReduceOp
+from torch.distributed import (
+    ProcessGroup,
+    ReduceOp,
+)
 
 
 class Collective(ABC):

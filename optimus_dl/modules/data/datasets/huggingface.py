@@ -3,8 +3,11 @@ from dataclasses import dataclass
 
 import datasets
 import datasets.distributed
+from omegaconf import (
+    OmegaConf,
+    MISSING,
+)
 from datasets import load_dataset
-from omegaconf import MISSING, OmegaConf
 
 from optimus_dl.core.registry import RegistryConfigStrict
 

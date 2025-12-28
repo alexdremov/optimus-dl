@@ -3,7 +3,10 @@
 import logging
 from collections.abc import Iterator
 from contextlib import nullcontext
-from typing import Any, NamedTuple
+from typing import (
+    Any,
+    NamedTuple,
+)
 
 import torch
 from torch.distributed.tensor import DTensor
@@ -11,9 +14,15 @@ from torch.distributed.tensor.parallel import loss_parallel
 from torch.optim import Optimizer
 
 from optimus_dl.core.log import warn_once
-from optimus_dl.core.profile import measured_lambda, measured_next
+from optimus_dl.core.profile import (
+    measured_lambda,
+    measured_next,
+)
 from optimus_dl.modules.criterion import BaseCriterion
-from optimus_dl.modules.metrics import log_averaged, metrics_group
+from optimus_dl.modules.metrics import (
+    log_averaged,
+    metrics_group,
+)
 from optimus_dl.modules.metrics.common import log_summed
 from optimus_dl.modules.model.base import BaseModel
 from optimus_dl.recipe.train.config import OptimizationConfig

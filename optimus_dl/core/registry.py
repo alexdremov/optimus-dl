@@ -26,7 +26,11 @@ Example:
 
 import functools
 from dataclasses import dataclass
-from typing import Any, TypeVar, overload
+from typing import (
+    Any,
+    TypeVar,
+    overload,
+)
 
 import omegaconf
 

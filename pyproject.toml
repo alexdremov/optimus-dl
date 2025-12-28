@@ -128,13 +128,16 @@ extend-exclude = '''
 # isort configuration
 [tool.isort]
 profile = "black"
-line_length = 88
-multi_line_output = 3
+src_paths = "optimus_dl"
+force_to_top = ["omegaconf", "hydra", "torch", "numpy"]
 include_trailing_comma = true
-force_grid_wrap = 0
+combine_as_imports = true
+group_by_package = true
 use_parentheses = true
+multi_line_output = 3
+force_grid_wrap = 2
 ensure_newline_before_comments = true
-skip = ["optimus_dl/_version.py"]
+skip = ["optimus_dl/_version.py", ".venv"]
 
 # pytest configuration
 [tool.pytest.ini_options]

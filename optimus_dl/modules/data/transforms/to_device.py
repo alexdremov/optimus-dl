@@ -1,5 +1,8 @@
 import logging
-from dataclasses import dataclass, field
+from dataclasses import (
+    dataclass,
+    field,
+)
 
 import torch
 import torchdata.nodes

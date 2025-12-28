@@ -1,8 +1,11 @@
 import numpy as np
-import pytest
 import torch
+import pytest
 from omegaconf import OmegaConf
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+)
 
 from optimus_dl.core.registry import build
 from optimus_dl.modules.model.presets.hf_llama import HFLlamaConfig

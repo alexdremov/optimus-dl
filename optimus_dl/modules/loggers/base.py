@@ -5,7 +5,10 @@ backends must implement to integrate with the metrics system.
 """
 
 import logging
-from abc import ABC, abstractmethod
+from abc import (
+    ABC,
+    abstractmethod,
+)
 from typing import Any
 
 logger = logging.getLogger(__name__)

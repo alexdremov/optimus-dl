@@ -22,7 +22,11 @@ from torch.distributed.checkpoint.state_dict_loader import load as dcp_load
 from torch.distributed.checkpoint.state_dict_saver import save as dcp_save
 from torch.optim import Optimizer
 
-from optimus_dl.core.registry import RegistryConfig, build, make_registry
+from optimus_dl.core.registry import (
+    RegistryConfig,
+    build,
+    make_registry,
+)
 from optimus_dl.modules.distributed import Collective
 from optimus_dl.modules.lr_scheduler import BaseLRScheduler
 from optimus_dl.modules.metrics import (

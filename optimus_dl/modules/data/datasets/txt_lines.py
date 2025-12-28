@@ -2,7 +2,10 @@ import hashlib
 import logging
 import os
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import (
+    dataclass,
+    field,
+)
 
 import requests
 from omegaconf import MISSING

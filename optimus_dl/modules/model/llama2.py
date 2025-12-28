@@ -17,18 +17,27 @@ Main differences from GPT2:
 
 import logging
 import math
-from dataclasses import dataclass, field
+from dataclasses import (
+    dataclass,
+    field,
+)
 
 import torch
 import torch.nn as nn
-from torch.distributed.tensor.placement_types import Replicate, Shard
+from torch.distributed.tensor.placement_types import (
+    Replicate,
+    Shard,
+)
 
 from optimus_dl.modules.model import register_model
 from optimus_dl.modules.model.blocks.attention import RotarySelfAttention
 from optimus_dl.modules.model.blocks.layer_norms import RMSNorm
 from optimus_dl.modules.model.blocks.mlp import SwiGLUMLP
 from optimus_dl.modules.model.blocks.rope import precompute_freqs_cis
-from optimus_dl.modules.model.gpt2 import GPT, GPTConfig
+from optimus_dl.modules.model.gpt2 import (
+    GPT,
+    GPTConfig,
+)
 
 logger = logging.getLogger(__name__)
 

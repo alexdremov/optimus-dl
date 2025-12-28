@@ -1,15 +1,24 @@
 import copy
 import logging
-from dataclasses import dataclass, field
+from dataclasses import (
+    dataclass,
+    field,
+)
 from enum import StrEnum
 from typing import Any
 
 import torch
 from omegaconf import MISSING
 
-from optimus_dl.core.registry import RegistryConfig, RegistryConfigStrict
+from optimus_dl.core.registry import (
+    RegistryConfig,
+    RegistryConfigStrict,
+)
 
-from . import build_dataset, register_dataset
+from . import (
+    build_dataset,
+    register_dataset,
+)
 from .base import BaseDataset
 
 logger = logging.getLogger(__name__)

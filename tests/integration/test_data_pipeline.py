@@ -1,6 +1,10 @@
 """Integration tests for data pipeline components."""
 
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import (
+    MagicMock,
+    Mock,
+    patch,
+)
 
 from optimus_dl.modules.data.transforms.tokenize import (
     TokenizeTransform,

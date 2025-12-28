@@ -7,7 +7,10 @@ from omegaconf import MISSING
 
 from optimus_dl.core.registry import RegistryConfigStrict
 
-from . import build_dataset, register_dataset
+from . import (
+    build_dataset,
+    register_dataset,
+)
 from .base import BaseDataset
 
 logger = logging.getLogger(__name__)

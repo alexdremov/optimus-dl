@@ -9,7 +9,10 @@ https://github.com/huggingface/transformers/blob/main/src/transformers/models/gp
 
 import logging
 import math
-from dataclasses import dataclass, field
+from dataclasses import (
+    dataclass,
+    field,
+)
 
 import torch
 import torch.nn as nn
@@ -20,7 +23,10 @@ from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.model import register_model
 from optimus_dl.modules.model.base import BaseModel
 from optimus_dl.modules.model.blocks.attention import CausalSelfAttention
-from optimus_dl.modules.model.blocks.layer_norms import LayerNorm, RMSNorm
+from optimus_dl.modules.model.blocks.layer_norms import (
+    LayerNorm,
+    RMSNorm,
+)
 
 logger = logging.getLogger(__name__)
 

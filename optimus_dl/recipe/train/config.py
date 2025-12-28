@@ -4,12 +4,21 @@ This module defines the configuration classes for the training recipe, including
 all hyperparameters, component configurations, and training settings.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import (
+    dataclass,
+    field,
+)
 
-from omegaconf import II, MISSING
+from omegaconf import (
+    II,
+    MISSING,
+)
 
 from optimus_dl.core.registry import RegistryConfig
-from optimus_dl.modules.checkpoint import CheckpointManagerConfig, LoadStrategy
+from optimus_dl.modules.checkpoint import (
+    CheckpointManagerConfig,
+    LoadStrategy,
+)
 from optimus_dl.modules.criterion import CriterionConfig
 from optimus_dl.modules.data import DataConfig
 from optimus_dl.modules.distributed.config import DistributedConfig

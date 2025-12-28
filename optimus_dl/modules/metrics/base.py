@@ -1,6 +1,12 @@
 import contextlib
-from abc import ABC, abstractmethod
-from collections import OrderedDict, defaultdict
+from abc import (
+    ABC,
+    abstractmethod,
+)
+from collections import (
+    OrderedDict,
+    defaultdict,
+)
 from dataclasses import dataclass
 from typing import Any
 

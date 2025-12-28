@@ -3,11 +3,17 @@ from contextlib import nullcontext
 from dataclasses import dataclass
 
 import torch
-from torch.distributed.tensor import DTensor, Shard
+from torch.distributed.tensor import (
+    DTensor,
+    Shard,
+)
 from torch.distributed.tensor.parallel import loss_parallel
 
 from optimus_dl.core.registry import RegistryConfigStrict
-from optimus_dl.modules.criterion import BaseCriterion, register_criterion
+from optimus_dl.modules.criterion import (
+    BaseCriterion,
+    register_criterion,
+)
 from optimus_dl.modules.distributed.base import Collective
 from optimus_dl.modules.distributed.mesh import MeshCollective
 from optimus_dl.modules.metrics import (

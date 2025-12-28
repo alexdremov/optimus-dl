@@ -6,7 +6,10 @@ and GPU timing (using CUDA events for accurate GPU kernel timing).
 """
 
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import (
+    Callable,
+    Iterator,
+)
 from typing import TypeVar
 
 import torch

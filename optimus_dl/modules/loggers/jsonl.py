@@ -9,7 +9,10 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TextIO
+from typing import (
+    Any,
+    TextIO,
+)
 
 import yaml
 from omegaconf import OmegaConf
@@ -276,7 +279,10 @@ class JsonlLogger(BaseMetricsLogger):
 
             # Add timestamp if configured
             if self.cfg.include_timestamp:
-                from datetime import datetime, timezone
+                from datetime import (
+                    datetime,
+                    timezone,
+                )
 
                 log_entry["timestamp"] = datetime.now(timezone.utc).isoformat()
 

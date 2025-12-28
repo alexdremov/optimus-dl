@@ -3,7 +3,10 @@
 import json
 import logging
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import (
+    BaseHTTPRequestHandler,
+    HTTPServer,
+)
 
 import torch
 import torch.nn.functional as F
