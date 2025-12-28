@@ -270,7 +270,7 @@ class FileReader:
         file_size = local_path.stat().st_size
         with tqdm(
             total=file_size,
-            desc=f"Reading {local_path.name}",
+            desc=f"Reading {local_path}",
             unit="B",
             unit_scale=True,
             leave=False,
