@@ -258,7 +258,7 @@ class FileReader:
             if self.text_column in df.columns:
                 for text in tqdm(
                     df[self.text_column],
-                    desc=f"Reading {local_path.name}",
+                    desc=f"Reading {local_path}",
                     unit="row",
                     leave=False,
                 ):
