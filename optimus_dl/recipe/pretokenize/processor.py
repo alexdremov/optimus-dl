@@ -176,6 +176,7 @@ class TokenProcessor:
             desc="Refilling Buffer",
             unit="doc",
             leave=False,
+            disable=True,
         ) as pbar:
             while len(buffer) < target_size:
                 try:

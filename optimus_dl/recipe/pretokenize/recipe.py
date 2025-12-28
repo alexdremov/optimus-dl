@@ -121,6 +121,7 @@ class DataPrepRecipe:
 
                 # Update token progress bar
                 token_pbar.update(self.sharder.total_tokens - initial_total_tokens)
+                token_pbar.refresh(nolock=True)
 
                 if shard_was_flushed:
                     # A shard was just written, which is a good time to save a checkpoint
