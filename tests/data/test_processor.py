@@ -197,8 +197,8 @@ class TestTokenProcessor(unittest.TestCase):
 
     @patch("optimus_dl.recipe.pretokenize.processor.FileReader")
     @patch("optimus_dl.recipe.pretokenize.processor.build")
-    def test_worker_error_resilience(self, mock_build, mock_file_reader_cls):
-        """Test that worker errors (e.g. read failure) are skipped gracefully."""
+    def test_worker_error_propagation(self, mock_build, mock_file_reader_cls):
+        """Test that worker errors (e.g. read failure) propagate up."""
         self.config.processing.num_proc = 1
         mock_build.return_value = MockTokenizer(config=self.config.tokenizer)
 
@@ -212,13 +212,9 @@ class TestTokenProcessor(unittest.TestCase):
         mock_file_reader_instance.read_texts.side_effect = generator_side_effect
 
         processor = TokenProcessor(self.files, self.config)
-        all_tokens = list(processor)
 
-        self.assertEqual(len(all_tokens), 2)
-        doc_strings = ["".join(map(chr, tokens)) for tokens in all_tokens]
-        self.assertIn("doc_from_file1.jsonl", doc_strings)
-        self.assertIn("doc_from_file3.jsonl", doc_strings)
-        self.assertNotIn("doc_from_file2.jsonl", doc_strings)
+        with self.assertRaisesRegex(ValueError, "Corrupt file"):
+            list(processor)
 
     @patch("optimus_dl.recipe.pretokenize.processor.FileReader")
     @patch("optimus_dl.recipe.pretokenize.processor.build")
