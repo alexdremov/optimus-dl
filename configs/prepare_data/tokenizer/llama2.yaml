@@ -1,0 +1,4 @@
+_name: transformers
+name: meta-llama/Llama-2-7b
+add_bos: true
+add_eos: true

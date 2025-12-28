@@ -1,14 +1,12 @@
+defaults:
+  - tokenizer: gpt2
+
+
 dataset:
   repo_id: "roneneldan/TinyStories"
   split: "train"
   cache_dir: ${oc.env:SCRATCH_HOME,.}/cache
   file_pattern: null
-
-tokenizer:
-  _name: tiktoken
-  name: gpt2
-  add_bos: true
-  add_eos: true
 
 processing:
   shard_size_mb: 256
