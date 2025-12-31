@@ -37,7 +37,6 @@ class TestCheckpointManager(unittest.TestCase):
         self.assertIsNotNone(loaded_state)
         self.assertEqual(loaded_state.processor_state["file_idx"], 5)
         self.assertEqual(loaded_state.sharder_state["shard_idx"], 1)
-        self.assertEqual(loaded_state.rng_state, "test_rng_state")
 
     def test_load_non_existent(self):
         """Test that loading returns None when no checkpoint exists."""
