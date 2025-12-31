@@ -24,7 +24,6 @@ class CheckpointState:
 
     processor_state: dict[str, Any]
     sharder_state: dict[str, Any]
-    rng_state: Any
 
 
 class CheckpointManager:

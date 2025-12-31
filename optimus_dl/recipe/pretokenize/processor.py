@@ -1,14 +1,21 @@
 """
-Handles the tokenization of source files, including parallel processing and resumption.
+Handles the tokenization of source files using a high-performance parallel pipeline.
+Architecture:
+  [Downloader Process] -> (File Paths) -> [Reader Process] -> (Raw Batches) -> [Tokenizer Processes] -> (Token Batches) -> [Main Process]
 """
 
+import heapq
 import logging
 import multiprocessing
+import queue
 import random
 from collections.abc import Generator
-from typing import Any
+from typing import (
+    Any,
+    NamedTuple,
+)
 
-from tqdm import tqdm
+from huggingface_hub import hf_hub_download
 
 from optimus_dl.core.registry import build
 
@@ -17,260 +24,406 @@ from .source import FileReader
 
 logger = logging.getLogger(__name__)
 
-# Global variables in worker processes
-_worker_tokenizer = None
+
+# --- Worker Functions ---
 
 
-def _init_worker_context(tokenizer_cfg):
-    """Initializes the tokenizer and progress bar in the worker process."""
-    global _worker_tokenizer
-
-    _worker_tokenizer = build("tokenizer", tokenizer_cfg)
+class DownloaderMessage(NamedTuple):
+    file_idx: int
+    file_path: str
 
 
-def _tokenize_batch_worker(text_batch) -> list[list[int]]:
+def _downloader_worker(
+    files: list[str],
+    dataset_config: Any,
+    output_queue: multiprocessing.Queue,
+    yielded_file_idx: int | None,
+):
     """
-    Worker function to tokenize a batch of texts.
-
-    Args:
-        args: A tuple containing (text_batch, tokenizer_cfg).
-    Returns:
-        A list of tokenized documents.
+    Worker 1: Pre-loads (downloads) files.
+    Ensures files are present in the local HF cache before the Reader needs them.
     """
-    tokenized_docs = []
+    logger.setLevel(logging.INFO)
+    # We start from start_idx, assuming strict order is required
+    try:
+        yielded_file_idx = yielded_file_idx or 0
+        for i in range(yielded_file_idx, len(files)):
+            file_path = files[i]
+            # Ensure file is downloaded/cached
+            # This is the network-bound part.
+            hf_hub_download(
+                repo_id=dataset_config.repo_id,
+                filename=file_path,
+                repo_type="dataset",
+                cache_dir=dataset_config.cache_dir,
+            )
+            output_queue.put(DownloaderMessage(i, file_path))
+    except BaseException as e:
+        logger.error(f"Downloader worker failed: {e}")
+        output_queue.put(e)
+        return
+    finally:
+        output_queue.put(None)  # Sentinel
 
-    global _worker_tokenizer
 
-    for text in text_batch:
-        tokens = _worker_tokenizer.encode(text)
-        if tokens:
-            tokenized_docs.append(tokens)
+def _shuffled_reader(reader: Generator[str, None, None], buffer_size: int | None):
+    buffer_index = 0
+    if buffer_size is None:
+        yield from reader
+    else:
+        buffer = []
+        for text in reader:
+            buffer.append(text)
+            if len(buffer) >= buffer_size:
+                random.seed(buffer_index)
+                random.shuffle(buffer)
+                yield from buffer
+                buffer_index += 1
+                buffer = []
+        if buffer:
+            random.seed(buffer_index)
+            random.shuffle(buffer)
+            yield from buffer
+            buffer_index += 1
 
-    return tokenized_docs
+
+class ReaderMessage(NamedTuple):
+    file_idx: int
+    doc_idx: int
+    sort_doc_id: int
+    text: str
+
+
+def _reader_worker(
+    input_queue: multiprocessing.Queue,
+    output_queue: multiprocessing.Queue,
+    processing_config: Any,
+    dataset_config: Any,
+    yielded_doc_idx: int | None,
+    shuffle_buffer_size: int | None,
+    num_workers: int,
+):
+    """
+    Worker 2: Reads files and produces raw text batches.
+    """
+    logger.setLevel(logging.INFO)
+    if yielded_doc_idx is not None:
+        logger.info(f"Reader: Skipping first {yielded_doc_idx} docs (idx)")
+
+    try:
+        reader = FileReader(processing_config, dataset_config)
+        sort_doc_id = 0
+
+        while True:
+            item = input_queue.get()
+            if item is None:
+                break
+
+            if isinstance(item, BaseException):
+                raise RuntimeError("Worker failed") from item
+
+            doc_idx = 0
+            file_path = item.file_path
+            file_idx = item.file_idx
+            for text in _shuffled_reader(
+                reader.read_texts(file_path), buffer_size=shuffle_buffer_size
+            ):
+                if yielded_doc_idx is not None and doc_idx <= yielded_doc_idx:
+                    doc_idx += 1
+                    continue
+                else:
+                    yielded_doc_idx = None
+
+                output_queue.put(
+                    ReaderMessage(
+                        file_idx=file_idx,
+                        doc_idx=doc_idx,
+                        sort_doc_id=sort_doc_id,
+                        text=text,
+                    )
+                )
+                doc_idx += 1
+                sort_doc_id += 1
+
+    except BaseException as e:
+        logger.error(f"Reader worker failed: {e}")
+        output_queue.put(e)
+        return
+    finally:
+        for _ in range(num_workers):
+            output_queue.put(None)  # Sentinel
+
+
+class TokenizedMessage(NamedTuple):
+    file_idx: int
+    doc_idx: int
+    sort_doc_id: int
+    tokens: list[int]
+
+
+def _tokenizer_worker(
+    input_queue: multiprocessing.Queue,
+    output_queue: multiprocessing.Queue,
+    tokenizer: Any,
+):
+    """
+    Worker 3 (Pool): Tokenizes text batches.
+    """
+    logger.setLevel(logging.INFO)
+    try:
+        while True:
+            item = input_queue.get()
+            if item is None:
+                break
+
+            if isinstance(item, BaseException):
+                raise RuntimeError("Worker failed") from item
+
+            text = item.text
+            tokens = tokenizer.encode(text)
+
+            output_queue.put(
+                TokenizedMessage(
+                    file_idx=item.file_idx,
+                    doc_idx=item.doc_idx,
+                    sort_doc_id=item.sort_doc_id,
+                    tokens=tokens,
+                )
+            )
+    except BaseException as e:
+        logger.error(f"Tokenizer worker failed: {e}")
+        output_queue.put(e)
+        return
+    finally:
+        output_queue.put(None)
 
 
 class TokenProcessor:
-    """A resumable generator that yields tokenized documents from a list of files.
+    """A resumable, parallel tokenization pipeline.
 
-    Manages a pool of workers to tokenize files in parallel. Features:
+    Manages a multi-stage pipeline:
+    1. Downloader (Pre-fetch)
+    2. Reader (Disk I/O)
+    3. Tokenizers (CPU)
 
-    - **Parallelism**: Uses multiprocessing to speed up tokenization.
-    - **Buffering**: Accumulates a buffer of documents for local shuffling.
-    - **Resumability**: Tracks file progress and buffer state to allow
-      checkpointing and resuming after interruptions without saving the full buffer.
-    - **Streaming**: Reads files in batches to support large files without OOM.
-
-    Args:
-        files: List of file paths to process.
-        config: Data preparation configuration.
+    Outputs are re-ordered to ensure determinism for resumption.
     """
 
     def __init__(self, files: list[str], config: DataPrepConfig):
         self.files = files
-        self.tokenizer_config = config.tokenizer
+        self.config = config
+        self.tokenizer = build("tokenizer", config.tokenizer)
         self.dataset_config = config.dataset
         self.processing_config = config.processing
         self.num_proc = self.processing_config.num_proc
-        self.batch_size = 1000  # Number of docs per batch sent to workers
+        self.shuffle_buffer_size = self.processing_config.shuffle_buffer_size
 
-        # State
-        self.file_idx = 0
-        self.doc_idx_in_file = 0  # Track progress within the current file
+        # Pipeline internals
+        self.ctx = multiprocessing.get_context("spawn")
+        self.processes = []
+        self.queues = {}
+
+        self.yielded_doc_idx = None
+        self.yielded_file_idx = None
         self.total_docs_yielded = 0
 
-        # Resumption state (Block-based)
-        self.block_start_file_idx = 0
-        self.block_start_doc_idx = 0
-        self.block_rng_state = None
-        self.docs_yielded_in_block = 0
-
-        # Internal stream state
-        self.pool: multiprocessing.Pool | None = None
-        self._batch_stream: Generator | None = None
-
     def get_state(self) -> dict[str, Any]:
-        """Returns the current state for checkpointing."""
         return {
-            "file_idx": self.file_idx,
-            "doc_idx_in_file": self.doc_idx_in_file,
-            "block_start_file_idx": self.block_start_file_idx,
-            "block_start_doc_idx": self.block_start_doc_idx,
-            "block_rng_state": self.block_rng_state,
-            "docs_yielded_in_block": self.docs_yielded_in_block,
+            "yielded_doc_idx": self.yielded_doc_idx,
+            "yielded_file_idx": self.yielded_file_idx,
             "total_docs_yielded": self.total_docs_yielded,
         }
 
     def load_state(self, state: dict[str, Any]):
-        """Restores the state from a checkpoint."""
-        self.file_idx = state.get("file_idx", 0)
-        self.doc_idx_in_file = state.get("doc_idx_in_file", 0)
-        self.block_start_file_idx = state.get("block_start_file_idx", 0)
-        self.block_start_doc_idx = state.get("block_start_doc_idx", 0)
-        self.block_rng_state = state.get("block_rng_state")
-        self.docs_yielded_in_block = state.get("docs_yielded_in_block", 0)
+        self.yielded_doc_idx = state.get("yielded_doc_idx", 0)
+        self.yielded_file_idx = state.get("yielded_file_idx", 0)
         self.total_docs_yielded = state.get("total_docs_yielded", 0)
 
-        self._batch_stream = None
+        logger.info(
+            f"Resuming from checkpoint. {self.yielded_doc_idx = } {self.yielded_file_idx = } {self.total_docs_yielded = }"
+        )
 
     def __iter__(self) -> Generator[list[int], None, None]:
-        """Yields tokenized documents, handling buffering, shuffling, and resumption."""
-        self._start_pool()
+        # Clean up any previous run
+        self._stop_pipeline()
+
+        # Generator that yields ordered batches from the parallel pipeline
+        if self.num_proc == 0:
+            pipeline_gen = self._run_sequential()
+        else:
+            pipeline_gen = self._start_pipeline_generator()
+
         try:
-            # 1. Handle Resumption if needed (partial block)
-            if self.docs_yielded_in_block > 0:
-                yield from self._process_block(resume=True)
-
-            # 2. Main Processing Loop (new blocks)
-            while self.file_idx < len(self.files):
-                yield from self._process_block(resume=False)
-
+            for result in pipeline_gen:
+                self.total_docs_yielded += 1
+                self.yielded_doc_idx = result.doc_idx
+                self.yielded_file_idx = result.file_idx
+                yield result.tokens
         finally:
-            self._stop_pool()
+            self._stop_pipeline()
 
-    def _process_block(self, resume: bool) -> Generator[list[int], None, None]:
-        """Generates, shuffles, and yields a block of documents."""
-        if resume:
-            logger.info(
-                f"Resuming block from file {self.block_start_file_idx} (offset {self.block_start_doc_idx}), "
-                f"skipping {self.docs_yielded_in_block} documents."
+    def _start_pipeline_generator(self) -> Generator[TokenizedMessage, None, None]:
+        """
+        Sets up the multiprocessing pipeline and yields re-ordered batches.
+        Updates `self.file_idx` and `self.doc_idx_in_file` as data flows through.
+        """
+        # 1. Create Queues
+        # Limited size to control RAM
+        self.queues["files"] = self.ctx.Queue(maxsize=3)
+        self.queues["documents"] = self.ctx.Queue(maxsize=1024)
+        self.queues["tokens"] = self.ctx.Queue(maxsize=1024)
+
+        # 2. Start Downloader
+        p_down = self.ctx.Process(
+            target=_downloader_worker,
+            args=(
+                self.files,
+                self.dataset_config,
+                self.queues[
+                    "files"
+                ],  # Start from the beginning of the current block context
+                self.yielded_file_idx,
+            ),
+            name="Downloader",
+            daemon=True,
+        )
+        p_down.start()
+        self.processes.append(p_down)
+
+        # 3. Start Reader
+        actual_num_tok = max(1, self.num_proc)
+        p_read = self.ctx.Process(
+            target=_reader_worker,
+            args=(
+                self.queues["files"],
+                self.queues["documents"],
+                self.processing_config,
+                self.dataset_config,
+                self.yielded_doc_idx,  # Skip docs if resuming within a file
+                self.shuffle_buffer_size,
+                actual_num_tok,
+            ),
+            name="Reader",
+            daemon=True,
+        )
+        p_read.start()
+        self.processes.append(p_read)
+
+        # 4. Start Tokenizers
+        for i in range(actual_num_tok):
+            p_tok = self.ctx.Process(
+                target=_tokenizer_worker,
+                args=(
+                    self.queues["documents"],
+                    self.queues["tokens"],
+                    self.tokenizer,
+                ),
+                name=f"Tokenizer-{i}",
+                daemon=True,
             )
-            # Restore iteration state to the start of the block
-            self.file_idx = self.block_start_file_idx
-            self.doc_idx_in_file = self.block_start_doc_idx
-            self._reset_batch_stream()
+            p_tok.start()
+            self.processes.append(p_tok)
 
-            buffer = self._fill_buffer()
+        # 5. Re-ordering Loop (Generator)
+        return self._consume_and_reorder(actual_num_tok)
 
-            if self.block_rng_state:
-                random.setstate(self.block_rng_state)
+    def _run_sequential(self) -> Generator[TokenizedMessage, None, None]:
+        """
+        Runs the pipeline sequentially in the main process (for testing/debugging).
+        Reuses the exact same worker functions but with standard Queues and direct calls.
+        """
+        # 1. Create Queues (Standard queue.Queue for sequential execution)
+        self.queues["files"] = queue.Queue()
+        self.queues["documents"] = queue.Queue()
+        self.queues["tokens"] = queue.Queue()
 
-            random.shuffle(buffer)
-            yield from self._yield_from_buffer(buffer, skip=self.docs_yielded_in_block)
+        # 2. Run Downloader
+        _downloader_worker(
+            self.files,
+            self.dataset_config,
+            self.queues["files"],
+            self.yielded_file_idx,
+        )
+        logger.info("Downloader completed.")
 
-            self.docs_yielded_in_block = 0
-        else:
-            # Record start of a new block
-            self.block_start_file_idx = self.file_idx
-            self.block_start_doc_idx = self.doc_idx_in_file
+        # 3. Run Reader
+        _reader_worker(
+            self.queues["files"],
+            self.queues["documents"],
+            self.processing_config,
+            self.dataset_config,
+            self.yielded_doc_idx,
+            self.shuffle_buffer_size,
+            1,
+        )
+        logger.info("Reader completed.")
 
-            if self._batch_stream is None:
-                self._reset_batch_stream()
+        # 4. Run Tokenizer (Single worker for sequential)
+        _tokenizer_worker(
+            self.queues["documents"],
+            self.queues["tokens"],
+            self.tokenizer,
+        )
+        logger.info("Tokenizer completed.")
 
-            buffer = self._fill_buffer()
-            if not buffer:
-                return
+        # 5. Consume Results (1 worker means 1 sentinel)
+        return self._consume_and_reorder(num_workers=1)
 
-            self.block_rng_state = random.getstate()
-            random.shuffle(buffer)
+    def _consume_and_reorder(
+        self, num_workers: int
+    ) -> Generator[TokenizedMessage, None, None]:
+        """
+        Consumes from token_batches queue.
+        Ensures strict ordering by batch_id: 0, 1, 2...
+        """
+        next_expected_id = 0
+        reorder_heap = []  # Min-heap of (sort_doc_id, data)
+        finished_workers = 0
 
-            self.docs_yielded_in_block = 0
-            yield from self._yield_from_buffer(buffer)
+        while True:
+            # Check for dead workers
+            # (Simplification: we assume they handle their own errors or we catch the None sentinel)
 
-    def _fill_buffer(self) -> list[list[int]]:
-        """Consumes batches from the stream until the buffer is full."""
-        buffer = []
-        target_size = self.processing_config.shuffle_buffer_size
+            item = self.queues["tokens"].get()
 
-        with tqdm(
-            total=target_size,
-            desc="Refilling Buffer",
-            unit="doc",
-            leave=False,
-            disable=True,
-        ) as pbar:
-            while len(buffer) < target_size:
-                try:
-                    # Get next batch of tokenized docs
-                    batch_docs = next(self._batch_stream)
-                    if batch_docs:
-                        doc_count = len(batch_docs)
-                        buffer.extend(batch_docs)
-                        pbar.update(doc_count)
-                except StopIteration:
+            if isinstance(item, BaseException):
+                logger.warning(f"Got exception from worker. {item!r}")
+                raise item
+
+            if item is None:
+                logger.info(f"Worker {finished_workers} completed.")
+                finished_workers += 1
+                if finished_workers >= num_workers:
+                    logger.info("All workers completed.")
                     break
+                continue
 
-        return buffer
+            heapq.heappush(reorder_heap, (item.sort_doc_id, item))
 
-    def _yield_from_buffer(
-        self, buffer: list[list[int]], skip: int = 0
-    ) -> Generator[list[int], None, None]:
-        """Yields items from the buffer, updating state counters."""
-        if skip > 0:
-            del buffer[len(buffer) - skip :]
+            while reorder_heap and reorder_heap[0][0] == next_expected_id:
+                _, item = heapq.heappop(reorder_heap)
+                next_expected_id += 1
 
-        while buffer:
-            self.docs_yielded_in_block += 1
-            self.total_docs_yielded += 1
-            yield buffer.pop()
+                yield item
 
-    def _generate_batches(self) -> Generator[str]:
-        """Reads files and yields batches of raw text for processing."""
-        # Start from the current file_idx
-        # If we are resuming, we might need to skip docs in the current file
-        skip_count = self.doc_idx_in_file
+        logger.info("Pipeline completed.")
 
-        while self.file_idx < len(self.files):
-            file_path = self.files[self.file_idx]
-            logger.info(f"Reading file: {file_path}")
+    def _stop_pipeline(self):
+        """Terminates all workers."""
+        logger.info("Stopping pipeline...")
+        for p in self.processes:
+            if p.is_alive():
+                p.terminate()
+                p.join()
+        self.processes = []
 
-            file_reader = FileReader(self.processing_config, self.dataset_config)
-            text_iterator = file_reader.read_texts(file_path)
-
-            # Fast-forward if needed
-            if skip_count > 0:
-                logger.info(f"Skipping {skip_count} docs in {file_path}...")
-                for _ in range(skip_count):
-                    next(text_iterator)
-                skip_count = 0  # Only skip for the first file in the sequence
-
-            batch = []
-            for text in text_iterator:
-                batch.append(text)
-                self.doc_idx_in_file += 1
-
-                if len(batch) >= self.batch_size:
-                    yield batch
-                    batch = []
-
-            if batch:
-                yield batch
-
-            # File finished
-            self.file_idx += 1
-            self.doc_idx_in_file = 0
-
-    def _start_pool(self):
-        """Initializes the multiprocessing pool if needed."""
-        if self.num_proc > 1 and self.pool is None:
-            ctx = multiprocessing.get_context("spawn")
-
-            self.pool = ctx.Pool(
-                self.num_proc,
-                initializer=_init_worker_context,
-                initargs=(self.tokenizer_config,),
-            )
-            logger.info(f"Initialized processing pool with {self.num_proc} workers.")
-
-    def _stop_pool(self):
-        """Closes the multiprocessing pool."""
-        if self.pool:
-            self.pool.close()
-            self.pool.join()
-            self.pool = None
-            self._batch_stream = None
-
-    def _reset_batch_stream(self):
-        """Creates a new iterator over batches."""
-        if self.pool:
-            _init_worker_context(None)
-            self._batch_stream = self.pool.imap(
-                _tokenize_batch_worker, self._generate_batches()
-            )
-        else:
-            _init_worker_context(self.tokenizer_config)
-            self._batch_stream = map(_tokenize_batch_worker, self._generate_batches())
+        # Clear queues
+        for q in self.queues.values():
+            if not isinstance(q, queue.Queue):
+                q.close()
+                q.join_thread()
+        self.queues = {}
 
     @property
     def progress(self) -> int:
-        """Returns the number of files that have been submitted for processing."""
-        return self.file_idx
+        return self.yielded_file_idx or 0

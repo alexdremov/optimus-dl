@@ -1,7 +1,6 @@
 "Main recipe for preparing and tokenizing datasets from the Hugging Face Hub."
 
 import logging
-import random
 from pathlib import Path
 from typing import Any
 
@@ -42,18 +41,14 @@ class DataPrepRecipe:
         self.config = config
         self.output_dir = Path(config.output.dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.state = None
 
-        self._setup_rng()
         self.sharder = Sharder(config.output, config.processing)
-        self.tokenizer = self._setup_tokenizer()
         self.checkpointer = CheckpointManager(self.output_dir)
 
-    def _setup_rng(self):
-        """Initializes random number generators for reproducibility."""
-        random.seed(self.config.processing.seed)
-        np.random.seed(self.config.processing.seed)
+        self._check_tokenizer()
 
-    def _setup_tokenizer(self) -> BaseTokenizer:
+    def _check_tokenizer(self):
         """Builds the tokenizer and validates its vocab size against the chosen dtype."""
         tokenizer = build("tokenizer", self.config.tokenizer)
         assert isinstance(tokenizer, BaseTokenizer)
@@ -66,7 +61,6 @@ class DataPrepRecipe:
                 f"for the chosen dtype '{self.sharder.dtype}' ({max_val}). "
                 "Please use a larger dtype (e.g., uint32)."
             )
-        return tokenizer
 
     def run(self):
         """Executes the data preparation pipeline.
@@ -89,8 +83,6 @@ class DataPrepRecipe:
             logger.info("Resuming from a checkpoint.")
             processor.load_state(checkpoint.processor_state)
             self.sharder.load_state(checkpoint.sharder_state)
-            # Restore python's random state for the main thread
-            random.setstate(checkpoint.rng_state)
 
         # Setup progress bars
         file_pbar = tqdm(
@@ -121,7 +113,6 @@ class DataPrepRecipe:
 
                 # Update token progress bar
                 token_pbar.update(self.sharder.total_tokens - initial_total_tokens)
-                token_pbar.refresh(nolock=True)
 
                 if shard_was_flushed:
                     # A shard was just written, which is a good time to save a checkpoint
@@ -129,12 +120,11 @@ class DataPrepRecipe:
                         f"Files (Saved shard {self.sharder.shard_idx-1})"
                     )
                     logger.debug(f"Shard flushed at file index {processor.progress}.")
-                    state = CheckpointState(
+                    self.state = CheckpointState(
                         processor_state=processor.get_state(),
                         sharder_state=self.sharder.get_state(),
-                        rng_state=random.getstate(),
                     )
-                    self.checkpointer.save(state)
+                    self.checkpointer.save(self.state)
 
             # Finalize the process
             file_pbar.set_description("Finalizing index...")
@@ -143,15 +133,11 @@ class DataPrepRecipe:
             file_pbar.set_description("Processing Complete")
 
         except KeyboardInterrupt:
-            logger.info("\nInterruption detected. Saving final checkpoint...")
+            logger.info("Interruption detected. Saving final checkpoint...")
             # Ensure the current state is saved upon interruption
-            state = CheckpointState(
-                processor_state=processor.get_state(),
-                sharder_state=self.sharder.get_state(),
-                rng_state=random.getstate(),
-            )
-            self.checkpointer.save(state)
-            logger.info("Checkpoint saved. To resume, run the script again.")
+            if self.state is not None:
+                self.checkpointer.save(self.state)
+                logger.info("Checkpoint saved. To resume, run the script again.")
         finally:
             file_pbar.close()
             token_pbar.close()
@@ -163,10 +149,10 @@ class DataPrepRecipe:
             "split": self.config.dataset.split,
             "dtype": self.config.processing.dtype,
             "tokenizer": (
-                omegaconf.OmegaConf.to_container(self.tokenizer.config, resolve=True)
-                if omegaconf.OmegaConf.is_config(self.tokenizer.config)
+                omegaconf.OmegaConf.to_container(self.config.tokenizer, resolve=True)
+                if omegaconf.OmegaConf.is_config(self.config.tokenizer)
                 else omegaconf.OmegaConf.to_container(
-                    omegaconf.OmegaConf.structured(self.tokenizer.config), resolve=True
+                    omegaconf.OmegaConf.structured(self.config.tokenizer), resolve=True
                 )
             ),
         }

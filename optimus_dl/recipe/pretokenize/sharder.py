@@ -5,6 +5,7 @@ and creating the final index file.
 
 import json
 import logging
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -61,8 +62,8 @@ class Sharder:
             "shard_idx": self.shard_idx,
             "file_metadata": self.file_metadata,
             "total_tokens": self.total_tokens,
-            "current_shard_tokens": self.current_shard_tokens,
-            "current_shard_doc_lens": self.current_shard_doc_lens,
+            "current_shard_tokens": deepcopy(self.current_shard_tokens),
+            "current_shard_doc_lens": deepcopy(self.current_shard_doc_lens),
         }
 
     def load_state(self, state: dict[str, Any]):

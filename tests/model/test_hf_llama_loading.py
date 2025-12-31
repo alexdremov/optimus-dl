@@ -5,6 +5,7 @@ from unittest.mock import (
 )
 
 import torch
+import pytest
 from omegaconf import OmegaConf
 
 from optimus_dl.core.registry import build
@@ -150,6 +151,7 @@ class TestHFLlamaLoading(unittest.TestCase):
         self.assertEqual(model.config.n_kv_head, 2)
         self.assertEqual(model.config.n_head, 4)
 
+    @pytest.mark.slow
     def test_real_llama_config_loading(self):
         """Test loading a real model config (no weights) to ensure mapping logic works with real HF artifacts."""
         try:
