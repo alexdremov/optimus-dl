@@ -268,7 +268,6 @@ class TestTokenizedDataset(unittest.TestCase):
         # But if lens says 1000 tokens, and file has 500, we crash.
 
         lens_file = corrupt_data_dir / "test_data_0000000000.npy"
-        corrupt_data_dir / "test_data_0000000000_lens.npy"
 
         # Make lens imply huge length
         corrupted_lens = np.array([10000], dtype=np.uint32)

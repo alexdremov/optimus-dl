@@ -41,7 +41,6 @@ class DataPrepRecipe:
         self.config = config
         self.output_dir = Path(config.output.dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.state = None
 
         self.sharder = Sharder(config.output, config.processing)
         self.checkpointer = CheckpointManager(self.output_dir)
@@ -120,11 +119,11 @@ class DataPrepRecipe:
                         f"Files (Saved shard {self.sharder.shard_idx-1})"
                     )
                     logger.debug(f"Shard flushed at file index {processor.progress}.")
-                    self.state = CheckpointState(
+                    state = CheckpointState(
                         processor_state=processor.get_state(),
                         sharder_state=self.sharder.get_state(),
                     )
-                    self.checkpointer.save(self.state)
+                    self.checkpointer.save(state)
 
             # Finalize the process
             file_pbar.set_description("Finalizing index...")
@@ -135,9 +134,12 @@ class DataPrepRecipe:
         except KeyboardInterrupt:
             logger.info("Interruption detected. Saving final checkpoint...")
             # Ensure the current state is saved upon interruption
-            if self.state is not None:
-                self.checkpointer.save(self.state)
-                logger.info("Checkpoint saved. To resume, run the script again.")
+            state = CheckpointState(
+                processor_state=processor.get_state(),
+                sharder_state=self.sharder.get_state(),
+            )
+            self.checkpointer.save(state)
+            logger.info("Checkpoint saved. To resume, run the script again.")
         finally:
             file_pbar.close()
             token_pbar.close()

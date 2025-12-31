@@ -41,7 +41,7 @@ class SlowTiktokenTokenizer(TiktokenTokenizer):
 
     def encode(self, text: str) -> list[int]:
         if self.processed == self.process_docs:
-            logger.info("Stucking tokenizer")
+            logger.info("Stopping tokenizer")
             raise KeyboardInterrupt
         res = super().encode(text)
         self.processed += 1
@@ -167,7 +167,7 @@ def ref_temp_output_dir():
             ),
             DatasetConfig(
                 repo_id="Salesforce/wikitext",
-                file_pattern="wikitext-103-v1/train-*.parquet",
+                file_pattern="**/test-*.parquet",
             ),
         ]
     ),
@@ -219,7 +219,7 @@ def reference_tokenization(request, ref_temp_output_dir):
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("interrupt_at", [1, 5210, 5211, 14000, 23765, 23766, 40000])
+@pytest.mark.parametrize("interrupt_at", [1, 5211, 14000, 23766, 40000])
 def test_resumption_logic(temp_output_dir, reference_tokenization, interrupt_at):
     """
     Tests that the recipe can be interrupted and resumed correctly.

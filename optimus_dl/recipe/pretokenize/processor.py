@@ -58,7 +58,7 @@ def _downloader_worker(
                 cache_dir=dataset_config.cache_dir,
             )
             output_queue.put(DownloaderMessage(i, file_path))
-    except BaseException as e:
+    except (Exception, KeyboardInterrupt) as e:
         logger.error(f"Downloader worker failed: {e}")
         output_queue.put(e)
         return
@@ -66,7 +66,9 @@ def _downloader_worker(
         output_queue.put(None)  # Sentinel
 
 
-def _shuffled_reader(reader: Generator[str, None, None], buffer_size: int | None):
+def _shuffled_reader(
+    reader: Generator[str, None, None], buffer_size: int | None, init_seed: int
+):
     buffer_index = 0
     if buffer_size is None:
         yield from reader
@@ -75,13 +77,13 @@ def _shuffled_reader(reader: Generator[str, None, None], buffer_size: int | None
         for text in reader:
             buffer.append(text)
             if len(buffer) >= buffer_size:
-                random.seed(buffer_index)
+                random.seed(init_seed + buffer_index)
                 random.shuffle(buffer)
                 yield from buffer
                 buffer_index += 1
                 buffer = []
         if buffer:
-            random.seed(buffer_index)
+            random.seed(init_seed + buffer_index)
             random.shuffle(buffer)
             yield from buffer
             buffer_index += 1
@@ -102,6 +104,7 @@ def _reader_worker(
     yielded_doc_idx: int | None,
     shuffle_buffer_size: int | None,
     num_workers: int,
+    init_seed: int,
 ):
     """
     Worker 2: Reads files and produces raw text batches.
@@ -119,14 +122,16 @@ def _reader_worker(
             if item is None:
                 break
 
-            if isinstance(item, BaseException):
+            if isinstance(item, Exception | KeyboardInterrupt):
                 raise RuntimeError("Worker failed") from item
 
             doc_idx = 0
             file_path = item.file_path
             file_idx = item.file_idx
             for text in _shuffled_reader(
-                reader.read_texts(file_path), buffer_size=shuffle_buffer_size
+                reader.read_texts(file_path),
+                buffer_size=shuffle_buffer_size,
+                init_seed=file_idx * 100 + init_seed,
             ):
                 if yielded_doc_idx is not None and doc_idx <= yielded_doc_idx:
                     doc_idx += 1
@@ -145,7 +150,7 @@ def _reader_worker(
                 doc_idx += 1
                 sort_doc_id += 1
 
-    except BaseException as e:
+    except (Exception, KeyboardInterrupt) as e:
         logger.error(f"Reader worker failed: {e}")
         output_queue.put(e)
         return
@@ -176,7 +181,7 @@ def _tokenizer_worker(
             if item is None:
                 break
 
-            if isinstance(item, BaseException):
+            if isinstance(item, Exception | KeyboardInterrupt):
                 raise RuntimeError("Worker failed") from item
 
             text = item.text
@@ -190,7 +195,7 @@ def _tokenizer_worker(
                     tokens=tokens,
                 )
             )
-    except BaseException as e:
+    except (Exception, KeyboardInterrupt) as e:
         logger.error(f"Tokenizer worker failed: {e}")
         output_queue.put(e)
         return
@@ -217,6 +222,7 @@ class TokenProcessor:
         self.processing_config = config.processing
         self.num_proc = self.processing_config.num_proc
         self.shuffle_buffer_size = self.processing_config.shuffle_buffer_size
+        self.seed = self.processing_config.seed
 
         # Pipeline internals
         self.ctx = multiprocessing.get_context("spawn")
@@ -302,6 +308,7 @@ class TokenProcessor:
                 self.yielded_doc_idx,  # Skip docs if resuming within a file
                 self.shuffle_buffer_size,
                 actual_num_tok,
+                self.seed,
             ),
             name="Reader",
             daemon=True,
@@ -355,6 +362,7 @@ class TokenProcessor:
             self.yielded_doc_idx,
             self.shuffle_buffer_size,
             1,
+            self.seed,
         )
         logger.info("Reader completed.")
 
@@ -386,7 +394,7 @@ class TokenProcessor:
 
             item = self.queues["tokens"].get()
 
-            if isinstance(item, BaseException):
+            if isinstance(item, Exception | KeyboardInterrupt):
                 logger.warning(f"Got exception from worker. {item!r}")
                 raise item
 
