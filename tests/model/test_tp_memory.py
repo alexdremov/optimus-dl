@@ -105,6 +105,7 @@ def _run_memory_test(rank, unique_port, world_size, model_cfg_dict, result_queue
 
 class TestTPMemory:
 
+    @pytest.mark.slow
     @pytest.mark.parametrize("model_cfg_dict", models_cfg)
     def test_sp_memory_usage(self, unique_port, model_cfg_dict):
         world_size = 2

@@ -1,0 +1,4 @@
+_name: transformers
+name: meta-llama/Llama-3.1-8B
+add_bos: true
+add_eos: true

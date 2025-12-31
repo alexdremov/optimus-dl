@@ -1,0 +1,4 @@
+_name: tiktoken
+name: gpt2
+add_bos: true
+add_eos: true

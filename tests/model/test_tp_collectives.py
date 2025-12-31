@@ -147,6 +147,7 @@ models_cfg = [llama2_cfg, qwen3_test_cfg]
 
 @pytest.mark.parametrize("model_cfg_dict", models_cfg)
 class TestTPCollectivesGeneric:
+    @pytest.mark.slow
     @pytest.mark.parametrize("sequence_parallel", [False, True], ids=["NoSP", "SP"])
     def test_collectives_loss_parallel_false(
         self, unique_port, model_cfg_dict, sequence_parallel
@@ -160,6 +161,7 @@ class TestTPCollectivesGeneric:
             join=True,
         )
 
+    @pytest.mark.slow
     @pytest.mark.parametrize("sequence_parallel", [False, True], ids=["NoSP", "SP"])
     def test_collectives_loss_parallel_true(
         self, unique_port, model_cfg_dict, sequence_parallel

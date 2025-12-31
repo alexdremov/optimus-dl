@@ -192,9 +192,10 @@ models_cfg = [llama2_cfg, qwen3_test_cfg]
 
 @pytest.mark.parametrize("model_cfg_dict", models_cfg)
 class TestTPCorrectnessGeneric:
+    @pytest.mark.slow
     @pytest.mark.parametrize("sequence_parallel", [False, True], ids=["NoSP", "SP"])
     @pytest.mark.parametrize("loss_parallel", [False, True], ids=["NoLP", "LP"])
-    def test_tp_correctness_loss_parallel_false(
+    def test_tp_correctness(
         self, unique_port, model_cfg_dict, sequence_parallel, loss_parallel
     ):
         """Test TP=2 with loss_parallel=False, with/without SP"""

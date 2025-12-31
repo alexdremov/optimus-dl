@@ -125,13 +125,6 @@ class TestFileReader(unittest.TestCase):
         self.assertEqual(texts[0], "Alpha")
         self.assertEqual(texts[1], "Bravo")
 
-    @patch("optimus_dl.recipe.pretokenize.source.hf_hub_download")
-    def test_download_failure(self, mock_download):
-        """Test that the reader handles download errors gracefully."""
-        mock_download.side_effect = Exception("Download failed!")
-        texts = list(self.reader.read_texts("non_existent.jsonl"))
-        self.assertEqual(len(texts), 0)
-
 
 if __name__ == "__main__":
     unittest.main()

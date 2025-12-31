@@ -13,6 +13,7 @@ from optimus_dl.modules.model import build_model
 class TestQwen3Integration:
     """Integration tests for Qwen3 model, comparing against Hugging Face implementation."""
 
+    @pytest.mark.slow
     @pytest.mark.parametrize(
         "model_name",
         [

@@ -1,16 +1,24 @@
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import (
+    dataclass,
+    field,
+)
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from omegaconf import MISSING
 
-from optimus_dl.core.registry import RegistryConfigStrict
+from optimus_dl.core.registry import (
+    RegistryConfig,
+    RegistryConfigStrict,
+)
 
 from . import register_dataset
 from .base import BaseDataset
+from .strategies import build_dataset_sampling_strategy
+from .strategies.document import DocumentStrategyConfig
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +30,18 @@ class TokenizedDatasetConfig(RegistryConfigStrict):
     Attributes:
         data_dir: Path to the directory containing shards and index file.
         index_file: Name of the JSON index file (defaults to index.json).
+        seed: Random seed for shuffling (will be combined with rank and world_size).
         limit: Optional maximum number of documents to read.
+        strategy: Sampling strategy configuration.
     """
 
     data_dir: str = MISSING
     index_file: str = "index.json"
+    seed: int = 42
     limit: int | None = None  # Optional limit on number of documents
+    strategy: RegistryConfig = field(
+        default_factory=lambda: DocumentStrategyConfig(_name="document")
+    )
 
 
 @register_dataset("tokenized_dataset", TokenizedDatasetConfig)
@@ -38,12 +52,11 @@ class TokenizedDataset(BaseDataset):
     of multiple `.npy` shards and a global `index.json`. It provides:
 
     - **Memory Mapping**: Efficiently reads shards using `mmap_mode="r"`.
-    - **Document Partitioning**: Automatically shards the document list across
-      distributed ranks.
+    - **Pluggable Strategies**: Supports different sampling strategies (sequential, random chunking, etc.).
     - **Precise Seeking**: Can jump to any document index globally for resuming.
 
     Yields:
-        Dictionary: {"input_ids": np.array([...]), "document_id": int}
+        Dictionary: {"input_ids": np.array([...]), "document_id": int | np.array}
     """
 
     def __init__(
@@ -58,20 +71,21 @@ class TokenizedDataset(BaseDataset):
 
         # Internal State
         self.shards = []
-        self.shard_num_docs = []  # Number of documents per shard
+        self.shard_num_docs = []
         self.total_docs = 0
+        self.doc_lengths: np.ndarray | None = None
+        self.doc_to_shard_map: np.ndarray | None = None
 
-        # Pointers
-        self.global_doc_idx = 0
-        self.start_doc_idx = 0
-        self.end_doc_idx = 0
+        # Strategy
+        self.strategy = build_dataset_sampling_strategy(
+            cfg.strategy, rank=rank, world_size=world_size
+        )
 
         # Current Shard State
         self.current_shard_idx = -1
         self.current_shard_tokens: np.ndarray | None = None
         self.current_shard_doc_lens: np.ndarray | None = None
-        self.shard_token_offset = 0
-        self.shard_doc_offset = 0  # Index of document WITHIN the current shard
+        self.shard_doc_start_idx = 0  # Global doc index where current shard starts
 
     def _resolve_dtype(self, type_str: str):
         """Map string dtype names to numpy dtypes."""
@@ -105,7 +119,11 @@ class TokenizedDataset(BaseDataset):
 
         self.shards = []
         self.shard_num_docs = []
+        all_lengths = []
         self.total_docs = 0
+
+        # Pre-load lengths and build shard map
+        shard_indices = []
 
         for meta in files_meta:
             token_file = self.data_dir / meta["file"]
@@ -120,162 +138,143 @@ class TokenizedDataset(BaseDataset):
 
             self.shards.append((token_file, lens_file))
             self.shard_num_docs.append(num_docs)
+
+            # Load lengths (cast to int64 to prevent overflow)
+            shard_lens = np.load(lens_file, mmap_mode="r").astype(np.int64)
+            all_lengths.append(shard_lens)
+
+            # Create mapping: [shard_idx] * num_docs
+            shard_indices.append(
+                np.full(num_docs, len(self.shards) - 1, dtype=np.int32)
+            )
+
             self.total_docs += num_docs
 
+        # Concatenate all lengths
+        if all_lengths:
+            self.doc_lengths = np.concatenate(all_lengths)
+            self.doc_to_shard_map = np.concatenate(shard_indices)
+        else:
+            self.doc_lengths = np.array([], dtype=np.int64)
+            self.doc_to_shard_map = np.array([], dtype=np.int32)
+
+        # Apply limit
         if self.limit is not None:
             self.total_docs = min(self.total_docs, self.limit)
+            self.doc_lengths = self.doc_lengths[: self.limit]
+            self.doc_to_shard_map = self.doc_to_shard_map[: self.limit]
 
-        # Calculate Rank Boundaries (Partition by Documents)
-        docs_per_rank = self.total_docs // self.world_size
-        self.start_doc_idx = docs_per_rank * self.rank
-        self.end_doc_idx = docs_per_rank * (self.rank + 1)
+        # Initialize strategy
+        self.strategy.initialize(self.doc_lengths)
 
-        if self.rank == self.world_size - 1:
-            self.end_doc_idx = self.total_docs
+    def _load_shard_for_doc(self, doc_idx: int):
+        """Ensure the shard containing doc_idx is loaded."""
+        shard_idx = self.doc_to_shard_map[doc_idx]
 
-    def _seek(self, global_doc_idx: int):
-        """Seek to a specific global document index.
+        if shard_idx != self.current_shard_idx:
+            # Load new shard
+            token_path, lens_path = self.shards[shard_idx]
+            self.current_shard_tokens = np.load(token_path, mmap_mode="r")
+            self.current_shard_doc_lens = np.load(lens_path, mmap_mode="r")
+            self.current_shard_idx = shard_idx
 
-        Finds which shard contains the document and sets internal offsets.
-        """
-        # Validate bounds
-        if not (self.start_doc_idx <= global_doc_idx <= self.end_doc_idx):
-            # If we are exactly at the end, it's allowed (means finished)
-            if global_doc_idx == self.end_doc_idx:
-                self.global_doc_idx = global_doc_idx
-                return
+            # Calculate where this shard starts in global doc indices
+            count = 0
+            for i in range(shard_idx):
+                count += self.shard_num_docs[i]
+            self.shard_doc_start_idx = count
 
-            logger.warning(
-                f"Seeking to {global_doc_idx} which is outside rank bounds "
-                f"[{self.start_doc_idx}, {self.end_doc_idx}]. "
-                f"Clamping or correcting might be needed if world_size changed."
-            )
-            # We enforce strict bounds for now
-            global_doc_idx = max(
-                self.start_doc_idx, min(global_doc_idx, self.end_doc_idx)
-            )
+    def _fetch_segment(self, doc_idx: int, start: int, end: int) -> np.ndarray:
+        """Fetch a specific segment of tokens from a document."""
+        self._load_shard_for_doc(doc_idx)
 
-        self.global_doc_idx = global_doc_idx
+        # Local document index within the shard
+        local_doc_idx = doc_idx - self.shard_doc_start_idx
 
-        if self.global_doc_idx >= self.end_doc_idx:
-            # Done
-            self.current_shard_idx = len(self.shards)
-            return
-
-        # Find the shard containing global_doc_idx
-        cumulative_docs = 0
-        found_shard = False
-
-        for i, count in enumerate(self.shard_num_docs):
-            if cumulative_docs + count > global_doc_idx:
-                self.current_shard_idx = i
-                self.shard_doc_offset = global_doc_idx - cumulative_docs
-                found_shard = True
-                break
-            cumulative_docs += count
-
-        if not found_shard:
-            # Should be covered by boundary check, but safety fallback
-            raise RuntimeError(
-                f"Could not find shard for document index {global_doc_idx}"
-            )
-
-        # Load the shard and calculate token offset
-        self._load_current_shard(init_doc_offset=self.shard_doc_offset)
-
-    def _load_current_shard(self, init_doc_offset: int = 0):
-        """Memory-map the current shard files."""
-        if self.current_shard_idx >= len(self.shards):
-            self.current_shard_tokens = None
-            self.current_shard_doc_lens = None
-            return
-
-        token_path, lens_path = self.shards[self.current_shard_idx]
-
-        # Load full shard into memory
-        self.current_shard_tokens = np.load(token_path, mmap_mode="r")
-        self.current_shard_doc_lens = np.load(lens_path, mmap_mode="r")
-
-        self.shard_doc_offset = init_doc_offset
-
-        # Calculate token offset for the starting document
-        if init_doc_offset > 0:
-            self.shard_token_offset = np.sum(
-                self.current_shard_doc_lens[:init_doc_offset]
-            )
-        else:
-            self.shard_token_offset = 0
-
-    def reset(self, initial_state: dict[str, Any] | None = None):
-        """Restore dataset state or start from the rank's assigned beginning."""
-        super().reset(initial_state)
-
-        target_doc_idx = None
-
-        if initial_state:
-            assert self.rank == initial_state.get("rank", self.rank)
-            assert self.world_size == initial_state.get("world_size", self.world_size)
-            target_doc_idx = initial_state.get("global_doc_idx")
-
-        # Load metadata and calculate boundaries for (potentially new) rank
-        self._load_index()
-
-        if target_doc_idx is None:
-            target_doc_idx = self.start_doc_idx
-
-        # Seek to the correct position
-        self._seek(target_doc_idx)
-
-    def next(self):
-        """Yield the next tokenized document."""
-        # Check global limit
-        if self.global_doc_idx >= self.end_doc_idx:
-            raise StopIteration
-
-        # Check if we need to move to next shard
-        if self.current_shard_doc_lens is None or self.shard_doc_offset >= len(
-            self.current_shard_doc_lens
+        # Cache cumulative offsets for the current shard to enable O(1) lookups
+        if (
+            not hasattr(self, "_current_shard_offsets")
+            or self._current_shard_offsets_shard_idx != self.current_shard_idx
         ):
-            self.current_shard_idx += 1
-            # Reset offsets for new shard
-            self._load_current_shard(init_doc_offset=0)
+            self._current_shard_offsets = np.concatenate(
+                ([0], np.cumsum(self.current_shard_doc_lens))
+            ).astype(np.int64)
+            self._current_shard_offsets_shard_idx = self.current_shard_idx
 
-            if self.current_shard_tokens is None:
-                raise StopIteration
+        doc_start_token = self._current_shard_offsets[local_doc_idx]
 
-        # Get current document length
-        doc_len = self.current_shard_doc_lens[self.shard_doc_offset]
+        # Extract
+        abs_start = int(doc_start_token) + start
+        abs_end = int(doc_start_token) + end
 
-        # Extract tokens
-        start = self.shard_token_offset
-        end = start + doc_len
-
-        # Handle potential edge case where lens file doesn't match token file
-        if end > len(self.current_shard_tokens):
+        if abs_end > len(self.current_shard_tokens):
             logger.error(
-                f"Shard {self.current_shard_idx} mismatch: expected {end} tokens, got {len(self.current_shard_tokens)}"
+                f"Shard {self.current_shard_idx} mismatch: expected end {abs_end} > len {len(self.current_shard_tokens)}"
             )
             raise RuntimeError("Data corruption: lens file does not match token file.")
 
-        tokens = self.current_shard_tokens[start:end]
+        return self.current_shard_tokens[abs_start:abs_end]
 
-        # Prepare output
+    def reset(self, initial_state: dict[str, Any] | None = None):
+        """Restore dataset state."""
+        super().reset(initial_state)
+
+        # Reload index and lengths
+        self._load_index()
+
+        # Pass state to strategy
+        strategy_state = initial_state.get("strategy_state") if initial_state else None
+        self.strategy.reset(strategy_state)
+
+    def next(self):
+        """Yield the next sample."""
+        try:
+            segments = self.strategy.next_sample()
+        except StopIteration:
+            raise
+
+        if not segments:
+            raise StopIteration
+
+        # Collect data
+        data_parts = []
+        seq_lens = []
+        doc_ids_parts = []
+
+        is_multi_doc = len(segments) > 1
+
+        for doc_idx, (start, end) in segments:
+            part = self._fetch_segment(doc_idx, start, end)
+            data_parts.append(part)
+            length = len(part)
+            seq_lens.append(length)
+
+            if is_multi_doc:
+                doc_ids_parts.append(np.full(length, doc_idx, dtype=np.int64))
+
+        if len(data_parts) == 1:
+            input_ids = data_parts[0]
+            document_id = segments[0][0]
+        else:
+            input_ids = np.concatenate(data_parts)
+            document_id = np.concatenate(doc_ids_parts)
+
+        # Ensure correct dtype
+        if input_ids.dtype != self.dtype:
+            input_ids = input_ids.astype(self.dtype)
+
         item = {
-            "input_ids": np.array(tokens, dtype=self.dtype),  # Ensure copy/array
-            "document_id": self.global_doc_idx,
+            "input_ids": input_ids,
+            "document_id": document_id,
+            "seq_lens": np.array(seq_lens, dtype=np.int32),
         }
-
-        # Advance pointers
-        self.shard_token_offset = end
-        self.shard_doc_offset += 1
-        self.global_doc_idx += 1
 
         return item
 
     def get_state(self):
-        """Return the current global document index for checkpointing."""
+        """Return state for checkpointing."""
         return {
             "rank": self.rank,
             "world_size": self.world_size,
-            "global_doc_idx": self.global_doc_idx,
+            "strategy_state": self.strategy.get_state(),
         }

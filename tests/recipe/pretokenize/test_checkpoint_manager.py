@@ -26,7 +26,6 @@ class TestCheckpointManager(unittest.TestCase):
         state = CheckpointState(
             processor_state={"file_idx": 5, "buffer": [1, 2]},
             sharder_state={"shard_idx": 1, "total_tokens": 1000},
-            rng_state="test_rng_state",
         )
         self.checkpointer.save(state)
 
@@ -38,7 +37,6 @@ class TestCheckpointManager(unittest.TestCase):
         self.assertIsNotNone(loaded_state)
         self.assertEqual(loaded_state.processor_state["file_idx"], 5)
         self.assertEqual(loaded_state.sharder_state["shard_idx"], 1)
-        self.assertEqual(loaded_state.rng_state, "test_rng_state")
 
     def test_load_non_existent(self):
         """Test that loading returns None when no checkpoint exists."""
@@ -56,7 +54,7 @@ class TestCheckpointManager(unittest.TestCase):
 
     def test_atomic_save(self):
         """Test the atomicity of the save operation."""
-        state = CheckpointState({}, {}, {})
+        state = CheckpointState({}, {})
         self.checkpointer.save(state)
 
         # The temporary file should not exist after a successful save
