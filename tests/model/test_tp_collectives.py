@@ -89,7 +89,7 @@ def _run_collectives_test(
             expected_reduce_scatter = 1 + 2 * n_layer
 
             # AllGather:
-            # Attn Input: 1 x
+            # Attn Input: 1
             # MLP Input: 2 (w1, w2 separate)
             # LM Head Input: 1
             # LM Head Output gathering: 1 if not loss_parallel

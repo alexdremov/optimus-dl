@@ -117,6 +117,7 @@ class Olmo3Attention(RotarySelfAttention):
 
     def __init__(self, config: Olmo3Config, layer_idx: int):
         self.layer_type = config.layer_types[layer_idx]
+        assert self.layer_type in ("sliding_attention", "full_attention")
         sliding_window = (
             config.sliding_window if self.layer_type == "sliding_attention" else None
         )
@@ -171,6 +172,10 @@ class Olmo3(GPT):
         super().__init__(config)
         self.config = config
 
+        assert config.n_layer == len(
+            self.config.layer_types
+        ), "Number of layers must match the length of layer_types"
+
         self.head_dim = (
             config.head_dim
             if config.head_dim is not None
@@ -205,15 +210,15 @@ class Olmo3(GPT):
             }
         )
 
-        if config.tie_word_embeddings:
-            self.transformer.wte.weight = self.lm_head.weight
-
         self.apply(self._init_weights)
         for pn, p in self.named_parameters():
             if pn.endswith("c_proj.weight"):
                 torch.nn.init.normal_(
                     p, mean=0.0, std=0.02 / math.sqrt(2 * config.n_layer)
                 )
+
+        if config.tie_word_embeddings:
+            self.transformer.wte.weight = self.lm_head.weight
 
     def forward(self, input_ids, **kwargs):
         idx = input_ids

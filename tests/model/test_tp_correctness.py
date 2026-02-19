@@ -193,6 +193,7 @@ olmo3_test_cfg = {
     "n_head": 4,
     "n_kv_head": 2,
     "n_layer": 2,
+    "layer_types": ["sliding_attention", "full_attention"],
     "vocab_size": 256,
     "sequence_length": 32,
     "intermediate_size": 128,

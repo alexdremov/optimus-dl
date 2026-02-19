@@ -40,6 +40,12 @@ olmo3_mem_cfg = {
     "n_layer": 4,
     "vocab_size": 1024,
     "sequence_length": 512,
+    "layer_types": [
+        "sliding_attention",
+        "sliding_attention",
+        "sliding_attention",
+        "full_attention",
+    ],
 }
 models_cfg = [llama2_mem_cfg, qwen3_test_cfg, olmo3_mem_cfg]
 

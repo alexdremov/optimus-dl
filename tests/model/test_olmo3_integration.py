@@ -161,7 +161,7 @@ class TestOlmo3Integration:
                 is_sliding = "h.0" in name  # h.0 is sliding
                 if is_sliding:
                     our_mask = (q_idx >= kv_idx) & (
-                        q_idx - kv_idx <= hf_config.sliding_window
+                        q_idx - kv_idx < hf_config.sliding_window
                     )
                 else:
                     our_mask = q_idx >= kv_idx
@@ -184,29 +184,20 @@ class TestOlmo3Integration:
             hf_val = hf_outputs[name]
             opt_val = optimus_outputs[name]
 
+            def to_interleaved(w, heads, dim):
+                B, T, D = w.shape
+                w = w.view(B, T, heads, dim)
+                w1 = w[:, :, :, : dim // 2]
+                w2 = w[:, :, :, dim // 2 :]
+                w_new = torch.stack((w1, w2), dim=-1).view(B, T, D)
+                return w_new
+
             # Special handling for interleaved/half-half permutation if comparing projection outputs
             if "attn.q_proj" in name or "attn.q_norm" in name:
                 # permute HF output from half-half to interleaved
-                def to_interleaved(w, heads, dim):
-                    B, T, D = w.shape
-                    w = w.view(B, T, heads, dim)
-                    w1 = w[:, :, :, : dim // 2]
-                    w2 = w[:, :, :, dim // 2 :]
-                    w_new = torch.stack((w1, w2), dim=-1).view(B, T, D)
-                    return w_new
-
                 hf_val = to_interleaved(hf_val, n_head, head_dim)
 
             if "attn.k_proj" in name or "attn.k_norm" in name:
-
-                def to_interleaved(w, heads, dim):
-                    B, T, D = w.shape
-                    w = w.view(B, T, heads, dim)
-                    w1 = w[:, :, :, : dim // 2]
-                    w2 = w[:, :, :, dim // 2 :]
-                    w_new = torch.stack((w1, w2), dim=-1).view(B, T, D)
-                    return w_new
-
                 hf_val = to_interleaved(hf_val, n_kv_head, head_dim)
 
             max_diff = (hf_val.float() - opt_val.float()).abs().max().item()
