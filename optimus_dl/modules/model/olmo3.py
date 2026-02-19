@@ -88,6 +88,9 @@ class Olmo3Config(GPTConfig):
         default=4096,
         metadata={"description": "Window size for sliding window attention."},
     )
+    n_layer: int = field(
+        default=16 * 4, metadata={"description": "Number of transformer blocks"}
+    )
     layer_types: list[str] = field(
         default_factory=lambda: [
             "sliding_attention",
@@ -284,7 +287,7 @@ class Olmo3(GPT):
                     "transformer.wte": RowwiseParallel(
                         input_layouts=Replicate(),
                         output_layouts=Shard(1),
-                        use_local_output=False,
+                        use_local_output=True,
                     ),
                     "transformer.h.*.ln_1": SequenceParallel(),
                     "transformer.h.*.ln_2": SequenceParallel(),

@@ -68,6 +68,7 @@ class TestOlmo3Attention:
             n_head=4,
             n_kv_head=4,
             sliding_window=10,
+            n_layer=1,
             layer_types=["sliding_attention"],
         )
         attn = Olmo3Attention(config, layer_idx=0)
@@ -140,7 +141,12 @@ class TestOlmo3:
 
     def test_forward(self):
         config = Olmo3Config(
-            vocab_size=1000, n_layer=2, n_head=4, n_kv_head=4, n_embd=256
+            vocab_size=1000,
+            n_layer=2,
+            n_head=4,
+            n_kv_head=4,
+            n_embd=256,
+            layer_types=["sliding_attention", "full_attention"],
         )
         model = Olmo3(config)
 
@@ -157,7 +163,12 @@ class TestOlmo3:
 
     def test_gradient_flow(self):
         config = Olmo3Config(
-            vocab_size=100, n_layer=2, n_head=4, n_kv_head=4, n_embd=64
+            vocab_size=100,
+            n_layer=2,
+            n_head=4,
+            n_kv_head=4,
+            n_embd=64,
+            layer_types=["sliding_attention", "full_attention"],
         )
         model = Olmo3(config)
 
