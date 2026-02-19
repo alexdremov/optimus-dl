@@ -43,12 +43,9 @@ def make_hf_olmo3_model(cfg: HFOlmo3Config, **_):
         hf_config,
         "layer_types",
         [
-            "sliding_attention",
-            "sliding_attention",
-            "sliding_attention",
             "full_attention",
         ]
-        * (cfg.n_layer // 4),
+        * cfg.n_layer,
     )
     cfg.rope_scaling = getattr(hf_config, "rope_scaling", None)
     cfg.attention_bias = getattr(hf_config, "attention_bias", False)
