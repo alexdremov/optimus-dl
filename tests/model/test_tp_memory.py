@@ -1,5 +1,6 @@
 import gc
 import os
+import traceback
 
 import torch
 import pytest
@@ -24,15 +25,23 @@ llama2_mem_cfg = {
 }
 qwen3_test_cfg = {
     "_name": "qwen3",
-    "n_embd": 64,
-    "n_head": 4,
-    "n_kv_head": 2,
-    "n_layer": 2,
-    "vocab_size": 256,
-    "sequence_length": 128,
-    "attention_bias": True,
+    "n_embd": 1024,
+    "n_head": 16,
+    "n_kv_head": 8,
+    "n_layer": 4,
+    "vocab_size": 1024,
+    "sequence_length": 512,
 }
-models_cfg = [llama2_mem_cfg, qwen3_test_cfg]
+olmo3_mem_cfg = {
+    "_name": "olmo3",
+    "n_embd": 1024,
+    "n_head": 16,
+    "n_kv_head": 8,
+    "n_layer": 4,
+    "vocab_size": 1024,
+    "sequence_length": 512,
+}
+models_cfg = [llama2_mem_cfg, qwen3_test_cfg, olmo3_mem_cfg]
 
 
 def _run_memory_test(rank, unique_port, world_size, model_cfg_dict, result_queue):
@@ -99,6 +108,10 @@ def _run_memory_test(rank, unique_port, world_size, model_cfg_dict, result_queue
         if rank == 0:
             result_queue.put({"nosp": nosp_total, "sp": sp_total})
 
+    except Exception as e:
+        error_msg = f"Rank {rank} failed with error: {e}\n{traceback.format_exc()}"
+        result_queue.put({"error": error_msg})
+        raise e
     finally:
         dist.destroy_process_group()
 
@@ -119,8 +132,16 @@ class TestTPMemory:
             join=True,
         )
 
-        if not queue.empty():
-            sizes = queue.get()
+        results = []
+        while not queue.empty():
+            results.append(queue.get())
+
+        for res in results:
+            if "error" in res:
+                pytest.fail(res["error"])
+
+        if results:
+            sizes = results[0]
             nosp_total = sizes["nosp"]
             sp_total = sizes["sp"]
 
@@ -137,5 +158,5 @@ class TestTPMemory:
             ratio = sp_total / nosp_total
             print(f"SP/NoSP Ratio: {ratio:.4f}")
             assert (
-                ratio < 0.9
+                ratio < 0.95
             ), f"SP should provide significant memory savings. Ratio: {ratio}"

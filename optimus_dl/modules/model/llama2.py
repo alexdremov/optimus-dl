@@ -30,10 +30,9 @@ from torch.distributed.tensor.placement_types import (
 )
 
 from optimus_dl.modules.model import register_model
-from optimus_dl.modules.model.blocks.attention import RotarySelfAttention
 from optimus_dl.modules.model.blocks.layer_norms import RMSNorm
-from optimus_dl.modules.model.blocks.mlp import SwiGLUMLP
 from optimus_dl.modules.model.blocks.rope import precompute_freqs_cis
+from optimus_dl.modules.model.blocks.transformer import RotaryTransformerBlock
 from optimus_dl.modules.model.gpt2 import (
     GPT,
     GPTConfig,
@@ -57,6 +56,10 @@ class LlamaConfig(GPTConfig):
     bias: bool = field(
         default=False,
         metadata={"description": "Whether to use bias (usually False for Llama)."},
+    )
+    attention_bias: bool = field(
+        default=False,
+        metadata={"description": "Specific bias flag for attention projections."},
     )
     tie_word_embeddings: bool = field(
         default=True,
@@ -98,41 +101,24 @@ class LlamaConfig(GPTConfig):
     )
 
 
-class LlamaBlock(nn.Module):
+class LlamaBlock(RotaryTransformerBlock):
     """Llama Transformer block with RMSNorm, Rotary Attention, and SwiGLU MLP."""
 
     def __init__(self, config: LlamaConfig):
-        super().__init__()
-        self.ln_1 = RMSNorm(
-            config.n_embd, eps=config.rmsnorm_eps, use_liger=config.use_liger_rmsnorm
-        )
-        self.attn = RotarySelfAttention(
+        super().__init__(
             n_embd=config.n_embd,
             n_head=config.n_head,
             n_kv_head=config.n_kv_head,
             dropout=config.dropout,
-            bias=False,  # Llama typically uses bias=False
+            rmsnorm_eps=config.rmsnorm_eps,
+            bias=config.bias,
+            attention_bias=config.attention_bias,
             use_qk_norm=False,
-        )
-        self.ln_2 = RMSNorm(
-            config.n_embd, eps=config.rmsnorm_eps, use_liger=config.use_liger_rmsnorm
-        )
-        self.mlp = SwiGLUMLP(
-            n_embd=config.n_embd,
             intermediate_size=config.intermediate_size,
             multiple_of=config.multiple_of,
-            bias=False,
-            use_liger=config.use_liger_swiglu,
+            use_liger_rmsnorm=config.use_liger_rmsnorm,
+            use_liger_swiglu=config.use_liger_swiglu,
         )
-
-    def forward(self, x, freqs_cis):
-        """Compute the forward pass for the transformer block."""
-        ln_1 = self.ln_1(x)
-        attn_out = self.attn(ln_1, freqs_cis)
-
-        x = x + attn_out
-        x = x + self.mlp(self.ln_2(x))
-        return x
 
 
 @register_model("llama2", LlamaConfig)
@@ -245,21 +231,14 @@ class Llama(GPT):
                     "transformer.h.*.ln_1": SequenceParallel(),
                     "transformer.h.*.ln_2": SequenceParallel(),
                     "transformer.ln_f": SequenceParallel(),
-                    "transformer.h.*.attn": PrepareModuleInput(
+                    "transformer.h.*": PrepareModuleInput(
                         input_layouts=(Shard(1), Replicate()),
                         desired_input_layouts=(Shard(1), Replicate()),
                         use_local_output=False,
                     ),
-                    "transformer.h.*.attn.wq": ColwiseParallel(
-                        input_layouts=Shard(1), use_local_output=False
+                    "transformer.h.*.attn.wo": RowwiseParallel(
+                        output_layouts=Shard(1), use_local_output=False
                     ),
-                    "transformer.h.*.attn.wk": ColwiseParallel(
-                        input_layouts=Shard(1), use_local_output=False
-                    ),
-                    "transformer.h.*.attn.wv": ColwiseParallel(
-                        input_layouts=Shard(1), use_local_output=False
-                    ),
-                    "transformer.h.*.attn.wo": RowwiseParallel(output_layouts=Shard(1)),
                     "transformer.h.*.mlp.w1": ColwiseParallel(
                         input_layouts=Shard(1), use_local_output=False
                     ),
@@ -267,7 +246,7 @@ class Llama(GPT):
                         input_layouts=Shard(1), use_local_output=False
                     ),
                     "transformer.h.*.mlp.c_proj": RowwiseParallel(
-                        output_layouts=Shard(1)
+                        output_layouts=Shard(1), use_local_output=False
                     ),
                     "lm_head": ColwiseParallel(
                         input_layouts=Shard(1), use_local_output=False

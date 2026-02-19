@@ -1,4 +1,4 @@
-"""Preset for loading Hugging Face Qwen3 models."""
+"""Preset for loading Hugging Face Olmo3 models."""
 
 import logging
 from dataclasses import dataclass
@@ -10,27 +10,27 @@ from transformers import (
 )
 
 from optimus_dl.modules.model import register_model
+from optimus_dl.modules.model.olmo3 import (
+    Olmo3,
+    Olmo3Config,
+)
 from optimus_dl.modules.model.presets.utils import (
     WeightMapper,
     update_config_from_hf,
-)
-from optimus_dl.modules.model.qwen3 import (
-    Qwen3,
-    Qwen3Config,
 )
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class HFQwen3Config(Qwen3Config):
-    hf_model_name: str = "Qwen/Qwen3-4B-Thinking-2507"
+class HFOlmo3Config(Olmo3Config):
+    hf_model_name: str = "allenai/Olmo-3-1025-7B"
     load_weights: bool = True
 
 
-@register_model("preset_hfqwen3", HFQwen3Config)
-def make_hf_qwen3_model(cfg: HFQwen3Config, **_):
-    """Create a Qwen3 model loaded with weights from Hugging Face."""
+@register_model("preset_hfolmo3", HFOlmo3Config)
+def make_hf_olmo3_model(cfg: HFOlmo3Config, **_):
+    """Create an Olmo3 model loaded with weights from Hugging Face."""
     logger.info(f"Loading HF model: {cfg.hf_model_name}")
 
     # Load HF config
@@ -38,10 +38,23 @@ def make_hf_qwen3_model(cfg: HFQwen3Config, **_):
 
     # Update local config from HF config
     update_config_from_hf(cfg, hf_config)
+    cfg.sliding_window = getattr(hf_config, "sliding_window", 4096)
+    cfg.layer_types = getattr(
+        hf_config,
+        "layer_types",
+        [
+            "sliding_attention",
+            "sliding_attention",
+            "sliding_attention",
+            "full_attention",
+        ]
+        * (cfg.n_layer // 4),
+    )
+    cfg.rope_scaling = getattr(hf_config, "rope_scaling", None)
     cfg.attention_bias = getattr(hf_config, "attention_bias", False)
 
-    # Initialize local Qwen3 model
-    model = Qwen3(cfg)
+    # Initialize local Olmo3 model
+    model = Olmo3(cfg)
 
     if not cfg.load_weights:
         return model
@@ -72,13 +85,15 @@ def make_hf_qwen3_model(cfg: HFQwen3Config, **_):
             n_heads=cfg.n_head,
             head_dim=cfg.head_dim,
         )
-        mapper.copy(
-            f"model.layers.{i}.self_attn.q_proj.bias",
-            f"transformer.h.{i}.attn.wq.bias",
-            permute=True,
-            n_heads=cfg.n_head,
-            head_dim=cfg.head_dim,
-        )
+        if cfg.attention_bias:
+            mapper.copy(
+                f"model.layers.{i}.self_attn.q_proj.bias",
+                f"transformer.h.{i}.attn.wq.bias",
+                permute=True,
+                n_heads=cfg.n_head,
+                head_dim=cfg.head_dim,
+            )
+
         mapper.copy(
             f"model.layers.{i}.self_attn.k_proj.weight",
             f"transformer.h.{i}.attn.wk.weight",
@@ -86,29 +101,34 @@ def make_hf_qwen3_model(cfg: HFQwen3Config, **_):
             n_heads=cfg.n_kv_head,
             head_dim=cfg.head_dim,
         )
-        mapper.copy(
-            f"model.layers.{i}.self_attn.k_proj.bias",
-            f"transformer.h.{i}.attn.wk.bias",
-            permute=True,
-            n_heads=cfg.n_kv_head,
-            head_dim=cfg.head_dim,
-        )
+        if cfg.attention_bias:
+            mapper.copy(
+                f"model.layers.{i}.self_attn.k_proj.bias",
+                f"transformer.h.{i}.attn.wk.bias",
+                permute=True,
+                n_heads=cfg.n_kv_head,
+                head_dim=cfg.head_dim,
+            )
+
         mapper.copy(
             f"model.layers.{i}.self_attn.v_proj.weight",
             f"transformer.h.{i}.attn.wv.weight",
         )
-        mapper.copy(
-            f"model.layers.{i}.self_attn.v_proj.bias",
-            f"transformer.h.{i}.attn.wv.bias",
-        )
+        if cfg.attention_bias:
+            mapper.copy(
+                f"model.layers.{i}.self_attn.v_proj.bias",
+                f"transformer.h.{i}.attn.wv.bias",
+            )
+
         mapper.copy(
             f"model.layers.{i}.self_attn.o_proj.weight",
             f"transformer.h.{i}.attn.wo.weight",
         )
-        mapper.copy(
-            f"model.layers.{i}.self_attn.o_proj.bias",
-            f"transformer.h.{i}.attn.wo.bias",
-        )
+        if cfg.attention_bias:
+            mapper.copy(
+                f"model.layers.{i}.self_attn.o_proj.bias",
+                f"transformer.h.{i}.attn.wo.bias",
+            )
 
         # Q/K Norms
         mapper.copy(
@@ -140,10 +160,11 @@ def make_hf_qwen3_model(cfg: HFQwen3Config, **_):
 
         # Layer Norms
         mapper.copy(
-            f"model.layers.{i}.input_layernorm.weight", f"transformer.h.{i}.ln_1.weight"
+            f"model.layers.{i}.post_attention_layernorm.weight",
+            f"transformer.h.{i}.ln_1.weight",
         )
         mapper.copy(
-            f"model.layers.{i}.post_attention_layernorm.weight",
+            f"model.layers.{i}.post_feedforward_layernorm.weight",
             f"transformer.h.{i}.ln_2.weight",
         )
 

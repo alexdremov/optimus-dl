@@ -187,7 +187,17 @@ qwen3_test_cfg = {
     "sequence_length": 128,
     "attention_bias": True,
 }
-models_cfg = [llama2_cfg, qwen3_test_cfg]
+olmo3_test_cfg = {
+    "_name": "olmo3",
+    "n_embd": 64,
+    "n_head": 4,
+    "n_kv_head": 2,
+    "n_layer": 2,
+    "vocab_size": 256,
+    "sequence_length": 32,
+    "intermediate_size": 128,
+}
+models_cfg = [llama2_cfg, qwen3_test_cfg, olmo3_test_cfg]
 
 
 @pytest.mark.parametrize("model_cfg_dict", models_cfg)

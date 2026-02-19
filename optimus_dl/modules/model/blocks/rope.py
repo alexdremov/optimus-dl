@@ -4,29 +4,83 @@ This module provides utilities for computing and applying Rotary Positional
 Embeddings, as used in models like Llama and Qwen.
 """
 
+import math
+
 import torch
 from torch.distributed.tensor import DTensor
 
 
-def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0) -> torch.Tensor:
-    """Precompute the frequency tensor for complex exponential (cis).
+def precompute_freqs_cis(
+    dim: int, end: int, theta: float = 10000.0, scaling_config: dict | None = None
+) -> torch.Tensor:
+    """Precompute the frequency tensor for complex exponential (cis) with optional scaling.
 
     Args:
         dim: Dimension of the head.
         end: Maximum sequence length.
         theta: Base frequency for the positional encoding.
+        scaling_config: Optional RoPE scaling configuration (e.g., YaRN).
 
     Returns:
         Tensor of shape (end, dim // 2, 2) representing the real and imaginary
         parts of the frequencies.
     """
-    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
-    t = torch.arange(end, device=freqs.device)  # type: ignore
-    freqs = torch.outer(t, freqs).float()  # type: ignore
-    cos_freqs = torch.cos(freqs)
-    sin_freqs = torch.sin(freqs)
-    # Stack the cos and sin parts in the last dimension to simulate complex numbers
-    return torch.stack((cos_freqs, sin_freqs), dim=-1)
+    if scaling_config is None or scaling_config.get("rope_type") != "yarn":
+        # Fallback to standard RoPE
+        freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
+        t = torch.arange(end, device=freqs.device)  # type: ignore
+        freqs = torch.outer(t, freqs).float()  # type: ignore
+        return torch.stack((torch.cos(freqs), torch.sin(freqs)), dim=-1)
+
+    # YaRN implementation
+    factor = scaling_config.get("factor", 1.0)
+    original_max_position_embeddings = scaling_config.get(
+        "original_max_position_embeddings", 8192
+    )
+    attention_factor = scaling_config.get("attention_factor", 1.0)
+    beta_fast = scaling_config.get("beta_fast", 32.0)
+    beta_slow = scaling_config.get("beta_slow", 1.0)
+
+    def find_correction_dim(num_rotations, dim, base, max_position_embeddings):
+        return (
+            dim * math.log(max_position_embeddings / (num_rotations * 2 * math.pi))
+        ) / (2 * math.log(base))
+
+    def find_correction_range(low_rot, high_rot, dim, base, max_position_embeddings):
+        low = find_correction_dim(low_rot, dim, base, max_position_embeddings)
+        high = find_correction_dim(high_rot, dim, base, max_position_embeddings)
+        # HF uses truncate=True by default for YaRN
+        return max(math.floor(low), 0), min(math.ceil(high), dim - 1)
+
+    low, high = find_correction_range(
+        beta_fast, beta_slow, dim, theta, original_max_position_embeddings
+    )
+
+    pos_freqs = theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim)
+    inv_freq_extrapolation = 1.0 / pos_freqs
+    inv_freq_interpolation = 1.0 / (factor * pos_freqs)
+
+    def linear_ramp_factor(min_val, max_val, dim_range):
+        if min_val == max_val:
+            max_val += 0.001
+        linear_func = (torch.arange(dim_range, dtype=torch.float32) - min_val) / (
+            max_val - min_val
+        )
+        return torch.clamp(linear_func, 0, 1)
+
+    extrapolation_factor = 1.0 - linear_ramp_factor(low, high, dim // 2)
+    inv_freq = (
+        inv_freq_interpolation * (1.0 - extrapolation_factor)
+        + inv_freq_extrapolation * extrapolation_factor
+    )
+
+    t = torch.arange(end, device=inv_freq.device)
+    freqs = torch.outer(t, inv_freq).float()
+
+    return torch.stack(
+        (torch.cos(freqs) * attention_factor, torch.sin(freqs) * attention_factor),
+        dim=-1,
+    )
 
 
 def _reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor) -> torch.Tensor:

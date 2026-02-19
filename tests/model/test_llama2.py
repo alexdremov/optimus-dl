@@ -2,18 +2,18 @@ import torch
 import pytest
 import torch.nn as nn
 
+from optimus_dl.modules.model.blocks.attention import RotarySelfAttention
+from optimus_dl.modules.model.blocks.mlp import SwiGLUMLP
 from optimus_dl.modules.model.blocks.rope import (
     _reshape_for_broadcast,
     apply_rotary_emb,
+    precompute_freqs_cis,
 )
 from optimus_dl.modules.model.llama2 import (
     Llama,
     LlamaBlock,
     LlamaConfig,
-    RotarySelfAttention,
-    SwiGLUMLP,
     llama_lite,
-    precompute_freqs_cis,
 )
 
 

@@ -51,6 +51,12 @@ class GPTConfig(RegistryConfigStrict):
     n_embd: int = field(
         default=768, metadata={"description": "Embedding dimensionality"}
     )
+    head_dim: int | None = field(
+        default=None,
+        metadata={
+            "description": "Head dimension. If None, will be set to n_embd // n_head"
+        },
+    )
     dropout: float = field(default=0.0, metadata={"description": "Dropout probability"})
     bias: bool = field(
         default=True,
