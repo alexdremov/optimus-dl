@@ -145,4 +145,4 @@ jobs:
 
     - name: Test with pytest
       run: |
-        uv run pytest -n 2 --durations=0
+        uv run pytest -n 0 --durations=0 -s -v
