@@ -120,6 +120,7 @@ class Olmo3Attention(RotarySelfAttention):
 
     def __init__(self, config: Olmo3Config, layer_idx: int):
         self.layer_type = config.layer_types[layer_idx]
+        self.layer_idx = layer_idx
         assert self.layer_type in ("sliding_attention", "full_attention")
         sliding_window = (
             config.sliding_window if self.layer_type == "sliding_attention" else None

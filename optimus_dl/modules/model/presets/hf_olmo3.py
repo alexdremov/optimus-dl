@@ -131,16 +131,10 @@ def make_hf_olmo3_model(cfg: HFOlmo3Config, **_):
         mapper.copy(
             f"model.layers.{i}.self_attn.q_norm.weight",
             f"transformer.h.{i}.attn.q_norm.weight",
-            permute=True,
-            n_heads=cfg.n_head,
-            head_dim=cfg.head_dim,
         )
         mapper.copy(
             f"model.layers.{i}.self_attn.k_norm.weight",
             f"transformer.h.{i}.attn.k_norm.weight",
-            permute=True,
-            n_heads=cfg.n_kv_head,
-            head_dim=cfg.head_dim,
         )
 
         # MLP

@@ -157,7 +157,16 @@ class TestOlmo3Integration:
                 T = seq_len
                 q_idx = torch.arange(T).view(-1, 1)
                 kv_idx = torch.arange(T).view(1, -1)
-                is_sliding = "h.0" in name  # h.0 is sliding
+
+                # Extract layer index from name like 'h.1.mask'
+                import re
+
+                layer_match = re.search(r"h\.(\d+)\.mask", name)
+                layer_idx = int(layer_match.group(1)) if layer_match else 0
+
+                is_sliding = (
+                    optimus_model.config.layer_types[layer_idx] == "sliding_attention"
+                )
                 if is_sliding:
                     our_mask = (q_idx >= kv_idx) & (
                         q_idx - kv_idx < hf_config.sliding_window
