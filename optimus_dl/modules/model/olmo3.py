@@ -35,7 +35,7 @@ class Olmo3Config(GPTConfig):
     """Configuration for Olmo3-style models."""
 
     sequence_length: int = field(
-        default=65536,
+        default=4096,
         metadata={"description": "Maximum context length."},
     )
     rmsnorm_eps: float = field(
@@ -69,13 +69,13 @@ class Olmo3Config(GPTConfig):
         metadata={"description": "Tie input and output embeddings."},
     )
     n_kv_head: int | None = field(
-        default=8,
+        default=4,
         metadata={
             "description": "Number of Key/Value heads. If None, will be set to num_attention_heads."
         },
     )
     intermediate_size: int | None = field(
-        default=27648,
+        default=1024,
         metadata={"description": "Dimension of SwiGLU hidden layer."},
     )
     multiple_of: int = field(
@@ -89,7 +89,7 @@ class Olmo3Config(GPTConfig):
         metadata={"description": "Window size for sliding window attention."},
     )
     n_layer: int = field(
-        default=16 * 4, metadata={"description": "Number of transformer blocks"}
+        default=4 * 4, metadata={"description": "Number of transformer blocks"}
     )
     layer_types: list[str] = field(
         default_factory=lambda: [
@@ -98,7 +98,7 @@ class Olmo3Config(GPTConfig):
             "sliding_attention",
             "full_attention",
         ]
-        * 16,
+        * 4,
         metadata={"description": "List of attention types for each layer."},
     )
     use_liger_rmsnorm: bool | None = field(
