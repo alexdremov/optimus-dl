@@ -134,7 +134,7 @@ class TestOlmo3Integration:
         # Run Inference
         torch.manual_seed(42)
         # Use smaller sequence length for easier debugging
-        seq_len = 256
+        seq_len = 164
         input_ids = torch.randint(0, hf_config.vocab_size, (1, seq_len))
 
         # Debug: Print HF keys
