@@ -229,7 +229,17 @@ def _run_test_sp_internals(rank, unique_port, world_size, model_cfg_dict):
 
         # LN1 (SequenceParallel)
         # Should accept Shard(1) input and produce Shard(1) output
-        ln1_out = block.ln_1(x)
+        if hasattr(block, "post_attention_layernorm"):
+            # POST-LN Architecture (Olmo3)
+            # x -> Attn -> Norm -> Output
+            # We test the Norm output which should be Shard(1)
+            attn_out = block.attn(x, model.freqs_cis[: x.shape[1]].to(x.device))
+            ln1_out = block.post_attention_layernorm(attn_out)
+        else:
+            # PRE-LN Architecture (Llama2, GPT2, Qwen3)
+            # x -> Norm -> Attn -> Output
+            ln1_out = block.ln_1(x)
+
         assert isinstance(ln1_out, DTensor)
         assert ln1_out.placements[0].is_shard(
             1

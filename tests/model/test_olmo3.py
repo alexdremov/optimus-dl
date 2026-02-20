@@ -103,8 +103,8 @@ class TestOlmo3Block:
         config = Olmo3Config(n_embd=256, n_head=4, n_kv_head=4, rmsnorm_eps=1e-6)
         block = Olmo3Block(config, layer_idx=0)
 
-        assert isinstance(block.ln_1, RMSNorm)
-        assert isinstance(block.ln_2, RMSNorm)
+        assert isinstance(block.post_attention_layernorm, RMSNorm)
+        assert isinstance(block.post_feedforward_layernorm, RMSNorm)
         assert isinstance(block.attn, Olmo3Attention)
         assert isinstance(block.mlp, SwiGLUMLP)
 
