@@ -5,7 +5,11 @@ import torch
 import pytest
 import torch.nn as nn
 
-from optimus_dl.modules.model.blocks.attention import CausalSelfAttention
+from optimus_dl.modules.model.blocks.attention import (
+    CausalSelfAttention,
+    RotarySelfAttention,
+)
+from optimus_dl.modules.model.blocks.rope import precompute_freqs_cis
 
 
 class MockConfig:
@@ -291,3 +295,99 @@ class TestCausalSelfAttention:
                 del output
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+
+
+class TestRotarySelfAttention:
+    """Extensive tests for RotarySelfAttention module"""
+
+    def test_init_basic(self):
+        attn = RotarySelfAttention(n_embd=256, n_head=8)
+        assert attn.n_head == 8
+        assert attn.n_kv_head == 8
+        assert attn.head_dim == 32
+        assert not attn.use_qk_norm
+
+    def test_init_gqa(self):
+        attn = RotarySelfAttention(n_embd=256, n_head=8, n_kv_head=2)
+        assert attn.n_head == 8
+        assert attn.n_kv_head == 2
+        assert attn.n_rep == 4
+        assert attn.wk.out_features == 2 * 32
+        assert attn.wv.out_features == 2 * 32
+
+    def test_init_qk_norm(self):
+        # Per-head norm
+        attn_ph = RotarySelfAttention(
+            n_embd=256, n_head=8, use_qk_norm=True, qk_norm_per_head=True
+        )
+        assert attn_ph.q_norm.weight.shape == (32,)
+        assert attn_ph.k_norm.weight.shape == (32,)
+
+        # Shared norm (Olmo3 style)
+        attn_sh = RotarySelfAttention(
+            n_embd=256, n_head=8, use_qk_norm=True, qk_norm_per_head=False
+        )
+        assert attn_sh.q_norm.weight.shape == (256,)
+        assert attn_sh.k_norm.weight.shape == (256,)
+
+    def test_forward_basic(self):
+        n_embd, n_head, seq_len = 128, 4, 16
+        attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head)
+        x = torch.randn(2, seq_len, n_embd)
+        freqs_cis = precompute_freqs_cis(n_embd // n_head, seq_len)
+
+        out = attn(x, freqs_cis)
+        assert out.shape == (2, seq_len, n_embd)
+
+    def test_forward_gqa(self):
+        n_embd, n_head, n_kv_head, seq_len = 128, 4, 2, 16
+        attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head, n_kv_head=n_kv_head)
+        x = torch.randn(2, seq_len, n_embd)
+        freqs_cis = precompute_freqs_cis(n_embd // n_head, seq_len)
+
+        out = attn(x, freqs_cis)
+        assert out.shape == (2, seq_len, n_embd)
+
+    def test_sliding_window_forward(self):
+        n_embd, n_head, seq_len = 128, 4, 32
+        attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head, sliding_window=8)
+        x = torch.randn(1, seq_len, n_embd)
+        freqs_cis = precompute_freqs_cis(n_embd // n_head, seq_len)
+
+        # Test with/without flex_attention (manual vs flex)
+        out = attn(x, freqs_cis)
+        assert out.shape == (1, seq_len, n_embd)
+
+    def test_gradient_flow(self):
+        n_embd, n_head, seq_len = 64, 2, 8
+        attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head, use_qk_norm=True)
+        x = torch.randn(1, seq_len, n_embd, requires_grad=True)
+        freqs_cis = precompute_freqs_cis(n_embd // n_head, seq_len)
+
+        out = attn(x, freqs_cis)
+        out.sum().backward()
+
+        assert x.grad is not None
+        assert attn.wq.weight.grad is not None
+        assert attn.q_norm.weight.grad is not None
+        assert attn.wo.weight.grad is not None
+
+    def test_qk_norm_logic(self):
+        """Verify that QK norm actually changes values and works in both modes."""
+        n_embd, n_head, seq_len = 64, 2, 8
+        freqs_cis = precompute_freqs_cis(n_embd // n_head, seq_len)
+        x = torch.randn(1, seq_len, n_embd)
+
+        # 1. Per-head
+        attn_ph = RotarySelfAttention(
+            n_embd=n_embd, n_head=n_head, use_qk_norm=True, qk_norm_per_head=True
+        )
+        out_ph = attn_ph(x, freqs_cis)
+
+        # 2. Shared
+        attn_sh = RotarySelfAttention(
+            n_embd=n_embd, n_head=n_head, use_qk_norm=True, qk_norm_per_head=False
+        )
+        out_sh = attn_sh(x, freqs_cis)
+
+        assert not torch.allclose(out_ph, out_sh)

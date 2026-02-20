@@ -226,10 +226,7 @@ class RotarySelfAttention(nn.Module):
             xk = xk.to_local()
             xv = xv.to_local()
 
-        if self.n_rep > 1:
-            xk = xk.repeat_interleave(self.n_rep, dim=1)
-            xv = xv.repeat_interleave(self.n_rep, dim=1)
-
+        enable_gqa = self.n_rep > 1
         if self.sliding_window is not None and FLEX_ATTENTION_AVAILABLE:
             if self._block_mask is None or self._block_mask.shape[-1] != T:
                 from functools import partial
@@ -242,7 +239,9 @@ class RotarySelfAttention(nn.Module):
             if xq.device.type == "cuda":
                 _flex_attention = torch.compile(flex_attention)
 
-            y = _flex_attention(xq, xk, xv, block_mask=self._block_mask)
+            y = _flex_attention(
+                xq, xk, xv, block_mask=self._block_mask, enable_gqa=enable_gqa
+            )
         else:
             mask = None
             if self.sliding_window is not None:
@@ -257,6 +256,7 @@ class RotarySelfAttention(nn.Module):
                 attn_mask=mask,
                 dropout_p=self.dropout if self.training else 0.0,
                 is_causal=(self.sliding_window is None),
+                enable_gqa=enable_gqa,
             )
 
         if is_dtensor:
