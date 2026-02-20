@@ -42,8 +42,12 @@ class Qwen3Config(GPTConfig):
         metadata={"description": "Epsilon for RMSNorm."},
     )
     rope_theta: float = field(
-        default=5000000.0,
+        default=1000000.0,
         metadata={"description": "Base frequency for rotary embeddings."},
+    )
+    rope_scaling: dict | None = field(
+        default=None,
+        metadata={"description": "RoPE scaling configuration."},
     )
     head_dim: int | None = field(
         default=None,
@@ -145,7 +149,10 @@ class Qwen3(GPT):
             else config.n_embd // config.n_head
         )
         self.freqs_cis = precompute_freqs_cis(
-            self.head_dim, config.sequence_length, theta=config.rope_theta
+            self.head_dim,
+            config.sequence_length,
+            theta=config.rope_theta,
+            scaling_config=config.rope_scaling,
         )
 
         self.transformer = nn.ModuleDict(

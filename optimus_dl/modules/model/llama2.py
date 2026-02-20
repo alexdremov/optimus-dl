@@ -87,6 +87,10 @@ class LlamaConfig(GPTConfig):
         default=10000.0,
         metadata={"description": "Base frequency for rotary embeddings."},
     )
+    rope_scaling: dict | None = field(
+        default=None,
+        metadata={"description": "RoPE scaling configuration."},
+    )
     use_liger_rmsnorm: bool | None = field(
         default=None,
         metadata={
@@ -146,7 +150,10 @@ class Llama(GPT):
         # create the token and position embeddings
         self.head_dim = config.n_embd // config.n_head
         self.freqs_cis = precompute_freqs_cis(
-            self.head_dim, config.sequence_length, theta=config.rope_theta
+            self.head_dim,
+            config.sequence_length,
+            theta=config.rope_theta,
+            scaling_config=config.rope_scaling,
         )
 
         self.transformer = nn.ModuleDict(

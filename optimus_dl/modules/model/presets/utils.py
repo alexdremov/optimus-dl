@@ -157,8 +157,27 @@ def update_config_from_hf(
     optimus_cfg.block_size = optimus_cfg.sequence_length
     optimus_cfg.rmsnorm_eps = getattr(hf_config, "rms_norm_eps", 1e-5)
     optimus_cfg.intermediate_size = getattr(hf_config, "intermediate_size", None)
-    optimus_cfg.rope_theta = getattr(hf_config, "rope_theta", 10000.0)
     optimus_cfg.tie_word_embeddings = getattr(hf_config, "tie_word_embeddings", False)
+
+    # Handle rope_theta, checking both root and rope_scaling
+    rope_theta = getattr(hf_config, "rope_theta", None)
+    if (
+        rope_theta is None
+        and hasattr(hf_config, "rope_scaling")
+        and hf_config.rope_scaling
+    ):
+        if isinstance(hf_config.rope_scaling, dict):
+            rope_theta = hf_config.rope_scaling.get("rope_theta")
+    optimus_cfg.rope_theta = rope_theta if rope_theta is not None else 10000.0
+
+    # Handle rope_scaling
+    if hasattr(hf_config, "rope_scaling") and hf_config.rope_scaling:
+        if isinstance(hf_config.rope_scaling, dict):
+            optimus_cfg.rope_scaling = hf_config.rope_scaling
+    elif hasattr(hf_config, "rope_parameters") and hf_config.rope_parameters:
+        # Some versions of transformers use rope_parameters
+        if isinstance(hf_config.rope_parameters, dict):
+            optimus_cfg.rope_scaling = hf_config.rope_parameters
 
     if hasattr(hf_config, "num_key_value_heads"):
         optimus_cfg.n_kv_head = hf_config.num_key_value_heads

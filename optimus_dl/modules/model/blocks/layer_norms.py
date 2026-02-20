@@ -17,9 +17,6 @@ except ImportError:
     LIGER_AVAILABLE = False
     liger_rms_norm = None
 
-LIGER_AVAILABLE = False
-liger_rms_norm = None
-
 
 class LayerNorm(nn.Module):
     """LayerNorm with optional bias.
