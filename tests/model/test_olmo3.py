@@ -157,7 +157,15 @@ class TestOlmo3:
         assert out["logits"].shape == (1, 10, 1000)
 
     def test_weight_tying(self):
-        config = Olmo3Config(tie_word_embeddings=True, n_kv_head=4)
+        config = Olmo3Config(
+            vocab_size=100,
+            n_layer=2,
+            n_head=4,
+            n_kv_head=2,
+            n_embd=64,
+            layer_types=["sliding_attention", "full_attention"],
+            tie_word_embeddings=True,
+        )
         model = Olmo3(config)
         assert model.transformer.wte.weight is model.lm_head.weight
 
