@@ -177,9 +177,9 @@ class TestOlmo3Integration:
                 # HF mask is (B, 1, T, T)
                 hf_mask_2d = mask_bool[0, 0]
                 mask_diff = (hf_mask_2d != our_mask).sum().item()
-                print(f"Mask {name} diff count: {mask_diff}")
+                logging.info(f"Mask {name} diff count: {mask_diff}")
                 if mask_diff > 0:
-                    print(f"DIVERGENCE at Mask {name}")
+                    logging.info(f"DIVERGENCE at Mask {name}")
 
         # Compare intermediate outputs
         head_dim = optimus_model.config.head_dim
@@ -209,7 +209,7 @@ class TestOlmo3Integration:
                 hf_val = to_interleaved(hf_val, n_kv_head, head_dim)
 
             max_diff = (hf_val.float() - opt_val.float()).abs().max().item()
-            print(f"Layer {name} max diff: {max_diff}")
+            logging.info(f"Layer {name} max diff: {max_diff}")
             # if max_diff > 1e-4:
             #     print(f"DIVERGENCE at {name}")
 
