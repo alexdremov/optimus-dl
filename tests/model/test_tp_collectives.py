@@ -89,12 +89,12 @@ def _run_collectives_test(
             expected_reduce_scatter = 1 + 2 * n_layer
 
             # AllGather:
-            # Attn Input: 3 (wq, wk, wv separate)
+            # Attn Input: 1
             # MLP Input: 2 (w1, w2 separate)
             # LM Head Input: 1
             # LM Head Output gathering: 1 if not loss_parallel
 
-            expected_all_gather = (3 + 2) * n_layer + 1
+            expected_all_gather = (1 + 2) * n_layer + 1
             if not loss_parallel:
                 expected_all_gather += 1
 

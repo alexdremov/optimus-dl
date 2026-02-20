@@ -74,11 +74,18 @@ def _run_test_full_tensor_parallel(
             # If SP, embedding output is sharded on seq dim (dim 1)
             # Local shape: (B, S/TP, H)
             if sequence_parallel:
-                assert embedded.shape == (
-                    7,
-                    32 // world_size,
-                    n_embd,
-                ), f"SP Embedding shape mismatch: {embedded.shape}"
+                if not isinstance(embedded, DTensor):
+                    assert embedded.shape == (
+                        7,
+                        32 // world_size,
+                        n_embd,
+                    ), f"SP Embedding shape mismatch: {embedded.shape}"
+                else:
+                    assert embedded.shape == (
+                        7,
+                        32,
+                        n_embd,
+                    ), f"SP Embedding shape mismatch: {embedded.shape}"
             else:
                 assert embedded.shape == (7, 32, n_embd), embedded.shape
 
@@ -156,7 +163,18 @@ qwen3_test_cfg = {
     "sequence_length": 128,
     "attention_bias": True,
 }
-models_cfg = [llama2_cfg, qwen3_test_cfg]
+olmo3_test_cfg = {
+    "_name": "olmo3",
+    "n_embd": 64,
+    "n_head": 4,
+    "n_kv_head": 2,
+    "n_layer": 2,
+    "layer_types": ["sliding_attention", "full_attention"],
+    "vocab_size": 256,
+    "sequence_length": 128,
+    "intermediate_size": 128,
+}
+models_cfg = [llama2_cfg, qwen3_test_cfg, olmo3_test_cfg]
 
 
 def _run_test_sp_internals(rank, unique_port, world_size, model_cfg_dict):
@@ -191,22 +209,37 @@ def _run_test_sp_internals(rank, unique_port, world_size, model_cfg_dict):
         input_ids = torch.randint(0, vocab_size, (2, 32))
         # WTE
         tok_emb = model.transformer.wte(input_ids)
-        # Check output is Shard(1) (Sequence dimension)
-        assert tok_emb.shape == (
-            2,
-            16,
-            n_embd,
-        ), f"WTE output shape mismatch: {tok_emb.shape}"  # Global shape
+        if not isinstance(tok_emb, DTensor):
+            # Check output is Shard(1) (Sequence dimension)
+            assert tok_emb.shape == (
+                2,
+                16,
+                n_embd,
+            ), f"WTE output shape mismatch: {tok_emb.shape}"  # Global shape
 
         x = tok_emb
-        model.freqs_cis[: x.shape[1]].to(x.device)
+        # Handle different model attributes for precomputed freqs
+        if hasattr(model, "freqs_cis"):
+            model.freqs_cis[: x.shape[1]].to(x.device)
+        elif hasattr(model, "freqs_cis_sliding"):
+            model.freqs_cis_sliding[: x.shape[1]].to(x.device)
 
         # Block 0
         block = model.transformer.h[0]
 
         # LN1 (SequenceParallel)
         # Should accept Shard(1) input and produce Shard(1) output
-        ln1_out = block.ln_1(x)
+        if hasattr(block, "post_attention_layernorm"):
+            # POST-LN Architecture (Olmo3)
+            # x -> Attn -> Norm -> Output
+            # We test the Norm output which should be Shard(1)
+            attn_out = block.attn(x, model.freqs_cis[: x.shape[1]].to(x.device))
+            ln1_out = block.post_attention_layernorm(attn_out)
+        else:
+            # PRE-LN Architecture (Llama2, GPT2, Qwen3)
+            # x -> Norm -> Attn -> Output
+            ln1_out = block.ln_1(x)
+
         assert isinstance(ln1_out, DTensor)
         assert ln1_out.placements[0].is_shard(
             1

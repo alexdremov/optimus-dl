@@ -99,7 +99,7 @@ class TxtLinesDataset(BaseDataset):
                             f.write(chunk)
                 except Exception as e:
                     logger.error(f"Failed to download {self.file_link}: {e}")
-                    raise e
+                    raise
 
         if not os.path.exists(local_path):
             raise FileNotFoundError(f"File not found: {local_path}")

@@ -2,7 +2,9 @@ import logging
 
 import torch
 import torch.nn as nn
-from torch.distributed.tensor import DTensor
+from torch.distributed.tensor import (
+    DTensor,
+)
 from torch.nn import functional as F
 
 logger = logging.getLogger(__name__)
@@ -14,9 +16,6 @@ try:
 except ImportError:
     LIGER_AVAILABLE = False
     liger_rms_norm = None
-
-LIGER_AVAILABLE = False
-liger_rms_norm = None
 
 
 class LayerNorm(nn.Module):
