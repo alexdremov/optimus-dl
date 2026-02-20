@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   format:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     # Only run auto-formatting for maintainers or approved PRs
     if: |
       github.event.pull_request.author_association == 'OWNER' ||
@@ -70,7 +70,7 @@ jobs:
     # This ensures external PRs without approval don't get a passing test check
     if: needs.format.result == 'success'
     needs: format
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     # Allow tests to run for everyone, but they run in a read-only context
 
     env:
@@ -145,4 +145,4 @@ jobs:
 
     - name: Test with pytest
       run: |
-        uv run pytest -n 0 --durations=0 -s -v
+        uv run pytest -n auto --durations=0
