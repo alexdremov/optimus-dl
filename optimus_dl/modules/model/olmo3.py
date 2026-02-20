@@ -46,9 +46,11 @@ class Olmo3Config(GPTConfig):
         default=500000.0,
         metadata={"description": "Base frequency for rotary embeddings."},
     )
-    rope_scaling: dict | None = field(
-        default=None,
-        metadata={"description": "RoPE scaling configuration (e.g., YaRN)."},
+    rope_parameters: dict = field(
+        default_factory=lambda: {
+            "rope_type": "default",
+        },
+        metadata={"description": "Full RoPE configuration dictionary."},
     )
     head_dim: int | None = field(
         default=None,
@@ -89,7 +91,7 @@ class Olmo3Config(GPTConfig):
         metadata={"description": "Window size for sliding window attention."},
     )
     n_layer: int = field(
-        default=4 * 4, metadata={"description": "Number of transformer blocks"}
+        default=16, metadata={"description": "Number of transformer blocks"}
     )
     layer_types: list[str] = field(
         default_factory=lambda: [
@@ -116,7 +118,7 @@ class Olmo3Config(GPTConfig):
 
 
 class Olmo3Attention(RotarySelfAttention):
-    """Olmo3 Attention supporting sliding window via flex_attention and Q/K normalization."""
+    """Olmo3 Attention supporting sliding window and Q/K normalization."""
 
     def __init__(self, config: Olmo3Config, layer_idx: int):
         self.layer_type = config.layer_types[layer_idx]
@@ -140,12 +142,17 @@ class Olmo3Attention(RotarySelfAttention):
 
 
 class Olmo3Block(nn.Module):
-    """Olmo3 Transformer block."""
+    """Olmo3 Transformer block.
+
+    Architecture:
+    x = x + Norm(Attn(x))
+    x = x + Norm(MLP(x))
+    """
 
     def __init__(self, config: Olmo3Config, layer_idx: int):
         super().__init__()
         self.attn = Olmo3Attention(config, layer_idx)
-        self.ln_1 = RMSNorm(
+        self.post_attention_layernorm = RMSNorm(
             config.n_embd, eps=config.rmsnorm_eps, use_liger=config.use_liger_rmsnorm
         )
         self.mlp = SwiGLUMLP(
@@ -155,16 +162,15 @@ class Olmo3Block(nn.Module):
             bias=False,
             use_liger=config.use_liger_swiglu,
         )
-        self.ln_2 = RMSNorm(
+        self.post_feedforward_layernorm = RMSNorm(
             config.n_embd, eps=config.rmsnorm_eps, use_liger=config.use_liger_rmsnorm
         )
 
     def forward(self, x, freqs_cis):
         # x = x + Norm(attn(x))
-        attn = self.attn(x, freqs_cis)
-        x = x + self.ln_1(attn)
+        x = x + self.post_attention_layernorm(self.attn(x, freqs_cis))
         # x = x + Norm(mlp(x))
-        x = x + self.ln_2(self.mlp(x))
+        x = x + self.post_feedforward_layernorm(self.mlp(x))
         return x
 
 
@@ -185,18 +191,17 @@ class Olmo3(GPT):
             if config.head_dim is not None
             else config.n_embd // config.n_head
         )
-        # Precompute two sets of frequencies
-        self.freqs_cis_sliding = precompute_freqs_cis(
+
+        # Olmo3 uses a single rotary embedding for the entire model
+        rope_params = config.rope_parameters.copy()
+        if "rope_theta" not in rope_params:
+            rope_params["rope_theta"] = config.rope_theta
+
+        self.freqs_cis = precompute_freqs_cis(
             self.head_dim,
             config.sequence_length,
-            theta=config.rope_theta,
-            scaling_config=None,  # Standard RoPE for sliding attention
-        )
-        self.freqs_cis_full = precompute_freqs_cis(
-            self.head_dim,
-            config.sequence_length,
-            theta=config.rope_theta,
-            scaling_config=config.rope_scaling,  # YaRN for full attention
+            theta=rope_params["rope_theta"],
+            scaling_config=rope_params,
         )
 
         self.transformer = nn.ModuleDict(
@@ -233,15 +238,11 @@ class Olmo3(GPT):
         tok_emb = self.transformer.wte(idx)
         x = self.transformer.drop(tok_emb)
 
-        freqs_cis_sliding = self.freqs_cis_sliding.to(x.device)[pos]
-        freqs_cis_full = self.freqs_cis_full.to(x.device)[pos]
+        self.freqs_cis = self.freqs_cis.to(x.device)
+        f_cis = self.freqs_cis[pos]
 
         for block in self.transformer.h:
-            # Each block knows its type
-            if block.attn.layer_type == "sliding_attention":
-                x = block(x, freqs_cis_sliding)
-            else:
-                x = block(x, freqs_cis_full)
+            x = block(x, f_cis)
         x = self.transformer.ln_f(x)
         logits = self.lm_head(x)
 
@@ -290,8 +291,8 @@ class Olmo3(GPT):
                         output_layouts=Shard(1),
                         use_local_output=True,
                     ),
-                    "transformer.h.*.ln_1": SequenceParallel(),
-                    "transformer.h.*.ln_2": SequenceParallel(),
+                    "transformer.h.*.post_attention_layernorm": SequenceParallel(),
+                    "transformer.h.*.post_feedforward_layernorm": SequenceParallel(),
                     "transformer.ln_f": SequenceParallel(),
                     "transformer.h.*": PrepareModuleInput(
                         input_layouts=(Shard(1), Replicate()),

@@ -121,13 +121,13 @@ class TestOlmo3Integration:
             block.attn.wo.register_forward_hook(
                 get_hook(optimus_outputs, f"h.{i}.attn.wo")
             )
-            # In our implementation, block.ln_1 is applied after attn
-            block.ln_1.register_forward_hook(
+            # In our implementation, block.post_attention_layernorm is applied after attn
+            block.post_attention_layernorm.register_forward_hook(
                 get_hook(optimus_outputs, f"h.{i}.post_attn_ln")
             )
             block.mlp.register_forward_hook(get_hook(optimus_outputs, f"h.{i}.mlp"))
-            # In our implementation, block.ln_2 is applied after mlp
-            block.ln_2.register_forward_hook(
+            # In our implementation, block.post_feedforward_layernorm is applied after mlp
+            block.post_feedforward_layernorm.register_forward_hook(
                 get_hook(optimus_outputs, f"h.{i}.post_mlp_ln")
             )
 

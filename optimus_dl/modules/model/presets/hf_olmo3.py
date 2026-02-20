@@ -47,7 +47,15 @@ def make_hf_olmo3_model(cfg: HFOlmo3Config, **_):
         ]
         * cfg.n_layer,
     )
-    cfg.rope_scaling = getattr(hf_config, "rope_scaling", None)
+
+    # Extract rope_parameters robustly
+    rope_params = getattr(hf_config, "rope_parameters", None)
+    if rope_params:
+        # Standardize field names if they differ from what precompute_freqs_cis expects
+        cfg.rope_parameters = dict(rope_params)
+        if "rope_theta" in rope_params:
+            cfg.rope_theta = rope_params["rope_theta"]
+
     cfg.attention_bias = getattr(hf_config, "attention_bias", False)
 
     # Initialize local Olmo3 model
@@ -131,10 +139,16 @@ def make_hf_olmo3_model(cfg: HFOlmo3Config, **_):
         mapper.copy(
             f"model.layers.{i}.self_attn.q_norm.weight",
             f"transformer.h.{i}.attn.q_norm.weight",
+            permute=True,
+            n_heads=cfg.n_head,
+            head_dim=cfg.head_dim,
         )
         mapper.copy(
             f"model.layers.{i}.self_attn.k_norm.weight",
             f"transformer.h.{i}.attn.k_norm.weight",
+            permute=True,
+            n_heads=cfg.n_kv_head,
+            head_dim=cfg.head_dim,
         )
 
         # MLP
@@ -149,14 +163,14 @@ def make_hf_olmo3_model(cfg: HFOlmo3Config, **_):
             f"transformer.h.{i}.mlp.c_proj.weight",
         )
 
-        # Layer Norms
+        # Layer Norms (Refactored names)
         mapper.copy(
             f"model.layers.{i}.post_attention_layernorm.weight",
-            f"transformer.h.{i}.ln_1.weight",
+            f"transformer.h.{i}.post_attention_layernorm.weight",
         )
         mapper.copy(
             f"model.layers.{i}.post_feedforward_layernorm.weight",
-            f"transformer.h.{i}.ln_2.weight",
+            f"transformer.h.{i}.post_feedforward_layernorm.weight",
         )
 
     # Final Norm

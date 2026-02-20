@@ -159,25 +159,36 @@ def update_config_from_hf(
     optimus_cfg.intermediate_size = getattr(hf_config, "intermediate_size", None)
     optimus_cfg.tie_word_embeddings = getattr(hf_config, "tie_word_embeddings", False)
 
-    # Handle rope_theta, checking both root and rope_scaling
+    # Handle rope_theta, checking both root and rope_scaling/rope_parameters
     rope_theta = getattr(hf_config, "rope_theta", None)
-    if (
-        rope_theta is None
-        and hasattr(hf_config, "rope_scaling")
-        and hf_config.rope_scaling
-    ):
-        if isinstance(hf_config.rope_scaling, dict):
-            rope_theta = hf_config.rope_scaling.get("rope_theta")
-    optimus_cfg.rope_theta = rope_theta if rope_theta is not None else 10000.0
+    if rope_theta is None:
+        for attr in ["rope_scaling", "rope_parameters"]:
+            val = getattr(hf_config, attr, None)
+            if isinstance(val, dict):
+                rope_theta = val.get("rope_theta")
+                if rope_theta is not None:
+                    break
 
-    # Handle rope_scaling
-    if hasattr(hf_config, "rope_scaling") and hf_config.rope_scaling:
-        if isinstance(hf_config.rope_scaling, dict):
-            optimus_cfg.rope_scaling = hf_config.rope_scaling
-    elif hasattr(hf_config, "rope_parameters") and hf_config.rope_parameters:
-        # Some versions of transformers use rope_parameters
-        if isinstance(hf_config.rope_parameters, dict):
-            optimus_cfg.rope_scaling = hf_config.rope_parameters
+    if hasattr(optimus_cfg, "rope_theta"):
+        optimus_cfg.rope_theta = rope_theta if rope_theta is not None else 10000.0
+
+    # Handle rope_scaling if it exists in local config
+    if hasattr(optimus_cfg, "rope_scaling"):
+        if hasattr(hf_config, "rope_scaling") and hf_config.rope_scaling:
+            if isinstance(hf_config.rope_scaling, dict):
+                optimus_cfg.rope_scaling = hf_config.rope_scaling
+        elif hasattr(hf_config, "rope_parameters") and hf_config.rope_parameters:
+            if isinstance(hf_config.rope_parameters, dict):
+                optimus_cfg.rope_scaling = hf_config.rope_parameters
+
+    # Handle rope_parameters if it exists in local config
+    if hasattr(optimus_cfg, "rope_parameters"):
+        if hasattr(hf_config, "rope_parameters") and hf_config.rope_parameters:
+            if isinstance(hf_config.rope_parameters, dict):
+                optimus_cfg.rope_parameters = hf_config.rope_parameters
+        elif hasattr(hf_config, "rope_scaling") and hf_config.rope_scaling:
+            if isinstance(hf_config.rope_scaling, dict):
+                optimus_cfg.rope_parameters = hf_config.rope_scaling
 
     if hasattr(hf_config, "num_key_value_heads"):
         optimus_cfg.n_kv_head = hf_config.num_key_value_heads
