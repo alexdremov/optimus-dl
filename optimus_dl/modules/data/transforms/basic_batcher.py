@@ -107,7 +107,7 @@ class BasicBatcherNode(BaseNode):
             batched_seqs = np.array(padded_seqs, dtype=np.int64)
             batched_lens = np.array(lengths, dtype=np.int64)
 
-        return {self.cfg.field: batched_seqs, "input_lens": batched_lens}
+        return {self.cfg.field: batched_seqs, "seq_lens": batched_lens}
 
 
 @register_transform("basic_batcher", BasicBatcherConfig)

@@ -3,12 +3,14 @@ from functools import partial
 
 import torch
 import torch.nn as nn
+from numpy import allclose
 from torch.distributed.tensor import (
     DTensor,
     Replicate,
     Shard,
 )
 
+from optimus_dl.core.log import warn_once
 from optimus_dl.modules.model.blocks.layer_norms import RMSNorm
 from optimus_dl.modules.model.blocks.rope import apply_rotary_emb
 
@@ -264,6 +266,12 @@ class RotarySelfAttention(nn.Module):
             _flex_attention = flex_attention
             if xq.device.type == "cuda":
                 _flex_attention = torch.compile(flex_attention)
+
+            if not allclose([self.dropout], [0.0]):
+                warn_once(
+                    logger=logger,
+                    message="Dropout is not supported in flex attention. Ignoring dropout.",
+                )
 
             y = _flex_attention(
                 xq, xk, xv, block_mask=block_mask, enable_gqa=enable_gqa
