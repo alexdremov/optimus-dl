@@ -267,7 +267,7 @@ class RotarySelfAttention(nn.Module):
             if xq.device.type == "cuda":
                 _flex_attention = torch.compile(flex_attention)
 
-            if not allclose([self.dropout], [0.0]):
+            if self.dropout < 1e-5:
                 warn_once(
                     logger=logger,
                     message="Dropout is not supported in flex attention. Ignoring dropout.",
