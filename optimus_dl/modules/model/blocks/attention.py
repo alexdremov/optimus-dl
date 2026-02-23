@@ -288,7 +288,7 @@ class RotarySelfAttention(nn.Module):
                 xv,
                 attn_mask=mask,
                 dropout_p=self.dropout if self.training else 0.0,
-                is_causal=True,
+                is_causal=(mask is None),
                 enable_gqa=enable_gqa,
             )
 
