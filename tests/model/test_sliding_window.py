@@ -3,7 +3,7 @@ import pytest
 
 from optimus_dl.modules.model.blocks.attention import (
     FLEX_ATTENTION_AVAILABLE,
-    sliding_window_mask,
+    attention_mask_fn,
 )
 
 
@@ -51,7 +51,7 @@ class TestSlidingWindowConsistency:
             flex_attention,
         )
 
-        mask_fn = partial(sliding_window_mask, window_size=window_size)
+        mask_fn = partial(attention_mask_fn, window_size=window_size)
         block_mask = create_block_mask(
             mask_fn, None, None, seq_len, seq_len, device=device
         )
@@ -62,12 +62,12 @@ class TestSlidingWindowConsistency:
         # Compare
         torch.testing.assert_close(out_manual, out_flex, atol=1e-5, rtol=1e-5)
 
-    def test_sliding_window_mask_logic(self):
+    def test_attention_mask_fn_logic(self):
         """Unit test for the mask function itself."""
         window_size = 2
-        assert sliding_window_mask(None, None, 0, 0, window_size)
-        assert sliding_window_mask(None, None, 1, 0, window_size)
-        assert sliding_window_mask(None, None, 1, 1, window_size)
-        assert not sliding_window_mask(None, None, 2, 0, window_size)
-        assert sliding_window_mask(None, None, 2, 1, window_size)
-        assert sliding_window_mask(None, None, 2, 2, window_size)
+        assert attention_mask_fn(None, None, 0, 0, window_size)
+        assert attention_mask_fn(None, None, 1, 0, window_size)
+        assert attention_mask_fn(None, None, 1, 1, window_size)
+        assert not attention_mask_fn(None, None, 2, 0, window_size)
+        assert attention_mask_fn(None, None, 2, 1, window_size)
+        assert attention_mask_fn(None, None, 2, 2, window_size)

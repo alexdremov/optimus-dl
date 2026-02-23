@@ -51,10 +51,16 @@ class RotaryTransformerBlock(nn.Module):
             use_liger=use_liger_swiglu,
         )
 
-    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        *,
+        x: torch.Tensor,
+        freqs_cis: torch.Tensor,
+        seq_lens: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         """Compute the forward pass for the transformer block (pre-norm residual)."""
         ln_1 = self.ln_1(x)
-        attn_out = self.attn(ln_1, freqs_cis)
+        attn_out = self.attn(ln_1, freqs_cis=freqs_cis, seq_lens=seq_lens)
 
         x = x + attn_out
         x = x + self.mlp(self.ln_2(x))

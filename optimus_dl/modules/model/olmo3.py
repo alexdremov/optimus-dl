@@ -166,9 +166,11 @@ class Olmo3Block(nn.Module):
             config.n_embd, eps=config.rmsnorm_eps, use_liger=config.use_liger_rmsnorm
         )
 
-    def forward(self, x, freqs_cis):
+    def forward(self, x, freqs_cis, seq_lens: torch.Tensor | None = None):
         # x = x + Norm(attn(x))
-        x = x + self.post_attention_layernorm(self.attn(x, freqs_cis))
+        x = x + self.post_attention_layernorm(
+            self.attn(x, freqs_cis=freqs_cis, seq_lens=seq_lens)
+        )
         # x = x + Norm(mlp(x))
         x = x + self.post_feedforward_layernorm(self.mlp(x))
         return x
@@ -206,7 +208,11 @@ class Olmo3(GPT):
 
         self.transformer = nn.ModuleDict(
             {
-                "wte": nn.Embedding(config.vocab_size, config.n_embd),
+                "wte": nn.Embedding(
+                    config.vocab_size,
+                    config.n_embd,
+                    padding_idx=config.padding_token_id,
+                ),
                 "drop": nn.Dropout(config.dropout),
                 "h": nn.ModuleList(
                     [Olmo3Block(config, i) for i in range(config.n_layer)]
@@ -229,7 +235,7 @@ class Olmo3(GPT):
         if config.tie_word_embeddings:
             self.transformer.wte.weight = self.lm_head.weight
 
-    def forward(self, input_ids, **kwargs):
+    def forward(self, input_ids, seq_lens: torch.Tensor | None = None, **kwargs):
         idx = input_ids
         device = idx.device
         b, t = idx.size()
@@ -239,10 +245,13 @@ class Olmo3(GPT):
         x = self.transformer.drop(tok_emb)
 
         self.freqs_cis = self.freqs_cis.to(x.device)
-        f_cis = self.freqs_cis[pos]
+        freqs_cis = self.freqs_cis[pos]
 
         for block in self.transformer.h:
-            x = block(x, f_cis)
+            block_kwargs = dict(x=x, freqs_cis=freqs_cis)
+            if seq_lens is not None:
+                block_kwargs["seq_lens"] = seq_lens
+            x = block(**block_kwargs)
         x = self.transformer.ln_f(x)
         logits = self.lm_head(x)
 
@@ -295,8 +304,16 @@ class Olmo3(GPT):
                     "transformer.h.*.post_feedforward_layernorm": SequenceParallel(),
                     "transformer.ln_f": SequenceParallel(),
                     "transformer.h.*": PrepareModuleInput(
-                        input_layouts=(Shard(1), Replicate()),
-                        desired_input_layouts=(Shard(1), Replicate()),
+                        input_kwarg_layouts=dict(
+                            x=Shard(1),
+                            freqs_cis=Replicate(),
+                            seq_lens=Replicate(),
+                        ),
+                        desired_input_kwarg_layouts=dict(
+                            x=Shard(1),
+                            freqs_cis=Replicate(),
+                            seq_lens=Replicate(),
+                        ),
                         use_local_output=False,
                     ),
                     "transformer.h.*.attn.wo": RowwiseParallel(

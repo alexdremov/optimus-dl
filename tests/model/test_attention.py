@@ -391,3 +391,100 @@ class TestRotarySelfAttention:
         out_sh = attn_sh(x, freqs_cis)
 
         assert not torch.allclose(out_ph, out_sh)
+
+    def test_seq_lens_forward_basic(self):
+        """Test that the forward pass completes successfully when seq_lens is provided."""
+        n_embd, n_head, seq_len = 128, 4, 16
+        attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head)
+        x = torch.randn(2, seq_len, n_embd)
+        freqs_cis = precompute_freqs_cis(n_embd // n_head, seq_len)
+
+        # Batch of 2, first sequence unpadded, second sequence padded
+        seq_lens = torch.tensor([16, 10])
+
+        out = attn(x, freqs_cis, seq_lens=seq_lens)
+        assert out.shape == (2, seq_len, n_embd)
+
+    def test_seq_lens_masking_equivalence(self):
+        """Verify that padded tokens do not influence the attention output of valid tokens."""
+        n_embd, n_head, max_seq_len = 128, 4, 16
+        valid_len = 10
+
+        attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head)
+        attn.eval()  # Disable dropout for deterministic output comparison
+
+        # 1. Base input (Unpadded)
+        x_base = torch.randn(1, valid_len, n_embd)
+        freqs_cis_base = precompute_freqs_cis(n_embd // n_head, valid_len)
+
+        # 2. Padded input (Same valid tokens, followed by random noise padding)
+        x_padded = torch.zeros(1, max_seq_len, n_embd)
+        x_padded[:, :valid_len, :] = x_base
+        x_padded[:, valid_len:, :] = torch.randn(1, max_seq_len - valid_len, n_embd)
+        freqs_cis_padded = precompute_freqs_cis(n_embd // n_head, max_seq_len)
+
+        # Run forward passes
+        out_base = attn(x_base, freqs_cis_base)
+        out_padded = attn(
+            x_padded, freqs_cis_padded, seq_lens=torch.tensor([valid_len])
+        )
+
+        # The output for the valid tokens should be completely unaffected by the padded tokens
+        torch.testing.assert_close(
+            out_base[0, :valid_len], out_padded[0, :valid_len], rtol=1e-4, atol=1e-4
+        )
+
+    def test_seq_lens_with_sliding_window(self):
+        """Verify seq_lens padding masking works together with sliding window masking."""
+        n_embd, n_head, max_seq_len = 128, 4, 16
+        valid_len = 12
+        sliding_window = 4
+
+        attn = RotarySelfAttention(
+            n_embd=n_embd, n_head=n_head, sliding_window=sliding_window
+        )
+        attn.eval()
+
+        # 1. Base input (Unpadded)
+        x_base = torch.randn(1, valid_len, n_embd)
+        freqs_cis_base = precompute_freqs_cis(n_embd // n_head, valid_len)
+
+        # 2. Padded input
+        x_padded = torch.zeros(1, max_seq_len, n_embd)
+        x_padded[:, :valid_len, :] = x_base
+        x_padded[:, valid_len:, :] = torch.randn(1, max_seq_len - valid_len, n_embd)
+        freqs_cis_padded = precompute_freqs_cis(n_embd // n_head, max_seq_len)
+
+        # Run forward passes
+        out_base = attn(x_base, freqs_cis_base)
+        out_padded = attn(
+            x_padded, freqs_cis_padded, seq_lens=torch.tensor([valid_len])
+        )
+
+        # Check equivalence
+        torch.testing.assert_close(
+            out_base[0, :valid_len], out_padded[0, :valid_len], rtol=1e-4, atol=1e-4
+        )
+
+    @patch("optimus_dl.modules.model.blocks.attention.FLEX_ATTENTION_AVAILABLE", False)
+    def test_seq_lens_sdpa_fallback(self):
+        """Test that the scaled_dot_product_attention fallback handles seq_lens properly."""
+        n_embd, n_head, max_seq_len = 128, 4, 16
+        valid_len = 10
+
+        # Include sliding window to test the combined fallback mask
+        attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head, sliding_window=4)
+        attn.eval()
+
+        x_padded = torch.randn(1, max_seq_len, n_embd)
+        freqs_cis_padded = precompute_freqs_cis(n_embd // n_head, max_seq_len)
+
+        # Should execute the SDPA fallback branch without crashing
+        out_padded = attn(
+            x_padded, freqs_cis_padded, seq_lens=torch.tensor([valid_len])
+        )
+
+        assert out_padded.shape == (1, max_seq_len, n_embd)
+
+        # Ensure outputs don't contain NaNs due to faulty boolean masking
+        assert not torch.isnan(out_padded).any()

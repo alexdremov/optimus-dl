@@ -282,7 +282,7 @@ class TestLlamaBlock:
         x = torch.randn(batch_size, seq_len, 256)
         freqs_cis = precompute_freqs_cis(256 // 8, seq_len)
 
-        output = block(x, freqs_cis)
+        output = block(x=x, freqs_cis=freqs_cis)
         assert output.shape == (batch_size, seq_len, 256)
 
     def test_residual_connections(self):
@@ -298,7 +298,7 @@ class TestLlamaBlock:
         # The forward should implement:
         # x = x + attn(ln_1(x), freqs_cis)
         # x = x + mlp(ln_2(x))
-        output = block(x, freqs_cis)
+        output = block(x=x, freqs_cis=freqs_cis)
 
         # Output should be different from input due to transformations
         assert not torch.allclose(output, x)
@@ -312,7 +312,7 @@ class TestLlamaBlock:
         x = torch.randn(batch_size, seq_len, 256, requires_grad=True)
         freqs_cis = precompute_freqs_cis(256 // 8, seq_len)
 
-        output = block(x, freqs_cis)
+        output = block(x=x, freqs_cis=freqs_cis)
         loss = output.sum()
         loss.backward()
 
@@ -515,9 +515,9 @@ class TestLlamaIntegration:
         received_freqs_cis = []
 
         def capture_freqs_cis(original_forward):
-            def wrapper(x, freqs_cis):
+            def wrapper(x, freqs_cis, **kwargs):
                 received_freqs_cis.append(freqs_cis)
-                return original_forward(x, freqs_cis)
+                return original_forward(x=x, freqs_cis=freqs_cis, **kwargs)
 
             return wrapper
 

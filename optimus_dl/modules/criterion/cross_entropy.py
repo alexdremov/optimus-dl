@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 class CrossEntropyCriterionConfig(RegistryConfigStrict):
     label_smoothing: float = 0.0
     use_liger_kernel: bool | None = None
+    padding_token_id: int = -100
 
 
 @register_criterion("cross_entropy", CrossEntropyCriterionConfig)
@@ -54,6 +55,7 @@ class CrossEntropyCriterion(BaseCriterion):
     ):
         self.cfg = cfg
         self.collective = collective
+        self.padding_token_id = cfg.padding_token_id
         self._liger_available = False
         if self.cfg.use_liger_kernel or self.cfg.use_liger_kernel is None:
             try:
@@ -91,7 +93,8 @@ class CrossEntropyCriterion(BaseCriterion):
         is_dtensor = isinstance(logits, DTensor)
 
         valid_tokens = cached_lambda(
-            lambda: (targets >= 0).sum().item() / self.collective.tp_world_size
+            lambda: ((targets >= 0) & (targets != self.padding_token_id)).sum().item()
+            / self.collective.tp_world_size
         )
 
         log_averaged(
@@ -132,7 +135,7 @@ class CrossEntropyCriterion(BaseCriterion):
                 input=logits.view(-1, logits.size(-1)),
                 target=targets,
                 label_smoothing=self.cfg.label_smoothing,
-                ignore_index=-100,
+                ignore_index=self.padding_token_id,
             )
         else:
             with (
@@ -143,7 +146,7 @@ class CrossEntropyCriterion(BaseCriterion):
                     input=logits.view(-1, logits.size(-1)).float(),
                     target=targets,
                     label_smoothing=self.cfg.label_smoothing,
-                    ignore_index=-100,
+                    ignore_index=self.padding_token_id,
                 )
 
         log_averaged(
@@ -193,6 +196,6 @@ class CrossEntropyCriterion(BaseCriterion):
         else:
             predictions = torch.argmax(logits, dim=-1)
         correct = predictions == targets
-        valid = targets >= 0
+        valid = (targets >= 0) & (targets != self.padding_token_id)
         correct = (correct & valid).float()
         return (correct.sum() / valid.sum()).item()

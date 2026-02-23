@@ -72,6 +72,10 @@ class GPTConfig(RegistryConfigStrict):
             "description": "Control FSDP sharding granularity. Shard every i-th layer, 1 means all layers are sharded (if global reshard_after_forward is True)"
         },
     )
+    padding_token_id: int | None = field(
+        default=None,
+        metadata={"description": "Padding token id for the model embeddings"},
+    )
 
 
 class MLP(nn.Module):
@@ -136,7 +140,11 @@ class GPT(BaseModel):
 
         self.transformer = nn.ModuleDict(
             {
-                "wte": nn.Embedding(config.vocab_size, config.n_embd),
+                "wte": nn.Embedding(
+                    config.vocab_size,
+                    config.n_embd,
+                    padding_idx=config.padding_token_id,
+                ),
                 "wpe": nn.Embedding(config.block_size, config.n_embd),
                 "drop": nn.Dropout(config.dropout),
                 "h": nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
@@ -187,7 +195,7 @@ class GPT(BaseModel):
         pos_emb = self.transformer.wpe(pos)  # position embeddings of shape (t, n_embd)
         x = self.transformer.drop(tok_emb + pos_emb)
         for block in self.transformer.h:
-            x = block(x)
+            x = block(x=x)
         x = self.transformer.ln_f(x)
 
         logits = self.lm_head(x)

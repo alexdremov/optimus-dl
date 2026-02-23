@@ -5,6 +5,7 @@ configuration features like Python expression evaluation and environment
 variable access.
 """
 
+import hashlib
 import logging
 import os
 
@@ -31,4 +32,35 @@ OmegaConf.register_new_resolver("cpu_count", os.cpu_count)
 This allows you to reference the number of CPU cores in YAML configs:
     num_workers: ${cpu_count:}  # Uses all available CPU cores
     num_workers: ${eval:"${cpu_count:} // 2"}  # Uses half the cores
+"""
+
+
+def hash_resolver(x, max_len=16):
+    """Resolver for computing hash of a value repr."""
+    x = repr(x)
+    return hashlib.sha256(x.encode("utf-8")).hexdigest()[:max_len]
+
+
+OmegaConf.register_new_resolver("hash", hash_resolver)
+"""Register 'hash' resolver for computing hash of a value.
+
+This allows you to compute hashes in YAML configs:
+    model_id: ${hash:${model_config}}
+"""
+
+
+def conf_hash_resolver(*args, _root_):
+    """Resolver for computing hash of a root config."""
+    max_len = 16
+    if len(args) > 0:
+        assert len(args) == 1, "Only one argument is allowed"
+        max_len = int(args[0])
+    return hash_resolver(_root_, max_len=max_len)
+
+
+OmegaConf.register_new_resolver("config_hash", conf_hash_resolver)
+"""Register 'config_hash' resolver for computing hash of a root config.
+
+This allows you to compute hashes of root config in YAML configs:
+    model_id: model-${config_hash:}
 """
