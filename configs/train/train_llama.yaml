@@ -27,7 +27,7 @@ lr_scheduler:
 
 # Experiment configuration
 common:
-  exp_name: ${args.name}
+  exp_name: ${args.name}-${config_hash:}
   log_freq: 50
   save_freq: 500
   eval_freq: 200
