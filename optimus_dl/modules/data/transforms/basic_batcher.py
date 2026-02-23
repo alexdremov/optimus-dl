@@ -25,7 +25,7 @@ class BasicBatcherConfig(RegistryConfigStrict):
     """
 
     batch_size: int = MISSING
-    pad_token_id: int = -1
+    pad_token_id: int = MISSING
     field: str = "input_ids"
 
 

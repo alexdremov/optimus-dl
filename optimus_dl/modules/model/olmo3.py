@@ -208,7 +208,11 @@ class Olmo3(GPT):
 
         self.transformer = nn.ModuleDict(
             {
-                "wte": nn.Embedding(config.vocab_size, config.n_embd),
+                "wte": nn.Embedding(
+                    config.vocab_size,
+                    config.n_embd,
+                    padding_idx=config.padding_token_id,
+                ),
                 "drop": nn.Dropout(config.dropout),
                 "h": nn.ModuleList(
                     [Olmo3Block(config, i) for i in range(config.n_layer)]
