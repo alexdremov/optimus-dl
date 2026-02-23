@@ -42,6 +42,10 @@ def setup_logging(
         message=".*Subclassing `Dict` in Structured Config classes is deprecated.*",
     )
 
+    httpx_logger = logging.getLogger("httpx")
+    # Set its level to WARNING (this suppresses INFO and DEBUG logs)
+    httpx_logger.setLevel(logging.WARNING)
+
     # Clear any existing handlers
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
