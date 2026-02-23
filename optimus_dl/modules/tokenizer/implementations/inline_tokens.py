@@ -35,7 +35,7 @@ class InlineTokensTokenizerConfig(BaseTokenizerConfig):
 class InlineTokensTokenizer(BaseTokenizer):
     """Inline sequence tokenizer based on an explicitly provided list of tokens.
 
-    Uses regex-based longest-match parsing to tokenize arbitrary strings
+    Uses regex-based greedy longest-match parsing to tokenize arbitrary strings
     without whitespace assumptions, handling unknown text chunks based on
     the configured strategy.
 
