@@ -117,7 +117,7 @@ class BasicBatcher(BaseTransform):
     Unlike the flat batcher which packs tokens to minimize padding, this
     batcher keeps documents separate and pads shorter documents with a
     designated `pad_token_id` to match the longest document in the batch.
-    It yields a dictionary containing the batched items and an `input_lens`
+    It yields a dictionary containing the batched items and a `seq_lens`
     tensor recording the actual unpadded lengths of the batch.
 
     Args:
