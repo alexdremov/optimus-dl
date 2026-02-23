@@ -243,8 +243,10 @@ class RotarySelfAttention(nn.Module):
         enable_gqa = self.n_rep > 1
 
         # Decide if we can use flex_attention masks
-        use_flex = FLEX_ATTENTION_AVAILABLE and (
-            self.sliding_window is not None or seq_lens is not None
+        use_flex = (
+            FLEX_ATTENTION_AVAILABLE
+            and (self.sliding_window is not None or seq_lens is not None)
+            and (x.device.type in {"cuda", "cpu", "xpu", "hpu"})
         )
 
         if use_flex:
@@ -287,7 +289,12 @@ class RotarySelfAttention(nn.Module):
 
                 if seq_lens is not None:
                     seq_lens_view = seq_lens.view(-1, 1, 1, 1)
-                    mask &= (q_idx < seq_lens_view) & (kv_idx < seq_lens_view)
+                    seq_lens_mask = (q_idx < seq_lens_view) & (kv_idx < seq_lens_view)
+                    mask = torch.broadcast_to(
+                        (q_idx < seq_lens_view) & (kv_idx < seq_lens_view),
+                        seq_lens_mask.shape,
+                    )
+                    mask &= seq_lens_mask
 
             y = torch.nn.functional.scaled_dot_product_attention(
                 xq,

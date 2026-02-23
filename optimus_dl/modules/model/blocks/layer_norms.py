@@ -81,6 +81,7 @@ class RMSNorm(nn.Module):
 
     def _norm(self, x: torch.Tensor) -> torch.Tensor:
         """Compute the RMS normalization of the input."""
+        assert x.dtype == torch.float32, "Accumulating in lower precision is dangerous"
         return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -97,7 +98,7 @@ class RMSNorm(nn.Module):
         if self.use_liger and x.device.type != "cpu" and not is_dtensor:
             return liger_rms_norm(x, self.weight, self.eps)
 
-        output = self._norm(x.float()).type_as(x)
+        output = self._norm(x.float())
 
         weight = self.weight
         if is_dtensor and not isinstance(weight, DTensor):
@@ -107,4 +108,4 @@ class RMSNorm(nn.Module):
             # We assume weight is replicated (available on all ranks).
             weight = DTensor.from_local(weight, x.device_mesh, (Replicate(),))
 
-        return output * weight
+        return (output * weight).type_as(x)

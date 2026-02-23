@@ -89,7 +89,9 @@ class InlineTokensTokenizer(BaseTokenizer):
             else:
                 # If a chunk doesn't match a vocab token, it's treated as unknown.
                 if self.config.unk_strategy == UnkStrategy.RAISE:
-                    raise ValueError(f"Unknown token/characters encountered: '{chunk}'")
+                    raise ValueError(
+                        f"Unknown token/characters encountered: '{chunk}', '{text}'"
+                    )
                 elif self.config.unk_strategy == UnkStrategy.UNK:
                     assert self._unk_token_id is not None
                     token_ids.append(self._unk_token_id)
