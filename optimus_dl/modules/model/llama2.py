@@ -239,8 +239,16 @@ class Llama(GPT):
                     "transformer.h.*.ln_2": SequenceParallel(),
                     "transformer.ln_f": SequenceParallel(),
                     "transformer.h.*": PrepareModuleInput(
-                        input_layouts=(Shard(1), Replicate()),
-                        desired_input_layouts=(Shard(1), Replicate()),
+                        input_kwarg_layouts=dict(
+                            x=Shard(1),
+                            freqs_cis=Replicate(),
+                            seq_lens=Replicate(),
+                        ),
+                        desired_input_kwarg_layouts=dict(
+                            x=Shard(1),
+                            freqs_cis=Replicate(),
+                            seq_lens=Replicate(),
+                        ),
                         use_local_output=False,
                     ),
                     "transformer.h.*.attn.wo": RowwiseParallel(
@@ -278,7 +286,7 @@ class Llama(GPT):
                 ),
             )
 
-    def forward(self, input_ids, **kwargs):
+    def forward(self, input_ids, seq_lens: torch.Tensor | None = None, **kwargs):
         """Perform the forward pass, handling rotary frequency lookup."""
         idx = input_ids
         device = idx.device
@@ -293,7 +301,10 @@ class Llama(GPT):
         freqs_cis = self.freqs_cis.to(x.device)[pos]
 
         for block in self.transformer.h:
-            x = block(x, freqs_cis)
+            block_kwargs = dict(x=x, freqs_cis=freqs_cis)
+            if seq_lens is not None:
+                block_kwargs["seq_lens"] = seq_lens
+            x = block(**block_kwargs)
         x = self.transformer.ln_f(x)
 
         logits = self.lm_head(x)

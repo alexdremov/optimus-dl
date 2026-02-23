@@ -182,7 +182,7 @@ class TestBlock:
         block = Block(config)
 
         x = torch.randn(2, 10, 256, requires_grad=True)
-        output = block(x)
+        output = block(x=x)
         loss = output.sum()
         loss.backward()
 

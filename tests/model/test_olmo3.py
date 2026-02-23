@@ -116,7 +116,7 @@ class TestOlmo3Block:
         x = torch.randn(B, T, C)
         freqs_cis = precompute_freqs_cis(C // 4, T)
 
-        out = block(x, freqs_cis)
+        out = block(x=x, freqs_cis=freqs_cis)
         assert out.shape == (B, T, C)
         assert not torch.allclose(out, x)
 

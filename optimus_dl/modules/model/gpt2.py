@@ -187,7 +187,7 @@ class GPT(BaseModel):
         pos_emb = self.transformer.wpe(pos)  # position embeddings of shape (t, n_embd)
         x = self.transformer.drop(tok_emb + pos_emb)
         for block in self.transformer.h:
-            x = block(x)
+            x = block(x=x)
         x = self.transformer.ln_f(x)
 
         logits = self.lm_head(x)

@@ -1,4 +1,5 @@
 import logging
+from functools import partial
 
 import torch
 import torch.nn as nn
@@ -27,9 +28,14 @@ except ImportError:
     create_block_mask = None
 
 
-def sliding_window_mask(_, __, q_idx, kv_idx, window_size):
-    """Mask function for flex_attention sliding window."""
-    return (q_idx >= kv_idx) & (q_idx - kv_idx < window_size)
+def attention_mask_fn(b, _, q_idx, kv_idx, window_size=None, seq_lens=None):
+    """Mask function for flex_attention supporting causal, sliding window, and padding."""
+    mask = q_idx >= kv_idx  # causal
+    if window_size is not None:
+        mask = mask & (q_idx - kv_idx < window_size)
+    if seq_lens is not None:
+        mask = mask & (q_idx < seq_lens[b]) & (kv_idx < seq_lens[b])
+    return mask
 
 
 class CausalSelfAttention(nn.Module):
@@ -111,6 +117,7 @@ class RotarySelfAttention(nn.Module):
     - **Rotary Positional Embeddings (RoPE)**: For better positional encoding.
     - **Q/K Normalization**: Optional RMSNorm on Query/Key for training stability.
     - **Sliding Window Attention**: Optional sliding window masking.
+    - **Dynamic Sequence Padding**: Support for `seq_lens` masking via flex_attention.
 
     Attributes:
         wq: Linear projection for Query.
@@ -170,12 +177,18 @@ class RotarySelfAttention(nn.Module):
         # Flex attention block mask
         self._block_mask = None
 
-    def forward(self, x: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        freqs_cis: torch.Tensor,
+        seq_lens: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         """Perform the forward pass with RoPE and GQA.
 
         Args:
-            x: Input tensor.
+            x: Input tensor of shape (B, T, C).
             freqs_cis: Precomputed frequencies for RoPE.
+            seq_lens: Optional 1D tensor of sequence lengths to mask out padding.
 
         Returns:
             Output tensor after attention and projection.
@@ -227,27 +240,47 @@ class RotarySelfAttention(nn.Module):
             xv = xv.to_local()
 
         enable_gqa = self.n_rep > 1
-        if self.sliding_window is not None and FLEX_ATTENTION_AVAILABLE:
-            if self._block_mask is None or self._block_mask.shape[-1] != T:
-                from functools import partial
 
-                mask_fn = partial(sliding_window_mask, window_size=self.sliding_window)
-                self._block_mask = create_block_mask(
-                    mask_fn, None, None, T, T, device=x.device
-                )
+        # Decide if we can use flex_attention masks
+        use_flex = FLEX_ATTENTION_AVAILABLE and (
+            self.sliding_window is not None or seq_lens is not None
+        )
+
+        if use_flex:
+            mask_fn = partial(
+                attention_mask_fn, window_size=self.sliding_window, seq_lens=seq_lens
+            )
+
+            # Since seq_lens relies on dynamic per-batch lengths, it needs the true batch dimension `B`
+            if seq_lens is not None:
+                block_mask = create_block_mask(mask_fn, B, None, T, T, device=x.device)
+            else:
+                if self._block_mask is None or self._block_mask.shape[-1] != T:
+                    self._block_mask = create_block_mask(
+                        mask_fn, None, None, T, T, device=x.device
+                    )
+                block_mask = self._block_mask
+
             _flex_attention = flex_attention
             if xq.device.type == "cuda":
                 _flex_attention = torch.compile(flex_attention)
 
             y = _flex_attention(
-                xq, xk, xv, block_mask=self._block_mask, enable_gqa=enable_gqa
+                xq, xk, xv, block_mask=block_mask, enable_gqa=enable_gqa
             )
         else:
             mask = None
-            if self.sliding_window is not None:
-                q_idx = torch.arange(T, device=x.device).view(-1, 1)
-                kv_idx = torch.arange(T, device=x.device).view(1, -1)
-                mask = (q_idx >= kv_idx) & (q_idx - kv_idx < self.sliding_window)
+            if self.sliding_window is not None or seq_lens is not None:
+                q_idx = torch.arange(T, device=x.device).view(1, 1, -1, 1)
+                kv_idx = torch.arange(T, device=x.device).view(1, 1, 1, -1)
+                mask = q_idx >= kv_idx
+
+                if self.sliding_window is not None:
+                    mask &= q_idx - kv_idx < self.sliding_window
+
+                if seq_lens is not None:
+                    seq_lens_view = seq_lens.view(-1, 1, 1, 1)
+                    mask &= (q_idx < seq_lens_view) & (kv_idx < seq_lens_view)
 
             y = torch.nn.functional.scaled_dot_product_attention(
                 xq,
@@ -255,7 +288,7 @@ class RotarySelfAttention(nn.Module):
                 xv,
                 attn_mask=mask,
                 dropout_p=self.dropout if self.training else 0.0,
-                is_causal=(self.sliding_window is None),
+                is_causal=True,
                 enable_gqa=enable_gqa,
             )
 

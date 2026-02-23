@@ -227,6 +227,7 @@ lint.ignore = [
     "W191", # indentation contains tabs
     "E402", # module level import not at top of file
     "I001", # import sorts
+    "C408", # allow dict calls
 ]
 line-length = 88
 target-version = "py310"
