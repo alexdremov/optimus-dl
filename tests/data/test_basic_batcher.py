@@ -53,11 +53,11 @@ class TestBasicBatcher:
         batch = batcher_node.next()
 
         assert "input_ids" in batch
-        assert "input_lens" in batch
+        assert "seq_lens" in batch
 
         # Output should be numpy arrays when inputs are lists
         assert isinstance(batch["input_ids"], np.ndarray)
-        assert isinstance(batch["input_lens"], np.ndarray)
+        assert isinstance(batch["seq_lens"], np.ndarray)
 
         # Check padding
         expected_ids = np.array(
@@ -72,7 +72,7 @@ class TestBasicBatcher:
 
         # Check lengths
         expected_lens = np.array([3, 1, 2, 4])
-        np.testing.assert_array_equal(batch["input_lens"], expected_lens)
+        np.testing.assert_array_equal(batch["seq_lens"], expected_lens)
 
     def test_batching_numpy_arrays(self):
         """Test batching and dynamic padding with NumPy arrays."""
@@ -95,7 +95,7 @@ class TestBasicBatcher:
             ]
         )
         np.testing.assert_array_equal(batch["input_ids"], expected_ids)
-        np.testing.assert_array_equal(batch["input_lens"], np.array([2, 3]))
+        np.testing.assert_array_equal(batch["seq_lens"], np.array([2, 3]))
 
     def test_batching_torch_tensors(self):
         """Test batching and dynamic padding natively with PyTorch tensors."""
@@ -111,13 +111,13 @@ class TestBasicBatcher:
 
         # Output should be torch tensors
         assert isinstance(batch["input_ids"], torch.Tensor)
-        assert isinstance(batch["input_lens"], torch.Tensor)
+        assert isinstance(batch["seq_lens"], torch.Tensor)
 
         expected_ids = torch.tensor([[10, 20, 30], [40, 99, 99]])
         expected_lens = torch.tensor([3, 1])
 
         torch.testing.assert_close(batch["input_ids"], expected_ids)
-        torch.testing.assert_close(batch["input_lens"], expected_lens)
+        torch.testing.assert_close(batch["seq_lens"], expected_lens)
 
     def test_partial_final_batch(self):
         """Test that the batcher yields a smaller final batch when the source is exhausted."""
@@ -157,7 +157,7 @@ class TestBasicBatcher:
         batch = batcher_node.next()
 
         assert "custom_tokens" in batch
-        assert "input_lens" in batch
+        assert "seq_lens" in batch
         np.testing.assert_array_equal(
             batch["custom_tokens"], np.array([[1, 2], [3, 0]])
         )
