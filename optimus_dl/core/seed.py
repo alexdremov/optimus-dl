@@ -25,7 +25,3 @@ def set_seed(seed: int, deterministic: bool = False) -> None:
 
         # Force determinism in PyTorch operations
         torch.use_deterministic_algorithms(True, warn_only=True)
-    else:
-        # Default behavior for performance
-        torch.backends.cudnn.benchmark = True
-        torch.backends.cudnn.deterministic = False
