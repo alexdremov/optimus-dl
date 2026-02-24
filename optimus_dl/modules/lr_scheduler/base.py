@@ -40,6 +40,7 @@ class BaseLRScheduler(ABC):
         self.optimizer = optimizer
         self._step_count = 0
         self.base_lrs = [group["lr"] for group in optimizer.param_groups]
+        self.set()
 
     @abstractmethod
     def get_lr(self) -> list[float]:
@@ -57,6 +58,10 @@ class BaseLRScheduler(ABC):
         This should be called at the end of each training iteration.
         """
         self._step_count += 1
+        self.set()
+
+    def set(self) -> None:
+        """Set the learning rates of the optimizer to the current values."""
         values = self.get_lr()
         for param_group, lr in zip(self.optimizer.param_groups, values, strict=True):
             param_group["lr"] = lr
@@ -76,6 +81,7 @@ class BaseLRScheduler(ABC):
         """Restore the scheduler's state from a checkpoint."""
         self._step_count = state_dict["step_count"]
         self.base_lrs = state_dict["base_lrs"]
+        self.set()
 
     @property
     def last_epoch(self) -> int:

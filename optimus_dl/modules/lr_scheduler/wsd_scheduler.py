@@ -229,3 +229,4 @@ class WSDScheduler(BaseLRScheduler):
         self.cooldown_start_lr_factor = state_dict["cooldown_start_lr_factor"]
         self.n_anneal_steps = state_dict["n_anneal_steps"]
         self.n_hold = state_dict["n_hold"]
+        self.set()

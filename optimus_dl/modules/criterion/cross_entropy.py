@@ -87,6 +87,21 @@ class CrossEntropyCriterion(BaseCriterion):
         input_ids = batch.pop("input_ids")
 
         batch["input_ids"] = input_ids[:, :-1]
+
+        log_averaged(
+            "input_max_seq_len",
+            input_ids.shape[1],
+            round=2,
+        )
+        seq_lens = batch.get("seq_lens")
+        if seq_lens is not None:
+            log_averaged(
+                "input_mean_seq_len",
+                lambda: seq_lens.mean().item(),
+                weight=seq_lens.shape[0],
+                round=2,
+            )
+
         targets = input_ids[:, 1:]
         model_out = model(**batch)
         logits = model_out["logits"]
