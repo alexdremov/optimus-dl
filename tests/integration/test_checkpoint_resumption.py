@@ -47,7 +47,7 @@ class TestCheckpointResumption:
         output_path: Path,
         iterations: int,
         save_freq: int,
-        extra_args: list[str] = None,
+        extra_args: list[str] | None = None,
     ):
         """Run the training script via subprocess."""
         cmd = [
