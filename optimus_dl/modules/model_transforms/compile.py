@@ -22,8 +22,8 @@ class CompileTransformConfig(ModelTransformConfig):
             "description": "Arguments for torch.compile. See https://pytorch.org/docs/stable/generated/torch.compile.html"
         },
     )
-    activation_memory_budget: float | None = field(
-        default=None,
+    activation_memory_budget: float = field(
+        default=1.0,
         metadata={
             "description": "Activation memory budget for torch.compile. See https://pytorch.org/blog/activation-checkpointing-techniques/"
         },
