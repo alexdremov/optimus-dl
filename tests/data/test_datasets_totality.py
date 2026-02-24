@@ -105,7 +105,9 @@ class TestDatasetsTotality(unittest.TestCase):
         collected_docs_count = 0
 
         for rank in range(world_size):
-            dataset = TokenizedDataset(config, rank=rank, world_size=world_size)
+            dataset = TokenizedDataset(
+                config, rank=rank, world_size=world_size, seed=42
+            )
             dataset.reset()
 
             rank_tokens = []
@@ -144,7 +146,7 @@ class TestDatasetsTotality(unittest.TestCase):
         # Shuffled should yield all tokens, but order will be permuted at document level
         config = TokenizedDatasetConfig(
             data_dir=str(self.data_dir),
-            strategy=DocumentStrategyConfig(_name="document", shuffle=True, seed=123),
+            strategy=DocumentStrategyConfig(_name="document", shuffle=True),
         )
 
         world_size = 3
@@ -169,7 +171,6 @@ class TestDatasetsTotality(unittest.TestCase):
                 _name="concat_random",
                 chunk_size=chunk_size,
                 random_offset=False,
-                seed=42,
             ),
         )
 

@@ -69,7 +69,6 @@ class TestCompositeDataset(unittest.TestCase):
                 "ds2": DatasetConfig(dataset=self.ds2_cfg, weight=1.0, cycle=False),
             },
             stop_criteria=StopCriteria.ALL_DATASETS_EXHAUSTED,
-            seed=42,
             strict_load=True,
         )
         self.temp_files = []
@@ -84,7 +83,7 @@ class TestCompositeDataset(unittest.TestCase):
         # Weights equal. Should mix.
         # cycle=False, so they should exhaust.
 
-        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         items = []
@@ -114,7 +113,7 @@ class TestCompositeDataset(unittest.TestCase):
         self.comp_cfg.datasets["ds2"].dataset.size = 2
         self.comp_cfg.stop_criteria = StopCriteria.FIRST_DATASET_EXHAUSTED
 
-        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         items = []
@@ -133,7 +132,7 @@ class TestCompositeDataset(unittest.TestCase):
         self.assertEqual(len(ds2_items), 2)
 
     def test_state_restoration(self):
-        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         # Consume some items
@@ -143,7 +142,7 @@ class TestCompositeDataset(unittest.TestCase):
         state = dataset.get_state()
 
         # Create new dataset and load state
-        dataset2 = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset2 = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         dataset2.reset(state)
 
         # Continue
@@ -164,7 +163,7 @@ class TestCompositeDataset(unittest.TestCase):
 
     def test_state_resume_exact_match(self):
         # Test that resuming produces exactly the same sequence as continuing
-        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         # Run N steps
@@ -177,7 +176,7 @@ class TestCompositeDataset(unittest.TestCase):
         continued_items = [dataset.next() for _ in range(4)]
 
         # Restore state
-        dataset2 = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset2 = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         dataset2.reset(state)
 
         # Run M more steps (Path B)
@@ -193,7 +192,7 @@ class TestCompositeDataset(unittest.TestCase):
         # ds2 has 3 items. Run until it exhausts.
         # It shouldn't cycle.
 
-        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         # Consume until ds2 exhausts.
@@ -226,7 +225,7 @@ class TestCompositeDataset(unittest.TestCase):
         # If we load this state, weights should be 0.
         state = dataset.get_state()
 
-        dataset2 = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset2 = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         dataset2.reset(state)
 
         # Check sampler weights in dataset2
@@ -243,7 +242,7 @@ class TestCompositeDataset(unittest.TestCase):
         self.comp_cfg.datasets["ds1"].cycle = True
         self.comp_cfg.datasets["ds1"].dataset.size = 2
 
-        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         items = []
@@ -259,7 +258,7 @@ class TestCompositeDataset(unittest.TestCase):
         state = dataset.get_state()
 
         # Restore
-        dataset2 = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset2 = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         dataset2.reset(state)
 
         # Continue
@@ -281,7 +280,7 @@ class TestCompositeDataset(unittest.TestCase):
         self.comp_cfg.datasets["ds2"].weight = 0.1  # Very low weight
         self.comp_cfg.datasets["ds2"].dataset.size = 1
 
-        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         items = []
@@ -296,7 +295,7 @@ class TestCompositeDataset(unittest.TestCase):
 
     def test_strict_load(self):
         # Train model with 2 datasets
-        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         dataset.reset()
         dataset.next()
         state = dataset.get_state()
@@ -311,13 +310,13 @@ class TestCompositeDataset(unittest.TestCase):
 
         # Strict load = True -> Should fail
         self.comp_cfg.strict_load = True
-        dataset_strict = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset_strict = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         with self.assertRaises(ValueError):
             dataset_strict.reset(state)
 
         # Strict load = False -> Should succeed
         self.comp_cfg.strict_load = False
-        dataset_loose = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset_loose = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         try:
             dataset_loose.reset(state)
         except ValueError:
@@ -325,20 +324,18 @@ class TestCompositeDataset(unittest.TestCase):
 
     def test_seed_determinism(self):
         # Run 1
-        self.comp_cfg.seed = 123
-        ds1 = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        ds1 = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         ds1.reset()
         # Increased sample size to reduce collision probability
         items1 = [ds1.next() for _ in range(8)]
 
         # Run 2 (same seed)
-        ds2 = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        ds2 = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         ds2.reset()
         items2 = [ds2.next() for _ in range(8)]
 
         # Run 3 (diff seed)
-        self.comp_cfg.seed = 456
-        ds3 = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        ds3 = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=421)
         ds3.reset()
         items3 = [ds3.next() for _ in range(8)]
 
@@ -355,7 +352,7 @@ class TestCompositeDataset(unittest.TestCase):
         self.comp_cfg.datasets["ds2"].dataset.size = 2
         self.comp_cfg.stop_criteria = StopCriteria.CYCLE_FOREVER
 
-        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         items = []
@@ -377,7 +374,7 @@ class TestCompositeDataset(unittest.TestCase):
             strict_load=True,
             stop_criteria=StopCriteria.ALL_DATASETS_EXHAUSTED,  # Fixed criteria
         )
-        dataset = CompositeDataset(single_cfg, rank=0, world_size=1)
+        dataset = CompositeDataset(single_cfg, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         items = []
@@ -406,7 +403,7 @@ class TestCompositeDataset(unittest.TestCase):
 
         self.comp_cfg.stop_criteria = StopCriteria.CYCLE_FOREVER
 
-        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         n_samples = 2000
@@ -450,11 +447,10 @@ class TestCompositeDataset(unittest.TestCase):
                 "txt2": DatasetConfig(dataset=txt_cfg2, weight=1.0, cycle=False),
             },
             stop_criteria=StopCriteria.ALL_DATASETS_EXHAUSTED,
-            seed=42,
             strict_load=True,
         )
 
-        dataset = CompositeDataset(cfg, rank=0, world_size=1)
+        dataset = CompositeDataset(cfg, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         items = []
@@ -481,7 +477,7 @@ class TestCompositeDataset(unittest.TestCase):
         self.comp_cfg.datasets["ds2"].dataset.size = 2
         self.comp_cfg.stop_criteria = StopCriteria.FIRST_DATASET_EXHAUSTED
 
-        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         items = []
@@ -514,7 +510,7 @@ class TestCompositeDataset(unittest.TestCase):
         self.comp_cfg.datasets["ds2"].dataset.size = 2
         self.comp_cfg.stop_criteria = StopCriteria.ALL_DATASETS_EXHAUSTED
 
-        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         items = []
@@ -540,7 +536,7 @@ class TestCompositeDataset(unittest.TestCase):
         self.comp_cfg.datasets["ds2"].dataset.size = 2
         self.comp_cfg.stop_criteria = StopCriteria.ALL_DATASETS_EXHAUSTED
 
-        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         # Consume until ds2 exhausted (seen 2 items)
@@ -560,7 +556,7 @@ class TestCompositeDataset(unittest.TestCase):
         state = dataset.get_state()
 
         # Restore
-        dataset2 = CompositeDataset(self.comp_cfg, rank=0, world_size=1)
+        dataset2 = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         dataset2.reset(state)
 
         # Check weights immediately

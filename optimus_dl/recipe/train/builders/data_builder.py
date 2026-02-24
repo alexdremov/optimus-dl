@@ -55,7 +55,7 @@ class DataBuilder:
         rng = torch.Generator()
         # Mix seed, epoch, and rank deterministically
         rng.manual_seed(seed + world_size * 10000 + rank)
-        return rng.initial_seed()
+        return torch.randint(0, 2**32, (1,), generator=rng).item()
 
     def build_train_data(self, collective: Collective, **kwargs) -> DataPipeline | None:
         """Build the training data pipeline.

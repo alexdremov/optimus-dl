@@ -71,7 +71,7 @@ def _get_epoch_seed(seed: int, epoch: int) -> int:
     rng = torch.Generator()
     # Mix seed, epoch, and rank deterministically
     rng.manual_seed(seed + epoch * 10000)
-    return rng.initial_seed()
+    return torch.randint(0, 2**32, (1,), generator=rng).item()
 
 
 class _WeightedSampler:

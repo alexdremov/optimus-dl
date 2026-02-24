@@ -99,7 +99,7 @@ class TestTokenizedDataset(unittest.TestCase):
         shutil.rmtree(self.temp_dir)
 
     def test_init_and_load_index(self):
-        dataset = TokenizedDataset(self.config, rank=0, world_size=1)
+        dataset = TokenizedDataset(self.config, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         assert dataset.total_docs == self.total_docs_created
@@ -109,7 +109,7 @@ class TestTokenizedDataset(unittest.TestCase):
         assert len(dataset.strategy.indices) == self.total_docs_created
 
     def test_iteration_single_rank(self):
-        dataset = TokenizedDataset(self.config, rank=0, world_size=1)
+        dataset = TokenizedDataset(self.config, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         doc_count = 0
@@ -145,7 +145,9 @@ class TestTokenizedDataset(unittest.TestCase):
 
         all_docs = []
         for rank in range(world_size):
-            dataset = TokenizedDataset(self.config, rank=rank, world_size=world_size)
+            dataset = TokenizedDataset(
+                self.config, rank=rank, world_size=world_size, seed=42
+            )
             dataset.reset()
 
             rank_docs = []
@@ -161,7 +163,7 @@ class TestTokenizedDataset(unittest.TestCase):
         # We implicitly verify partitioning by checking all docs are covered and unique
 
     def test_state_restoration(self):
-        dataset = TokenizedDataset(self.config, rank=0, world_size=1)
+        dataset = TokenizedDataset(self.config, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         # Consume some documents
@@ -172,7 +174,7 @@ class TestTokenizedDataset(unittest.TestCase):
         state = dataset.get_state()
 
         # Create new dataset and load state
-        dataset2 = TokenizedDataset(self.config, rank=0, world_size=1)
+        dataset2 = TokenizedDataset(self.config, rank=0, world_size=1, seed=42)
         dataset2.reset(state)
 
         # Verify state is restored correctly (via strategy check)
@@ -200,7 +202,7 @@ class TestTokenizedDataset(unittest.TestCase):
 
     def test_exact_reproducibility_after_restore(self):
         # Consume some documents in dataset1
-        dataset1 = TokenizedDataset(self.config, rank=0, world_size=1)
+        dataset1 = TokenizedDataset(self.config, rank=0, world_size=1, seed=42)
         dataset1.reset()
 
         [dataset1.next() for _ in range(self.total_docs_created // 3)]
@@ -217,7 +219,7 @@ class TestTokenizedDataset(unittest.TestCase):
             pass
 
         # Create dataset2, load state, and iterate
-        dataset2 = TokenizedDataset(self.config, rank=0, world_size=1)
+        dataset2 = TokenizedDataset(self.config, rank=0, world_size=1, seed=42)
         dataset2.reset(state)
 
         items2_part2 = []
@@ -246,7 +248,7 @@ class TestTokenizedDataset(unittest.TestCase):
             )
 
         empty_config = TokenizedDatasetConfig(data_dir=str(empty_data_dir))
-        dataset = TokenizedDataset(empty_config, rank=0, world_size=1)
+        dataset = TokenizedDataset(empty_config, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         with pytest.raises(StopIteration):
@@ -274,7 +276,7 @@ class TestTokenizedDataset(unittest.TestCase):
         np.save(lens_file, corrupted_lens)
 
         config = TokenizedDatasetConfig(data_dir=str(corrupt_data_dir))
-        dataset = TokenizedDataset(config, rank=0, world_size=1)
+        dataset = TokenizedDataset(config, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         # Iterate until error or exhaustion
@@ -283,7 +285,7 @@ class TestTokenizedDataset(unittest.TestCase):
 
     def test_limit_parameter(self):
         self.config.limit = 10  # Limit to 10 documents
-        dataset = TokenizedDataset(self.config, rank=0, world_size=1)
+        dataset = TokenizedDataset(self.config, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         doc_count = 0
@@ -301,7 +303,7 @@ class TestTokenizedDataset(unittest.TestCase):
         config_str = TokenizedDatasetConfig(
             data_dir=str(self.data_dir),
         )
-        dataset = TokenizedDataset(config_str, rank=0, world_size=1)
+        dataset = TokenizedDataset(config_str, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         item = dataset.next()
