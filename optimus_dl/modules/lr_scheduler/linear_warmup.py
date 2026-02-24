@@ -54,6 +54,7 @@ class LinearWarmupLR(BaseLRScheduler):
         self.warmup_steps = cfg.warmup_steps
         self.start_lr = cfg.start_lr
         self.target_lrs = [cfg.target_lr or base_lr for base_lr in self.base_lrs]
+        self.set()
 
     def get_lr(self) -> list[float]:
         """Calculate learning rates using the linear warmup formula."""
@@ -86,3 +87,4 @@ class LinearWarmupLR(BaseLRScheduler):
         self.warmup_steps = state_dict["warmup_steps"]
         self.start_lr = state_dict["start_lr"]
         self.target_lrs = state_dict["target_lrs"]
+        self.set()

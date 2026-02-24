@@ -12,10 +12,17 @@ import torch
 import torch.nn.functional as F
 from pydantic import ValidationError
 
+from optimus_dl.modules.checkpoint import (
+    CheckpointManager,
+    CheckpointManagerConfig,
+)
 from optimus_dl.modules.distributed import build_best_collective
 from optimus_dl.modules.distributed.config import DistributedConfig
 from optimus_dl.modules.tokenizer import build_tokenizer
-from optimus_dl.recipe.mixins import ModelBuilder
+from optimus_dl.recipe.mixins.model_builder import (
+    ModelBuilder,
+    ModelBuilderConfig,
+)
 from optimus_dl.recipe.serve.config import ServeConfig
 from optimus_dl.recipe.serve.models import (
     ChatChoice,
@@ -217,7 +224,11 @@ class ServeRecipe:
         self.device = None
 
         # Initialize builder with empty config as we load from checkpoint
-        self.model_builder = ModelBuilder(None, [])
+        chkp_cfg = CheckpointManagerConfig()
+        self.checkpoint_manager = CheckpointManager(chkp_cfg)
+
+        modelb_cfg = ModelBuilderConfig()
+        self.model_builder = ModelBuilder(modelb_cfg)
 
     def setup(self):
         """Load model weights and tokenizer, and configure the device."""
@@ -243,7 +254,7 @@ class ServeRecipe:
             logger.info(
                 f"Loading model from checkpoint: {self.cfg.common.checkpoint_path}"
             )
-            self.model, _ = self.model_builder.build_model_from_checkpoint(
+            self.model, _ = self.checkpoint_manager.build_model_from_checkpoint(
                 checkpoint_path=self.cfg.common.checkpoint_path, device=self.device
             )
         else:

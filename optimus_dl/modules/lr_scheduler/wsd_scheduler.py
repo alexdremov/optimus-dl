@@ -101,6 +101,8 @@ class WSDScheduler(BaseLRScheduler):
                 f"decay_type {self.decay_type} is not in {valid_decay_types}"
             )
 
+        self.set()
+
     def get_lr(self) -> list[float]:
         """Calculate learning rates using the WSD formula for the current step."""
         step = self._step_count
@@ -229,3 +231,4 @@ class WSDScheduler(BaseLRScheduler):
         self.cooldown_start_lr_factor = state_dict["cooldown_start_lr_factor"]
         self.n_anneal_steps = state_dict["n_anneal_steps"]
         self.n_hold = state_dict["n_hold"]
+        self.set()

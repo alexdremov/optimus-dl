@@ -54,12 +54,10 @@ class CosineAnnealingLR(BaseLRScheduler):
         self.T_max = iterations
         self.eta_min = cfg.eta_min
         self._step_count = cfg.last_epoch + 1
+        self.set()
 
     def get_lr(self) -> list[float]:
         """Calculate learning rates using the cosine annealing formula."""
-        if self._step_count == 0:
-            return self.base_lrs
-
         return [
             self.eta_min
             + (base_lr - self.eta_min)
@@ -84,3 +82,4 @@ class CosineAnnealingLR(BaseLRScheduler):
         super().load_state_dict(state_dict)
         self.T_max = state_dict["T_max"]
         self.eta_min = state_dict["eta_min"]
+        self.set()

@@ -57,6 +57,10 @@ class BaseLRScheduler(ABC):
         This should be called at the end of each training iteration.
         """
         self._step_count += 1
+        self.set()
+
+    def set(self) -> None:
+        """Set the learning rates of the optimizer to the current values."""
         values = self.get_lr()
         for param_group, lr in zip(self.optimizer.param_groups, values, strict=True):
             param_group["lr"] = lr

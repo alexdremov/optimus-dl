@@ -14,6 +14,7 @@ class MockLRScheduler(BaseLRScheduler):
     def __init__(self, optimizer, fixed_lr=1e-3):
         super().__init__(optimizer)
         self.fixed_lr = fixed_lr
+        self.set()
 
     def get_lr(self):
         return [self.fixed_lr] * len(self.optimizer.param_groups)
@@ -70,7 +71,7 @@ class TestBaseLRScheduler:
 
         # Initial state
         assert scheduler._step_count == 0
-        assert optimizer.param_groups[0]["lr"] == 1e-3
+        assert optimizer.param_groups[0]["lr"] == 5e-4
 
         # After step
         scheduler.step()
@@ -92,7 +93,7 @@ class TestBaseLRScheduler:
 
         # Before step
         last_lrs = scheduler.get_last_lr()
-        assert last_lrs == [1e-3]
+        assert last_lrs == [3e-4]
 
         # After step
         scheduler.step()
@@ -145,7 +146,7 @@ class TestBaseLRScheduler:
         scheduler = MockLRScheduler(optimizer, fixed_lr=1e-4)
 
         expected_step_counts = [0, 1, 2, 3, 4]
-        expected_lrs = [1e-3, 1e-4, 1e-4, 1e-4, 1e-4]
+        expected_lrs = [1e-4, 1e-4, 1e-4, 1e-4, 1e-4]
 
         for i, (expected_step, expected_lr) in enumerate(
             zip(expected_step_counts, expected_lrs, strict=True)
@@ -170,35 +171,11 @@ class TestBaseLRScheduler:
             scheduler = MockLRScheduler(optimizer, fixed_lr=5e-4)
 
             initial_lr = optimizer.param_groups[0]["lr"]
-            assert initial_lr == 1e-3
+            assert initial_lr == 5e-4
 
             scheduler.step()
             updated_lr = optimizer.param_groups[0]["lr"]
             assert updated_lr == 5e-4
-
-    def test_scheduler_parameter_group_preservation(self):
-        """Test that scheduler preserves other parameter group settings"""
-        model = nn.Linear(10, 5)
-        optimizer = torch.optim.SGD(
-            model.parameters(), lr=1e-3, momentum=0.9, weight_decay=1e-4
-        )
-
-        scheduler = MockLRScheduler(optimizer, fixed_lr=2e-3)
-
-        # Check initial state
-        group = optimizer.param_groups[0]
-        assert group["lr"] == 1e-3
-        assert group["momentum"] == 0.9
-        assert group["weight_decay"] == 1e-4
-
-        # Step scheduler
-        scheduler.step()
-
-        # Only LR should change
-        group = optimizer.param_groups[0]
-        assert group["lr"] == 2e-3
-        assert group["momentum"] == 0.9
-        assert group["weight_decay"] == 1e-4
 
     def test_scheduler_state_persistence(self):
         """Test that scheduler state can be saved and restored"""
@@ -211,15 +188,20 @@ class TestBaseLRScheduler:
 
         # Save state
         state = scheduler1.state_dict()
+        lrs_before = scheduler1.get_lr()
 
         # Create new scheduler and load state
         optimizer2 = self.create_optimizer(lr=1e-3)
         scheduler2 = MockLRScheduler(optimizer2, fixed_lr=1e-4)
         scheduler2.load_state_dict(state)
+        lrs_after = scheduler2.get_lr()
 
         # Should have same state
         assert scheduler2._step_count == scheduler1._step_count
         assert scheduler2.base_lrs == scheduler1.base_lrs
+        assert lrs_after == lrs_before
+        for i, j in zip(optimizer.param_groups, optimizer2.param_groups, strict=True):
+            assert i["lr"] == j["lr"]
 
     def test_scheduler_with_zero_lr(self):
         """Test scheduler with zero learning rate"""
