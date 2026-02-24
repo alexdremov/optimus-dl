@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+import torch
 import torchdata.nodes
 
 from optimus_dl.core.registry import (
@@ -40,8 +41,21 @@ class DataBuilder:
         data_config: Configuration for datasets and transforms.
     """
 
-    def __init__(self, cfg: DataBuilderConfig, data_config: DataConfig, **kwargs):
+    def __init__(
+        self, cfg: DataBuilderConfig, data_config: DataConfig, data_seed: int, **kwargs
+    ):
         self.data_config = data_config
+        self.data_seed = data_seed
+
+    @staticmethod
+    def _get_rank_seed(seed: int, rank: int, world_size: int) -> int:
+        """
+        Generate a unique seed for each rank based on the base seed, rank, and epoch.
+        """
+        rng = torch.Generator()
+        # Mix seed, epoch, and rank deterministically
+        rng.manual_seed(seed + world_size * 10000 + rank)
+        return rng.initial_seed()
 
     def build_train_data(self, collective: Collective, **kwargs) -> DataPipeline | None:
         """Build the training data pipeline.
@@ -59,6 +73,9 @@ class DataBuilder:
         """
         kwargs["rank"] = collective.dp_rank
         kwargs["world_size"] = collective.dp_world_size
+        kwargs["seed"] = self._get_rank_seed(
+            self.data_seed, collective.dp_rank, collective.dp_world_size
+        )
         train_data = build_data_pipeline(self.data_config.train_datasets, **kwargs)
         if train_data is None:
             return None
@@ -89,6 +106,9 @@ class DataBuilder:
         """
         kwargs["rank"] = collective.dp_rank
         kwargs["world_size"] = collective.dp_world_size
+        kwargs["seed"] = self._get_rank_seed(
+            self.data_seed, collective.dp_rank, collective.dp_world_size
+        )
         eval_data = build_data_pipeline_dict(self.data_config.eval_datasets, **kwargs)
         eval_data = {
             k: (

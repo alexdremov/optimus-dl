@@ -30,14 +30,12 @@ class TokenizedDatasetConfig(RegistryConfigStrict):
     Attributes:
         data_dir: Path to the directory containing shards and index file.
         index_file: Name of the JSON index file (defaults to index.json).
-        seed: Random seed for shuffling (will be combined with rank and world_size).
         limit: Optional maximum number of documents to read.
         strategy: Sampling strategy configuration.
     """
 
     data_dir: str = MISSING
     index_file: str = "index.json"
-    seed: int = 42
     limit: int | None = None  # Optional limit on number of documents
     strategy: RegistryConfig = field(
         default_factory=lambda: DocumentStrategyConfig(_name="document")
@@ -60,7 +58,12 @@ class TokenizedDataset(BaseDataset):
     """
 
     def __init__(
-        self, cfg: TokenizedDatasetConfig, rank: int, world_size: int, **kwargs
+        self,
+        cfg: TokenizedDatasetConfig,
+        rank: int,
+        world_size: int,
+        seed: int,
+        **kwargs,
     ):
         super().__init__(cfg)
         self.data_dir = Path(cfg.data_dir)
@@ -78,7 +81,10 @@ class TokenizedDataset(BaseDataset):
 
         # Strategy
         self.strategy = build_dataset_sampling_strategy(
-            cfg.strategy, rank=rank, world_size=world_size
+            cfg.strategy,
+            rank=rank,
+            world_size=world_size,
+            seed=seed,
         )
 
         # Current Shard State

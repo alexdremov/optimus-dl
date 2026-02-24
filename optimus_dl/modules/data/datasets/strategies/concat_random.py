@@ -14,7 +14,6 @@ from .base import (
 
 @dataclass
 class ConcatAndChunkFullRandomConfig(BaseStrategyConfig):
-    seed: int = 42
     chunk_size: int = 2048
     random_offset: bool = True  # Shift global start by random(0, chunk_size)
 
@@ -33,9 +32,12 @@ class ConcatAndChunkFullRandom(BaseStrategy):
     5. Partition: Rank r takes indices {p | p % world_size == r}.
     """
 
-    def __init__(self, cfg: ConcatAndChunkFullRandomConfig, rank: int, world_size: int):
+    def __init__(
+        self, cfg: ConcatAndChunkFullRandomConfig, rank: int, world_size: int, seed: int
+    ):
         super().__init__(cfg, rank, world_size)
         self.cfg = cfg
+        self.seed = seed
 
         # Schedule state
         self.my_chunk_indices: np.ndarray | None = None
@@ -62,7 +64,7 @@ class ConcatAndChunkFullRandom(BaseStrategy):
 
         # 1. Determine Global Offset
         # We use a seed-based RNG to ensure all ranks agree on the offset
-        rng = np.random.default_rng(seed=self.cfg.seed)
+        rng = np.random.default_rng(seed=self.seed)
 
         if self.cfg.random_offset:
             # Shift can be anything in [0, chunk_size).
@@ -149,7 +151,7 @@ class ConcatAndChunkFullRandom(BaseStrategy):
     def reset(self, initial_state: dict[str, Any] | None = None):
         if initial_state:
             # Restore state
-            self.cfg.seed = initial_state.get("seed", self.cfg.seed)
+            self.seed = initial_state.get("seed", self.seed)
             self.chunk_ptr = initial_state.get("chunk_ptr", 0)
 
             # Re-run setup to regenerate permutation and offset
@@ -164,6 +166,6 @@ class ConcatAndChunkFullRandom(BaseStrategy):
     def get_state(self) -> dict[str, Any]:
         return {
             "chunk_ptr": self.chunk_ptr,
-            "seed": self.cfg.seed,
+            "seed": self.seed,
             "rank": self.rank,
         }

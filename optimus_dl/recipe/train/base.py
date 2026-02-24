@@ -9,6 +9,7 @@ from tqdm.auto import trange
 from optimus_dl.core.device import setup_device_and_collective
 from optimus_dl.core.log import setup_logging
 from optimus_dl.core.registry import build as build_component
+from optimus_dl.core.seed import set_seed
 from optimus_dl.modules.checkpoint import CheckpointManager
 from optimus_dl.modules.criterion import BaseCriterion
 from optimus_dl.modules.metrics import (
@@ -101,6 +102,7 @@ class TrainRecipe(
             cfg.data_builder,
             cast_to=DataBuilder,
             data_config=cfg.data,
+            data_seed=cfg.common.data_seed,
         )
         assert self.data_builder is not None, "Data builder not initialized"
         self.scheduler_builder = build_component(
@@ -263,6 +265,7 @@ class TrainRecipe(
 
     def setup_context(self):
         """Setup global training context (precision, etc.)."""
+        set_seed(self.cfg.common.seed, cuda_deterministic=self.cfg.common.deterministic)
         torch.set_float32_matmul_precision("highest")
         if torch.cuda.is_available():
             torch.backends.cuda.matmul.fp32_precision = "ieee"
