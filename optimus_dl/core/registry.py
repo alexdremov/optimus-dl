@@ -333,9 +333,14 @@ def make_registry(registry_name: str, base_class: type | type[Any] | None = None
                     f"got {actual_keys},\n"
                     f"diff: {actual_keys - expected_keys}"
                 )
-            cfg = omegaconf.OmegaConf.merge(
-                structured_cfg, omegaconf.OmegaConf.to_container(cfg=cfg, resolve=True)
-            )
+            try:
+                cfg = omegaconf.OmegaConf.merge(
+                    structured_cfg,
+                    omegaconf.OmegaConf.to_container(cfg=cfg, resolve=True),
+                )
+            except omegaconf.errors.ConfigTypeError:
+                logger.error(f"{structured_cfg = }\n====\n{cfg = }")
+                raise
             obj = registered_class(cfg, **kwargs)
         else:
             obj = registered_class(**kwargs)

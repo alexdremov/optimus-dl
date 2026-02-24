@@ -20,11 +20,9 @@ class ShuffleTransformConfig(RegistryConfigStrict):
     Attributes:
         buffer_size: Number of items to hold in the shuffling buffer. Larger
             buffers provide better shuffling but use more memory.
-        seed: Random seed for shuffling.
     """
 
     buffer_size: int = 1024
-    seed: int = 42
 
 
 class ShuffleTransformNode(BaseNode):
@@ -35,7 +33,13 @@ class ShuffleTransformNode(BaseNode):
     """
 
     def __init__(
-        self, node: BaseNode, cfg: ShuffleTransformConfig, rank: int, *args, **kwargs
+        self,
+        node: BaseNode,
+        cfg: ShuffleTransformConfig,
+        rank: int,
+        seed: int,
+        *args,
+        **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.cfg = cfg
@@ -44,7 +48,7 @@ class ShuffleTransformNode(BaseNode):
         self.terminated = False
         self.rank = rank
 
-        self.rng = np.random.default_rng(cfg.seed + rank * 41)
+        self.rng = np.random.default_rng(seed + rank * 41)
 
     def reset(self, initial_state: dict | None = None):
         """Restore the shuffle buffer and RNG state."""
@@ -100,11 +104,12 @@ class ShuffleTransform(BaseTransform):
         rank: Distributed rank.
     """
 
-    def __init__(self, cfg: ShuffleTransformConfig, rank: int, **kwargs):
+    def __init__(self, cfg: ShuffleTransformConfig, rank: int, seed: int, **kwargs):
         super().__init__(**kwargs)
         self.cfg = cfg
         self.rank = rank
+        self.seed = seed
 
     def build(self, source: BaseNode) -> BaseNode:
         """Apply the shuffling transformation to a source node."""
-        return ShuffleTransformNode(source, self.cfg, rank=self.rank)
+        return ShuffleTransformNode(source, self.cfg, rank=self.rank, seed=self.seed)

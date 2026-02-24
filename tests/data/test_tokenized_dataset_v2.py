@@ -103,7 +103,7 @@ class TestTokenizedDatasetV2(unittest.TestCase):
 
     def test_legacy_behavior(self):
         """Ensure default strategy behaves like the legacy implementation."""
-        dataset = TokenizedDataset(self.default_config, rank=0, world_size=1)
+        dataset = TokenizedDataset(self.default_config, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         doc_count = 0
@@ -123,7 +123,6 @@ class TestTokenizedDatasetV2(unittest.TestCase):
         strategy_config = ConcatAndChunkFullRandomConfig(
             _name="concat_random",
             chunk_size=chunk_size,
-            seed=42,
             random_offset=False,  # Disable for deterministic counting check
         )
 
@@ -133,7 +132,7 @@ class TestTokenizedDatasetV2(unittest.TestCase):
             strategy=strategy_config,
         )
 
-        dataset = TokenizedDataset(config, rank=0, world_size=1)
+        dataset = TokenizedDataset(config, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         chunks = []
@@ -160,7 +159,7 @@ class TestTokenizedDatasetV2(unittest.TestCase):
     def test_concat_random_distributed(self):
         chunk_size = 32
         strategy_config = ConcatAndChunkFullRandomConfig(
-            _name="concat_random", chunk_size=chunk_size, seed=123, random_offset=False
+            _name="concat_random", chunk_size=chunk_size, random_offset=False
         )
         config = TokenizedDatasetConfig(
             data_dir=str(self.data_dir), strategy=strategy_config
@@ -168,13 +167,13 @@ class TestTokenizedDatasetV2(unittest.TestCase):
 
         world_size = 2
         chunks_r0 = []
-        dataset0 = TokenizedDataset(config, rank=0, world_size=world_size)
+        dataset0 = TokenizedDataset(config, rank=0, world_size=world_size, seed=42)
         dataset0.reset()
         for item in dataset0:
             chunks_r0.append(item["input_ids"])
 
         chunks_r1 = []
-        dataset1 = TokenizedDataset(config, rank=1, world_size=world_size)
+        dataset1 = TokenizedDataset(config, rank=1, world_size=world_size, seed=42)
         dataset1.reset()
         for item in dataset1:
             chunks_r1.append(item["input_ids"])
@@ -189,13 +188,13 @@ class TestTokenizedDatasetV2(unittest.TestCase):
     def test_concat_random_checkpointing(self):
         chunk_size = 32
         strategy_config = ConcatAndChunkFullRandomConfig(
-            _name="concat_random", chunk_size=chunk_size, seed=999, random_offset=True
+            _name="concat_random", chunk_size=chunk_size, random_offset=True
         )
         config = TokenizedDatasetConfig(
             data_dir=str(self.data_dir), strategy=strategy_config
         )
 
-        dataset = TokenizedDataset(config, rank=0, world_size=1)
+        dataset = TokenizedDataset(config, rank=0, world_size=1, seed=42)
         dataset.reset()
 
         # Take 5 chunks
@@ -203,14 +202,14 @@ class TestTokenizedDatasetV2(unittest.TestCase):
         state = dataset.get_state()
 
         # Resume
-        dataset2 = TokenizedDataset(config, rank=0, world_size=1)
+        dataset2 = TokenizedDataset(config, rank=0, world_size=1, seed=42)
         dataset2.reset(state)
 
         # Next 5
         items2 = [dataset2.next() for _ in range(5)]
 
         # Continuous run
-        dataset_full = TokenizedDataset(config, rank=0, world_size=1)
+        dataset_full = TokenizedDataset(config, rank=0, world_size=1, seed=42)
         dataset_full.reset()
         items_full = [dataset_full.next() for _ in range(10)]
 
@@ -232,11 +231,10 @@ class TestTokenizedDatasetV2(unittest.TestCase):
             strategy=ConcatAndChunkFullRandomConfig(
                 _name="concat_random",
                 chunk_size=chunk_size,
-                seed=42,
                 random_offset=False,
             ),
         )
-        ds1 = TokenizedDataset(cfg1, rank=0, world_size=1)
+        ds1 = TokenizedDataset(cfg1, rank=0, world_size=1, seed=42)
         ds1.reset()
         tokens1 = ds1.next()["input_ids"]
 
@@ -246,11 +244,10 @@ class TestTokenizedDatasetV2(unittest.TestCase):
             strategy=ConcatAndChunkFullRandomConfig(
                 _name="concat_random",
                 chunk_size=chunk_size,
-                seed=42,
                 random_offset=True,
             ),
         )
-        ds2 = TokenizedDataset(cfg2, rank=0, world_size=1)
+        ds2 = TokenizedDataset(cfg2, rank=0, world_size=1, seed=42)
         ds2.reset()
         tokens2 = ds2.next()["input_ids"]
 
@@ -283,10 +280,9 @@ class TestTokenizedDatasetV2(unittest.TestCase):
                 _name="concat_random",
                 chunk_size=chunk_size,
                 random_offset=False,
-                seed=42,
             ),
         )
-        ds = TokenizedDataset(cfg, rank=0, world_size=1)
+        ds = TokenizedDataset(cfg, rank=0, world_size=1, seed=42)
         ds.reset()
 
         # Iterate until we find a multi-doc chunk

@@ -58,23 +58,20 @@ class CompositeDatasetConfig(RegistryConfigStrict):
             "description": "Whether to raise an error if state dict does not contain all required keys"
         },
     )
-    seed: int | None = field(
-        default=None, metadata={"description": "Random seed for sampling from datasets"}
-    )
     stop_criteria: StopCriteria = field(
         default=StopCriteria.CYCLE_FOREVER,
         metadata={"description": "Stop criteria for the composite dataset"},
     )
 
 
-def _get_rank_seed(seed: int, epoch: int, rank: int) -> int:
+def _get_epoch_seed(seed: int, epoch: int) -> int:
     """
     Generate a unique seed for each rank based on the base seed, rank, and epoch.
     """
     rng = torch.Generator()
     # Mix seed, epoch, and rank deterministically
-    rng.manual_seed(seed + epoch * 10000 + rank)
-    return rng.initial_seed()
+    rng.manual_seed(seed + epoch * 10000)
+    return torch.randint(0, 2**32, (1,), generator=rng).item()
 
 
 class _WeightedSampler:
@@ -87,7 +84,7 @@ class _WeightedSampler:
 
     Args:
         weights: Dictionary mapping dataset names to sampling weights.
-        seed: Base random seed.
+        seed: Base random seed (expecting different per dp rank).
         rank: Distributed rank.
         world_size: Total number of ranks.
         epoch: Current epoch (used for seed mixing).
@@ -120,7 +117,7 @@ class _WeightedSampler:
         self._g = torch.Generator()
 
         self.epoch = epoch
-        final_seed = _get_rank_seed(seed, epoch, rank)
+        final_seed = _get_epoch_seed(seed, epoch)
         self._g.manual_seed(final_seed)
 
         # Snapshot of the generator state at the beginning of the batch
@@ -220,7 +217,12 @@ class CompositeDataset(BaseDataset):
     WEIGHTED_SAMPLER_STATE_KEY = "weighted_sampler_state"
 
     def __init__(
-        self, cfg: CompositeDatasetConfig, rank: int, world_size: int, **kwargs
+        self,
+        cfg: CompositeDatasetConfig,
+        rank: int,
+        world_size: int,
+        seed: int,
+        **kwargs,
     ):
         super().__init__(cfg)
         self.rank = rank
@@ -240,7 +242,7 @@ class CompositeDataset(BaseDataset):
             self.cycle_flags[name] = ds_cfg.cycle
 
         self.stop_criteria = cfg.stop_criteria
-        self.seed = cfg.seed if cfg.seed is not None else 0
+        self.seed = seed
         self.strict_load = cfg.strict_load
 
         self._validate()

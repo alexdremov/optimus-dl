@@ -69,6 +69,10 @@ class TrainRecipeConfig:
             "description": "Seed to seed everything data-related. Will be different on each rank."
         },
     )
+    deterministic: bool = field(
+        default=True,
+        metadata={"description": "If True, force deterministic algorithms in PyTorch."},
+    )
 
     # Evaluation
     eval_iterations: int | None = field(

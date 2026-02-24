@@ -15,7 +15,6 @@ from .base import (
 @dataclass
 class DocumentStrategyConfig(BaseStrategyConfig):
     shuffle: bool = False
-    seed: int = 42
 
 
 @register_dataset_sampling_strategy("document", DocumentStrategyConfig)
@@ -25,9 +24,12 @@ class DocumentStrategy(BaseStrategy):
     Supports both sequential and random ordering via shuffling.
     """
 
-    def __init__(self, cfg: DocumentStrategyConfig, rank: int, world_size: int):
+    def __init__(
+        self, cfg: DocumentStrategyConfig, rank: int, world_size: int, seed: int
+    ):
         super().__init__(cfg, rank, world_size)
         self.cfg = cfg
+        self.seed = seed
         self.indices: np.ndarray | None = None
         self.ptr = 0
 
@@ -39,7 +41,7 @@ class DocumentStrategy(BaseStrategy):
         total_docs = len(self.doc_lengths)
 
         if self.cfg.shuffle:
-            rng = np.random.default_rng(seed=self.cfg.seed)
+            rng = np.random.default_rng(seed=self.seed)
             perm = rng.permutation(total_docs)
             # Use striding for uniform distribution across ranks when shuffled
             self.indices = perm[self.rank :: self.world_size]
