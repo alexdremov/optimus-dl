@@ -6,12 +6,12 @@ import numpy as np
 import torch
 
 
-def set_seed(seed: int, cuda_deterministic: bool = False) -> None:
+def set_seed(seed: int, deterministic: bool = False) -> None:
     """Set random seeds for reproducibility across different libraries.
 
     Args:
         seed: The integer seed to set.
-        cuda_deterministic: If True, makes CUDA operations deterministic.
+        deterministic: If True, makes CUDA operations deterministic.
             Note: This can sometimes come with a performance penalty.
     """
     random.seed(seed)
@@ -19,7 +19,7 @@ def set_seed(seed: int, cuda_deterministic: bool = False) -> None:
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-    if cuda_deterministic:
+    if deterministic:
         torch.backends.cudnn.benchmark = False
         torch.backends.cudnn.deterministic = True
 

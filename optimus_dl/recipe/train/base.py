@@ -265,7 +265,7 @@ class TrainRecipe(
 
     def setup_context(self):
         """Setup global training context (precision, etc.)."""
-        set_seed(self.cfg.common.seed, cuda_deterministic=self.cfg.common.deterministic)
+        set_seed(self.cfg.common.seed, deterministic=self.cfg.common.deterministic)
         torch.set_float32_matmul_precision("highest")
         if torch.cuda.is_available():
             torch.backends.cuda.matmul.fp32_precision = "ieee"
