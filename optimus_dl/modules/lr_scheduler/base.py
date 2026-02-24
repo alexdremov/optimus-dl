@@ -40,7 +40,6 @@ class BaseLRScheduler(ABC):
         self.optimizer = optimizer
         self._step_count = 0
         self.base_lrs = [group["lr"] for group in optimizer.param_groups]
-        self.set()
 
     @abstractmethod
     def get_lr(self) -> list[float]:
@@ -81,7 +80,6 @@ class BaseLRScheduler(ABC):
         """Restore the scheduler's state from a checkpoint."""
         self._step_count = state_dict["step_count"]
         self.base_lrs = state_dict["base_lrs"]
-        self.set()
 
     @property
     def last_epoch(self) -> int:
