@@ -122,11 +122,7 @@ class TestCheckpointResumption:
         def get_model_and_optim(cp_path):
             cfg = meta_full["config"]
             from optimus_dl.core.registry import build
-            from optimus_dl.core.seed import set_seed
 
-            # Use identical seed for model initialization to ensure tied weights
-            # and other components are in the same initial state before loading.
-            set_seed(42)
             model = build("model", cfg["model"])
             optimizer = build(
                 "optimizer",
@@ -150,9 +146,7 @@ class TestCheckpointResumption:
             model_full.named_parameters(), model_split.named_parameters(), strict=True
         ):
             assert name1 == name2
-            assert torch.allclose(
-                p1, p2, atol=1e-7
-            ), f"Model parameter mismatch: {name1}"
+            assert torch.equal(p1, p2), f"Model parameter mismatch: {name1}"
 
         # Verify optimizer state (moments, step count, etc.) matches exactly
         for s1, s2 in zip(
@@ -160,8 +154,8 @@ class TestCheckpointResumption:
         ):
             for k in s1:
                 if torch.is_tensor(s1[k]):
-                    assert torch.allclose(
-                        s1[k], s2[k], atol=1e-7
+                    assert torch.equal(
+                        s1[k], s2[k]
                     ), f"Optimizer state mismatch for key {k}"
                 else:
                     assert s1[k] == s2[k], f"Optimizer state mismatch for key {k}"

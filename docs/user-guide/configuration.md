@@ -91,7 +91,6 @@ data:
         - _name: chunk_tokens
           max_seq_len: ${args.seq_len}
         - _name: shuffle
-          seed: 42
           buffer_size: 8096
         - _name: flat_batcher
           batch_size: ${args.batch_size}

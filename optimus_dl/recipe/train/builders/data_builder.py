@@ -50,10 +50,9 @@ class DataBuilder:
     @staticmethod
     def _get_rank_seed(seed: int, rank: int, world_size: int) -> int:
         """
-        Generate a unique seed for each rank based on the base seed, rank, and epoch.
+        Generate a unique seed for each rank based on the base seed.
         """
         rng = torch.Generator()
-        # Mix seed, epoch, and rank deterministically
         rng.manual_seed(seed + world_size * 10000 + rank)
         return torch.randint(0, 2**32, (1,), generator=rng).item()
 
