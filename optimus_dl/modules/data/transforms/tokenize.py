@@ -81,7 +81,7 @@ class TokenizeTransform(BaseTransform):
                 ids
             ):  # Renamed 'token' to 'token_id' to avoid confusion with token strings
                 token_decoded = self.tokenizer.decode([token_id])
-                tokens_debug.append(f"{token_id}({token_decoded})")
+                tokens_debug.append(f"{token_id}({token_decoded!r})")
 
             tokens_debug = ", ".join(tokens_debug)
             logger.info(f"Debugging tokenizer sample: \n{tokens_debug}\n=======")
