@@ -84,7 +84,9 @@ class TestCheckpointResumption:
             cmd.extend(extra_args)
         if resume_from_iter:
             assert resume_from_path
-            cmd.append(f"++common.load_checkpoint={resume_from_path}/checkpoint_{resume_from_iter:09d}")
+            cmd.append(
+                f"++common.load_checkpoint={resume_from_path}/checkpoint_{resume_from_iter:09d}"
+            )
 
         env = os.environ.copy()
         env["PYTHONPATH"] = "."
@@ -112,7 +114,13 @@ class TestCheckpointResumption:
 
         # 3. Resume and run second half of split training
         # Resuming is automatic when common.output_path remains the same
-        self.run_train(self.output_split_final, iterations=total_steps, save_freq=total_steps, resume_from_path=self.output_split, resume_from_iter=split_step)
+        self.run_train(
+            self.output_split_final,
+            iterations=total_steps,
+            save_freq=total_steps,
+            resume_from_path=self.output_split,
+            resume_from_iter=split_step,
+        )
 
         # 4. Compare resulting checkpoints
         mgr = CheckpointManager(CheckpointManagerConfig(_name="base"))
