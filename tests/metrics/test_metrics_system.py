@@ -7,15 +7,13 @@ import numpy as np
 import torch
 import pytest
 
-from optimus_dl.modules.metrics.base import BaseMeter  # Changed from BaseMetric
-from optimus_dl.modules.metrics.base import MeterEntry  # Changed from MetricEntry
-from optimus_dl.modules.metrics.base import MeterGroup  # Changed from MetricGroup
 from optimus_dl.modules.metrics.base import (
-    _active_meter_groups,  # Changed from _active_meter_groups
-)
-from optimus_dl.modules.metrics.base import _meter_groups  # Changed from _metric_groups
-from optimus_dl.modules.metrics.base import (
+    BaseMeter,
+    MeterEntry,
+    MeterGroup,
+    _active_meter_groups,
     _evaluate_value,
+    _meter_groups,
     compute_metrics,
     load_state_dict,
     log_metric,
@@ -24,13 +22,11 @@ from optimus_dl.modules.metrics.base import (
     state_dict,
     step_metrics,
 )
-from optimus_dl.modules.metrics.common import AverageMeter  # Changed from AverageMetric
 from optimus_dl.modules.metrics.common import (
-    FrequencyMeter,  # Changed from FrequencyMetric
-)
-from optimus_dl.modules.metrics.common import SummedMeter  # Changed from SummedMetric
-from optimus_dl.modules.metrics.common import (
+    AverageMeter,
+    FrequencyMeter,
     StopwatchMeter,
+    SummedMeter,
     log_averaged,
     log_event_end,
     log_event_occurence,
@@ -69,24 +65,24 @@ class TestSafeRound:
         assert safe_round(obj, 2) == obj
 
 
-class TestAverageMeter:  # Changed from TestAverageMetric
+class TestAverageMeter:
     """Tests for AverageMeter"""  # Updated docstring
 
     def test_average_meter_init(self):
-        meter = AverageMeter(round=2)  # Changed to AverageMeter
+        meter = AverageMeter(round=2)
         assert meter.round == 2
         assert meter.sum == 0
         assert meter.count == 0
 
     def test_average_meter_log_single_value(self):
-        meter = AverageMeter()  # Changed to AverageMeter
+        meter = AverageMeter()
         meter.log(value=10.0, weight=1.0)
 
         assert meter.sum == 10.0
         assert meter.count == 1.0
 
     def test_average_meter_log_multiple_values(self):
-        meter = AverageMeter()  # Changed to AverageMeter
+        meter = AverageMeter()
         meter.log(value=10.0, weight=2.0)
         meter.log(value=20.0, weight=3.0)
 
@@ -94,7 +90,7 @@ class TestAverageMeter:  # Changed from TestAverageMetric
         assert meter.count == 5.0  # (2 + 3)
 
     def test_average_meter_compute(self):
-        meter = AverageMeter()  # Changed to AverageMeter
+        meter = AverageMeter()
         meter.log(value=10.0, weight=2.0)
         meter.log(value=20.0, weight=3.0)
 
@@ -102,17 +98,17 @@ class TestAverageMeter:  # Changed from TestAverageMetric
         assert result == 16.0  # 80 / 5
 
     def test_average_meter_compute_with_rounding(self):
-        meter = AverageMeter(round=2)  # Changed to AverageMeter
+        meter = AverageMeter(round=2)
         meter.log(value=10.0 / 3.0, weight=1.0)
 
         result = meter.compute()
         assert result == 3.33
 
     def test_average_meter_merge(self):
-        meter1 = AverageMeter()  # Changed to AverageMeter
+        meter1 = AverageMeter()
         meter1.log(value=10.0, weight=2.0)
 
-        meter2 = AverageMeter()  # Changed to AverageMeter
+        meter2 = AverageMeter()
         meter2.log(value=20.0, weight=3.0)
 
         meter1.merge(meter2.state_dict())
@@ -122,7 +118,7 @@ class TestAverageMeter:  # Changed from TestAverageMetric
         assert meter1.compute() == 16.0
 
     def test_average_meter_state_dict(self):
-        meter = AverageMeter(round=2)  # Changed to AverageMeter
+        meter = AverageMeter(round=2)
         meter.log(value=10.0, weight=1.0)
 
         state = meter.state_dict()
@@ -131,7 +127,7 @@ class TestAverageMeter:  # Changed from TestAverageMetric
         assert state["count"] == 1.0
 
     def test_average_meter_load_state_dict(self):
-        meter = AverageMeter()  # Changed to AverageMeter
+        meter = AverageMeter()
         state = {"round": 3, "sum": 15.0, "count": 2.0}
 
         meter.load_state_dict(state)
@@ -141,30 +137,30 @@ class TestAverageMeter:  # Changed from TestAverageMetric
 
     def test_average_meter_from_state_dict(self):
         state = {"round": 2, "sum": 10.0, "count": 1.0}
-        meter = AverageMeter.from_state_dict(state)  # Changed to AverageMeter
+        meter = AverageMeter.from_state_dict(state)
 
         assert meter.round == 2
         assert meter.sum == 10.0
         assert meter.count == 1.0
 
 
-class TestSummedMeter:  # Changed from TestSummedMetric
+class TestSummedMeter:
     """Tests for SummedMeter"""  # Updated docstring
 
     def test_summed_meter_init(self):
-        meter = SummedMeter(round=2)  # Changed to SummedMeter
+        meter = SummedMeter(round=2)
         assert meter.round == 2
         assert meter.sum == 0
 
     def test_summed_meter_log(self):
-        meter = SummedMeter()  # Changed to SummedMeter
+        meter = SummedMeter()
         meter.log(value=10.0)
         meter.log(value=20.0)
 
         assert meter.sum == 30.0
 
     def test_summed_meter_compute(self):
-        meter = SummedMeter()  # Changed to SummedMeter
+        meter = SummedMeter()
         meter.log(value=10.0)
         meter.log(value=20.0)
 
@@ -172,21 +168,21 @@ class TestSummedMeter:  # Changed from TestSummedMetric
         assert result == 30.0
 
     def test_summed_meter_merge(self):
-        meter1 = SummedMeter()  # Changed to SummedMeter
+        meter1 = SummedMeter()
         meter1.log(value=10.0)
 
-        meter2 = SummedMeter()  # Changed to SummedMeter
+        meter2 = SummedMeter()
         meter2.log(value=20.0)
 
         meter1.merge(meter2.state_dict())
         assert meter1.sum == 30.0
 
 
-class TestFrequencyMeter:  # Changed from TestFrequencyMetric
+class TestFrequencyMeter:
     """Tests for FrequencyMeter"""  # Updated docstring
 
     def test_frequency_meter_init(self):
-        meter = FrequencyMeter(round=2)  # Changed to FrequencyMeter
+        meter = FrequencyMeter(round=2)
         assert meter.round == 2
         assert meter.start is None
         assert meter.elapsed == 0
@@ -194,7 +190,7 @@ class TestFrequencyMeter:  # Changed from TestFrequencyMetric
 
     def test_frequency_meter_log_first_call(self):
         """Test that first log call initializes the meter but doesn't increment counter."""  # Updated docstring
-        meter = FrequencyMeter()  # Changed to FrequencyMeter
+        meter = FrequencyMeter()
 
         # First call should just set the start time
         meter.log()
@@ -205,7 +201,7 @@ class TestFrequencyMeter:  # Changed from TestFrequencyMetric
 
     def test_frequency_meter_behavior_sequence(self):
         """Test frequency meter behavior over multiple log calls."""  # Updated docstring
-        meter = FrequencyMeter()  # Changed to FrequencyMeter
+        meter = FrequencyMeter()
 
         # First call - initialization
         meter.log()
@@ -233,7 +229,7 @@ class TestFrequencyMeter:  # Changed from TestFrequencyMetric
 
     def test_frequency_meter_compute_behavior(self):
         """Test that compute returns average time between events in milliseconds."""  # Updated docstring
-        meter = FrequencyMeter()  # Changed to FrequencyMeter
+        meter = FrequencyMeter()
 
         # No events yet
         assert meter.compute() == 0
@@ -248,11 +244,11 @@ class TestFrequencyMeter:  # Changed from TestFrequencyMetric
 
     def test_frequency_meter_merge_behavior(self):
         """Test that merging combines timing data from multiple meters."""  # Updated docstring
-        meter1 = FrequencyMeter()  # Changed to FrequencyMeter
+        meter1 = FrequencyMeter()
         meter1.elapsed = 1000000  # 1ms
         meter1.counter = 1
 
-        meter2 = FrequencyMeter()  # Changed to FrequencyMeter
+        meter2 = FrequencyMeter()
         meter2.elapsed = 2000000  # 2ms
         meter2.counter = 2
 
@@ -266,7 +262,7 @@ class TestFrequencyMeter:  # Changed from TestFrequencyMetric
         assert meter1.compute() == 1.0
 
     def test_frequency_meter_load_state_dict(self):
-        meter = FrequencyMeter()  # Changed to FrequencyMeter
+        meter = FrequencyMeter()
         meter.start = 1000000  # Should be reset
 
         state = {"elapsed": 2000000, "counter": 2, "round": 2}
@@ -458,100 +454,92 @@ class TestStopwatchMeter:
         assert meter.counter == 2
 
 
-class TestMeterEntry:  # Changed from TestMetricEntry
+class TestMeterEntry:
     """Tests for MeterEntry"""  # Updated docstring
 
     def test_meter_entry_init(self):
-        meter = AverageMeter()  # Changed to AverageMeter
-        entry = MeterEntry(
-            meter=meter, reset=True, priority=10
-        )  # Changed to MeterEntry
+        meter = AverageMeter()
+        entry = MeterEntry(meter=meter, reset=True, priority=10)
 
-        assert entry.meter == meter  # Changed to meter
+        assert entry.meter == meter
         assert entry.reset is True
         assert entry.priority == 10
 
     def test_meter_entry_defaults(self):
-        meter = AverageMeter()  # Changed to AverageMeter
-        entry = MeterEntry(meter=meter)  # Changed to MeterEntry
+        meter = AverageMeter()
+        entry = MeterEntry(meter=meter)
 
         assert entry.reset is False
         assert entry.priority == 0
 
     def test_meter_entry_state_dict(self):
-        meter = AverageMeter()  # Changed to AverageMeter
-        entry = MeterEntry(
-            meter=meter, reset=True, priority=10
-        )  # Changed to MeterEntry
+        meter = AverageMeter()
+        entry = MeterEntry(meter=meter, reset=True, priority=10)
 
         state = entry.state_dict()
-        assert "meter" in state  # Changed to meter
+        assert "meter" in state
         assert state["reset"] is True
         assert state["priority"] == 10
-        assert (
-            state["meter_class"] == "AverageMeter"
-        )  # Changed to meter_class and AverageMeter
+        assert state["meter_class"] == "AverageMeter"
 
     def test_meter_entry_load_state_dict(self):
-        meter = AverageMeter()  # Changed to AverageMeter
-        entry = MeterEntry(meter=meter)  # Changed to MeterEntry
+        meter = AverageMeter()
+        entry = MeterEntry(meter=meter)
 
         state = {
-            "meter": {"sum": 10.0, "count": 1.0, "round": None},  # Changed to meter
+            "meter": {"sum": 10.0, "count": 1.0, "round": None},
             "reset": True,
             "priority": 5,
-            "meter_class": "AverageMeter",  # Changed to meter_class
+            "meter_class": "AverageMeter",
         }
 
         entry.load_state_dict(state)
 
         assert entry.reset is True
         assert entry.priority == 5
-        assert isinstance(
-            entry.meter, AverageMeter
-        )  # Changed to meter and AverageMeter
+        assert isinstance(entry.meter, AverageMeter) and AverageMeter
 
 
-class TestMeterGroup:  # Changed from TestMetricGroup
+class TestMeterGroup:
     """Tests for MeterGroup"""  # Updated docstring
 
     def test_meter_group_init(self):
-        group = MeterGroup("test_group", log_freq=10)  # Changed to MeterGroup
+        group = MeterGroup("test_group", log_freq=10)
 
         assert group.name == "test_group"
         assert group.log_freq == 10
-        assert len(group._meters) == 0  # Changed to _meters
+        assert len(group._meters) == 0
         assert group._iteration_counter == 0
 
     def test_meter_group_default_log_freq(self):
-        group = MeterGroup("test_group")  # Changed to MeterGroup
+        group = MeterGroup("test_group")
         assert group.log_freq == 1
 
-    def test_meter_group_add_meter(self):  # Changed from add_metric
-        group = MeterGroup("test_group")  # Changed to MeterGroup
-        meter = AverageMeter()  # Changed to AverageMeter
-        entry = MeterEntry(meter=meter, priority=5)  # Changed to MeterEntry
+    def test_meter_group_add_meter(self):
+        group = MeterGroup("test_group")
+        meter = AverageMeter()
+        entry = MeterEntry(meter=meter, priority=5)
 
-        group.add_meter("test_meter", entry)  # Changed to add_meter and test_meter
+        group.add_meter("test_meter", entry)
 
-        assert "test_meter" in group._meters  # Changed to _meters
-        assert group._meters["test_meter"] == entry  # Changed to _meters
+        assert "test_meter" in group._meters
+        assert group._meters["test_meter"] == entry
         assert "test_meter" in group._keys_sorted
 
-    def test_meter_group_get_meter(self):  # Changed from get_metric
-        group = MeterGroup("test_group")  # Changed to MeterGroup
-        meter = AverageMeter()  # Changed to AverageMeter
-        entry = MeterEntry(meter=meter)  # Changed to MeterEntry
+    def test_meter_group_get_meter(self):
+        group = MeterGroup("test_group")
+        meter = AverageMeter()
+        entry = MeterEntry(meter=meter)
 
-        group.add_meter("test_meter", entry)  # Changed to add_meter
+        group.add_meter("test_meter", entry)
 
-        retrieved = group.get_meter("test_meter")  # Changed to get_meter
+        retrieved = group.get_meter("test_meter")
         assert retrieved == entry
 
-        assert group.get_meter("nonexistent") is None  # Changed to get_meter
+        assert group.get_meter("nonexistent") is None
 
     def test_meter_group_step_and_should_log(self):
-        group = MeterGroup("test_group", log_freq=3)  # Changed to MeterGroup
+        group = MeterGroup("test_group", log_freq=3)
 
         # Initially should log (0 % 3 == 0)
         assert group.should_log()
@@ -569,94 +557,94 @@ class TestMeterGroup:  # Changed from TestMetricGroup
         assert group.should_log()
 
     def test_meter_group_compute(self):
-        group = MeterGroup("test_group")  # Changed to MeterGroup
+        group = MeterGroup("test_group")
 
         # Add meters
-        meter1 = AverageMeter()  # Changed to AverageMeter
+        meter1 = AverageMeter()
         meter1.log(value=10.0, weight=1.0)
-        entry1 = MeterEntry(meter=meter1, priority=1)  # Changed to MeterEntry
-        group.add_meter("avg_meter", entry1)  # Changed to add_meter
+        entry1 = MeterEntry(meter=meter1, priority=1)
+        group.add_meter("avg_meter", entry1)
 
-        meter2 = SummedMeter()  # Changed to SummedMeter
+        meter2 = SummedMeter()
         meter2.log(value=20.0)
-        entry2 = MeterEntry(meter=meter2, priority=2)  # Changed to MeterEntry
-        group.add_meter("sum_meter", entry2)  # Changed to add_meter
+        entry2 = MeterEntry(meter=meter2, priority=2)
+        group.add_meter("sum_meter", entry2)
 
         result = group.compute()
 
-        assert "avg_meter" in result  # Changed to avg_meter
-        assert "sum_meter" in result  # Changed to sum_meter
-        assert result["avg_meter"] == 10.0  # Changed to avg_meter
-        assert result["sum_meter"] == 20.0  # Changed to sum_meter
+        assert "avg_meter" in result
+        assert "sum_meter" in result
+        assert result["avg_meter"] == 10.0
+        assert result["sum_meter"] == 20.0
 
     def test_meter_group_reset(self):
-        group = MeterGroup("test_group")  # Changed to MeterGroup
+        group = MeterGroup("test_group")
 
         # Add meters with different reset flags
-        meter1 = AverageMeter()  # Changed to AverageMeter
-        entry1 = MeterEntry(meter=meter1, reset=True)  # Changed to MeterEntry
-        group.add_meter("reset_meter", entry1)  # Changed to reset_meter
+        meter1 = AverageMeter()
+        entry1 = MeterEntry(meter=meter1, reset=True)
+        group.add_meter("reset_meter", entry1)
 
-        meter2 = SummedMeter()  # Changed to SummedMeter
-        entry2 = MeterEntry(meter=meter2, reset=False)  # Changed to MeterEntry
-        group.add_meter("keep_meter", entry2)  # Changed to keep_meter
+        meter2 = SummedMeter()
+        entry2 = MeterEntry(meter=meter2, reset=False)
+        group.add_meter("keep_meter", entry2)
 
         # Reset should remove reset=True meters
         group.reset()
 
-        assert "reset_meter" not in group._meters  # Changed to _meters
-        assert "keep_meter" in group._meters  # Changed to _meters
+        assert "reset_meter" not in group._meters
+        assert "keep_meter" in group._meters
 
     def test_meter_group_priority_sorting(self):
-        group = MeterGroup("test_group")  # Changed to MeterGroup
+        group = MeterGroup("test_group")
 
         # Add meters with different priorities
-        meter1 = AverageMeter()  # Changed to AverageMeter
-        entry1 = MeterEntry(meter=meter1, priority=10)  # Changed to MeterEntry
-        group.add_meter("high_priority", entry1)  # Changed to add_meter
+        meter1 = AverageMeter()
+        entry1 = MeterEntry(meter=meter1, priority=10)
+        group.add_meter("high_priority", entry1)
 
-        meter2 = SummedMeter()  # Changed to SummedMeter
-        entry2 = MeterEntry(meter=meter2, priority=1)  # Changed to MeterEntry
-        group.add_meter("low_priority", entry2)  # Changed to add_meter
+        meter2 = SummedMeter()
+        entry2 = MeterEntry(meter=meter2, priority=1)
+        group.add_meter("low_priority", entry2)
 
-        meter3 = AverageMeter()  # Changed to AverageMeter
-        entry3 = MeterEntry(meter=meter3, priority=5)  # Changed to MeterEntry
-        group.add_meter("mid_priority", entry3)  # Changed to add_meter
+        meter3 = AverageMeter()
+        entry3 = MeterEntry(meter=meter3, priority=5)
+        group.add_meter("mid_priority", entry3)
 
         # Keys should be sorted by priority
         expected_order = ["low_priority", "mid_priority", "high_priority"]
         assert group._keys_sorted == expected_order
 
     def test_meter_group_state_dict(self):
-        group = MeterGroup("test_group", log_freq=5)  # Changed to MeterGroup
+        group = MeterGroup("test_group", log_freq=5)
 
-        meter = AverageMeter()  # Changed to AverageMeter
-        entry = MeterEntry(meter=meter, priority=2)  # Changed to MeterEntry
-        group.add_meter("test_meter", entry)  # Changed to add_meter
+        meter = AverageMeter()
+        entry = MeterEntry(meter=meter, priority=2)
+        group.add_meter("test_meter", entry)
 
         state = group.state_dict()
 
         assert state["name"] == "test_group"
         assert state["log_freq"] == 5
-        assert "meters" in state  # Changed to meters
-        assert "test_meter" in state["meters"]  # Changed to meters
+        assert "meters" in state
+        assert "test_meter" in state["meters"]
 
     def test_meter_group_load_state_dict(self):
-        group = MeterGroup("test_group")  # Changed to MeterGroup
+        group = MeterGroup("test_group")
 
         state = {
             "name": "test_group",
             "log_freq": 10,
-            "meters": {  # Changed to meters
+            "meters": {
                 "test_meter": {
                     "meter": {
                         "sum": 10.0,
                         "count": 1.0,
                         "round": None,
-                    },  # Changed to meter
+                    },
                     "reset": True,
                     "priority": 5,
-                    "meter_class": "AverageMeter",  # Changed to meter_class
+                    "meter_class": "AverageMeter",
                 }
             },
         }
@@ -664,8 +652,8 @@ class TestMeterGroup:  # Changed from TestMetricGroup
         group.load_state_dict(state)
 
         assert group.log_freq == 10
-        assert "test_meter" in group._meters  # Changed to _meters
-        assert group._meters["test_meter"].priority == 5  # Changed to _meters
+        assert "test_meter" in group._meters
+        assert group._meters["test_meter"].priority == 5
 
 
 class TestMetricsGroupContext:
@@ -673,58 +661,44 @@ class TestMetricsGroupContext:
 
     def setUp(self):
         # Clear global state before each test
-        _meter_groups.clear()  # Changed to _meter_groups
-        _active_meter_groups.clear()  # Changed to _active_meter_groups
+        _meter_groups.clear()
+        _active_meter_groups.clear()
 
     def test_metrics_group_context_creation(self):
         self.setUp()
 
         with metrics_group("test_group") as should_log:
-            assert "test_group" in _meter_groups  # Changed to _meter_groups
-            assert (
-                _active_meter_groups["test_group"] == 1
-            )  # Changed to _active_meter_groups
+            assert "test_group" in _meter_groups
+            assert _active_meter_groups["test_group"] == 1
             assert should_log is True  # Default log_freq=1
 
     def test_metrics_group_context_with_log_freq(self):
         self.setUp()
 
         with metrics_group("test_group", log_freq=5) as should_log:
-            assert _meter_groups["test_group"].log_freq == 5  # Changed to _meter_groups
+            assert _meter_groups["test_group"].log_freq == 5
             assert should_log is True  # First iteration: 0 % 5 == 0
 
     def test_metrics_group_context_cleanup(self):
         self.setUp()
 
         with metrics_group("test_group"):
-            assert (
-                "test_group" in _active_meter_groups
-            )  # Changed to _active_meter_groups
+            assert "test_group" in _active_meter_groups
 
-        assert (
-            "test_group" not in _active_meter_groups
-        )  # Changed to _active_meter_groups
+        assert "test_group" not in _active_meter_groups
 
     def test_metrics_group_context_nested(self):
         self.setUp()
 
         with metrics_group("test_group"):
-            assert (
-                _active_meter_groups["test_group"] == 1
-            )  # Changed to _active_meter_groups
+            assert _active_meter_groups["test_group"] == 1
 
             with metrics_group("test_group"):
-                assert (
-                    _active_meter_groups["test_group"] == 2
-                )  # Changed to _active_meter_groups
+                assert _active_meter_groups["test_group"] == 2
 
-            assert (
-                _active_meter_groups["test_group"] == 1
-            )  # Changed to _active_meter_groups
+            assert _active_meter_groups["test_group"] == 1
 
-        assert (
-            "test_group" not in _active_meter_groups
-        )  # Changed to _active_meter_groups
+        assert "test_group" not in _active_meter_groups
 
     def test_metrics_group_force_recreate(self):
         self.setUp()
@@ -732,35 +706,33 @@ class TestMetricsGroupContext:
         with metrics_group("test_group", log_freq=5):
             pass
 
-        assert _meter_groups["test_group"].log_freq == 5  # Changed to _meter_groups
+        assert _meter_groups["test_group"].log_freq == 5
 
         with metrics_group("test_group", log_freq=10, force_recreate=True):
             pass
 
-        assert _meter_groups["test_group"].log_freq == 10  # Changed to _meter_groups
+        assert _meter_groups["test_group"].log_freq == 10
 
 
-class TestLogMeterFunctions:  # Changed from TestLogMetricFunctions
+class TestLogMeterFunctions:
     """Tests for convenience logging functions"""
 
     def setUp(self):
         # Clear global state before each test
-        _meter_groups.clear()  # Changed to _meter_groups
-        _active_meter_groups.clear()  # Changed to _active_meter_groups
+        _meter_groups.clear()
+        _active_meter_groups.clear()
 
     def test_log_averaged(self):
         self.setUp()
 
         with metrics_group("test_group"):
-            log_averaged(
-                "test_meter", value=10.0, weight=2.0, round=2
-            )  # Changed to test_meter
+            log_averaged("test_meter", value=10.0, weight=2.0, round=2)
 
-        group = _meter_groups["test_group"]  # Changed to _meter_groups
-        assert "test_meter" in group._meters  # Changed to _meters
+        group = _meter_groups["test_group"]
+        assert "test_meter" in group._meters
 
-        meter = group._meters["test_meter"].meter  # Changed to _meters and meter
-        assert isinstance(meter, AverageMeter)  # Changed to AverageMeter
+        meter = group._meters["test_meter"].meter
+        assert isinstance(meter, AverageMeter)
         assert meter.round == 2
         assert meter.sum == 20.0  # 10.0 * 2.0
         assert meter.count == 2.0
@@ -769,11 +741,11 @@ class TestLogMeterFunctions:  # Changed from TestLogMetricFunctions
         self.setUp()
 
         with metrics_group("test_group"):
-            log_summed("test_meter", value=15.0, round=1)  # Changed to test_meter
+            log_summed("test_meter", value=15.0, round=1)
 
-        group = _meter_groups["test_group"]  # Changed to _meter_groups
-        meter = group._meters["test_meter"].meter  # Changed to _meters and meter
-        assert isinstance(meter, SummedMeter)  # Changed to SummedMeter
+        group = _meter_groups["test_group"]
+        meter = group._meters["test_meter"].meter
+        assert isinstance(meter, SummedMeter)
         assert meter.round == 1
         assert meter.sum == 15.0
 
@@ -784,8 +756,8 @@ class TestLogMeterFunctions:  # Changed from TestLogMetricFunctions
             with patch("time.perf_counter_ns", return_value=1000000):
                 log_event_start("test_event")
 
-        group = _meter_groups["test_group"]  # Changed to _meter_groups
-        meter = group._meters["test_event"].meter  # Changed to _meters and meter
+        group = _meter_groups["test_group"]
+        meter = group._meters["test_event"].meter
         assert isinstance(meter, StopwatchMeter)
         assert meter._start == 1000000
 
@@ -797,8 +769,8 @@ class TestLogMeterFunctions:  # Changed from TestLogMetricFunctions
                 log_event_start("test_event")
                 log_event_end("test_event")
 
-        group = _meter_groups["test_group"]  # Changed to _meter_groups
-        meter = group._meters["test_event"].meter  # Changed to _meters and meter
+        group = _meter_groups["test_group"]
+        meter = group._meters["test_event"].meter
         assert meter.elapsed == 1000000
         assert meter.counter == 1
 
@@ -814,24 +786,24 @@ class TestLogMeterFunctions:  # Changed from TestLogMetricFunctions
                 log_event_occurence("test_event")
                 log_event_occurence("test_event")
 
-        group = _meter_groups["test_group"]  # Changed to _meter_groups
-        meter = group._meters["test_event"].meter  # Changed to _meters and meter
-        assert isinstance(meter, FrequencyMeter)  # Changed to FrequencyMeter
+        group = _meter_groups["test_group"]
+        meter = group._meters["test_event"].meter
+        assert isinstance(meter, FrequencyMeter)
         assert meter.counter == 1
 
     def test_log_meter_outside_context(
         self,
-    ):  # Changed from test_log_metric_outside_context
+    ):
         self.setUp()
 
         # Should not create meters outside of context
-        log_averaged("test_meter", value=10.0, weight=1.0)  # Changed to test_meter
+        log_averaged("test_meter", value=10.0, weight=1.0)
 
-        assert len(_meter_groups) == 0  # Changed to _meter_groups
+        assert len(_meter_groups) == 0
 
     def test_log_meter_priority_and_reset(
         self,
-    ):  # Changed from test_log_metric_priority_and_reset
+    ):
         self.setUp()
 
         with metrics_group("test_group"):
@@ -840,22 +812,22 @@ class TestLogMeterFunctions:  # Changed from TestLogMetricFunctions
                 value=10.0,
                 weight=1.0,
                 priority=50,
-                reset=False,  # Changed to test_meter
+                reset=False,
             )
 
-        group = _meter_groups["test_group"]  # Changed to _meter_groups
-        entry = group._meters["test_meter"]  # Changed to _meters and test_meter
+        group = _meter_groups["test_group"]
+        entry = group._meters["test_meter"]
         assert entry.priority == 50
         assert entry.reset is False
 
 
-class TestMeterUtilityFunctions:  # Changed from TestMetricUtilityFunctions
+class TestMeterUtilityFunctions:
     """Tests for utility functions"""
 
     def setUp(self):
         # Clear global state before each test
-        _meter_groups.clear()  # Changed to _meter_groups
-        _active_meter_groups.clear()  # Changed to _active_meter_groups
+        _meter_groups.clear()
+        _active_meter_groups.clear()
 
     def test_compute_metrics_no_group(self):
         self.setUp()
@@ -867,10 +839,10 @@ class TestMeterUtilityFunctions:  # Changed from TestMetricUtilityFunctions
         self.setUp()
 
         with metrics_group("test_group"):
-            log_averaged("test_meter", value=10.0, weight=1.0)  # Changed to test_meter
+            log_averaged("test_meter", value=10.0, weight=1.0)
 
         result = compute_metrics("test_group", aggregate=False)
-        assert result == {"test_meter": 10.0}  # Changed to test_meter
+        assert result == {"test_meter": 10.0}
 
     def test_compute_metrics_with_collective(self):
         self.setUp()
@@ -901,7 +873,7 @@ class TestMeterUtilityFunctions:  # Changed from TestMetricUtilityFunctions
         with metrics_group("test_group", log_freq=3):
             pass
 
-        group = _meter_groups["test_group"]  # Changed to _meter_groups
+        group = _meter_groups["test_group"]
         assert group._iteration_counter == 0
 
         step_metrics("test_group")
@@ -913,38 +885,34 @@ class TestMeterUtilityFunctions:  # Changed from TestMetricUtilityFunctions
         self.setUp()
 
         with metrics_group("test_group"):
-            log_averaged(
-                "reset_meter", value=10.0, weight=1.0, reset=True
-            )  # Changed to reset_meter
-            log_averaged(
-                "keep_meter", value=20.0, weight=1.0, reset=False
-            )  # Changed to keep_meter
+            log_averaged("reset_meter", value=10.0, weight=1.0, reset=True)
+            log_averaged("keep_meter", value=20.0, weight=1.0, reset=False)
 
-        group = _meter_groups["test_group"]  # Changed to _meter_groups
-        assert len(group._meters) == 2  # Changed to _meters
+        group = _meter_groups["test_group"]
+        assert len(group._meters) == 2
 
         reset_metrics("test_group")
-        assert len(group._meters) == 1  # Changed to _meters
-        assert "keep_meter" in group._meters  # Changed to _meters
-        assert "reset_meter" not in group._meters  # Changed to _meters
+        assert len(group._meters) == 1
+        assert "keep_meter" in group._meters
+        assert "reset_meter" not in group._meters
 
     def test_state_dict_and_load_state_dict(self):
         self.setUp()
 
         with metrics_group("test_group"):
-            log_averaged("test_meter", value=10.0, weight=1.0)  # Changed to test_meter
+            log_averaged("test_meter", value=10.0, weight=1.0)
 
         # Get state dict
         state = state_dict()
         assert "test_group" in state
 
         # Clear and reload
-        _meter_groups.clear()  # Changed to _meter_groups
+        _meter_groups.clear()
         load_state_dict(state)
 
-        assert "test_group" in _meter_groups  # Changed to _meter_groups
-        group = _meter_groups["test_group"]  # Changed to _meter_groups
-        assert "test_meter" in group._meters  # Changed to _meters
+        assert "test_group" in _meter_groups
+        group = _meter_groups["test_group"]
+        assert "test_meter" in group._meters
 
     def test_evaluate_value_callable(self):
         def expensive_computation():
@@ -958,17 +926,17 @@ class TestMeterUtilityFunctions:  # Changed from TestMetricUtilityFunctions
         assert result == 42
 
 
-class TestMetersIntegration:  # Changed from TestMetricsIntegration
+class TestMetersIntegration:
     """Integration tests for full meters workflow"""  # Updated docstring
 
     def setUp(self):
         # Clear global state before each test
-        _meter_groups.clear()  # Changed to _meter_groups
-        _active_meter_groups.clear()  # Changed to _active_meter_groups
+        _meter_groups.clear()
+        _active_meter_groups.clear()
 
     def test_training_meters_simulation(
         self,
-    ):  # Changed from training_metrics_simulation
+    ):
         """Simulate a training loop with meters"""  # Updated docstring
         self.setUp()
 
@@ -993,18 +961,18 @@ class TestMetersIntegration:  # Changed from TestMetricsIntegration
 
                 # Compute meters at end of epoch
                 if should_log:
-                    meters = compute_metrics("train")  # Changed from metrics
+                    meters = compute_metrics("train")
                     assert "loss" in meters
                     assert "processed_samples" in meters
                     assert "forward_pass" in meters
 
         # Final meters should be accumulated (reduced expected value to 240 because meters reset)
-        final_meters = compute_metrics("train")  # Changed from final_metrics
+        final_meters = compute_metrics("train")
         # The processed_samples meter may have been reset between epochs due to reset flags
         # so we just check that it's positive
         assert final_meters["processed_samples"] > 0
 
-    def test_eval_meters_simulation(self):  # Changed from test_eval_metrics_simulation
+    def test_eval_meters_simulation(self):
         """Simulate evaluation with meters"""  # Updated docstring
         self.setUp()
 
@@ -1017,38 +985,38 @@ class TestMetersIntegration:  # Changed from TestMetricsIntegration
                 log_averaged("f1_score", value=0.92, weight=100)
 
                 if should_log:
-                    meters = compute_metrics(f"eval/{dataset}")  # Changed from metrics
+                    meters = compute_metrics(f"eval/{dataset}")
                     assert meters["accuracy"] == 0.95
                     assert meters["f1_score"] == 0.92
 
-    def test_meter_persistence(self):  # Changed from test_metric_persistence
+    def test_meter_persistence(self):
         """Test saving and loading meter state"""  # Updated docstring
         self.setUp()
 
         # Create some meters
         with metrics_group("test_group"):
-            log_averaged("meter1", value=10.0, weight=1.0)  # Changed to meter1
-            log_summed("meter2", value=20.0)  # Changed to meter2
+            log_averaged("meter1", value=10.0, weight=1.0)
+            log_summed("meter2", value=20.0)
 
         # Save state
         saved_state = state_dict()
 
         # Clear and verify empty
-        _meter_groups.clear()  # Changed to _meter_groups
-        assert len(_meter_groups) == 0  # Changed to _meter_groups
+        _meter_groups.clear()
+        assert len(_meter_groups) == 0
 
         # Load state
         load_state_dict(saved_state)
 
         # Verify meters are restored
-        assert "test_group" in _meter_groups  # Changed to _meter_groups
-        meters = compute_metrics("test_group")  # Changed from metrics
-        assert meters["meter1"] == 10.0  # Changed to meter1
-        assert meters["meter2"] == 20.0  # Changed to meter2
+        assert "test_group" in _meter_groups
+        meters = compute_metrics("test_group")
+        assert meters["meter1"] == 10.01
+        assert meters["meter2"] == 20.02
 
     def test_distributed_meters_aggregation(
         self,
-    ):  # Changed from test_distributed_metrics_aggregation
+    ):
         """Test distributed meters aggregation"""  # Updated docstring
         self.setUp()
 
@@ -1071,12 +1039,12 @@ class TestMetersIntegration:  # Changed from TestMetricsIntegration
         # Should aggregate across all ranks: (5+10+15) / (2+3+1) = 30/6 = 5.0
         assert aggregated["loss"] == 5.0
 
-    def test_meter_error_handling(self):  # Changed from test_metric_error_handling
+    def test_meter_error_handling(self):
         """Test error handling in meters"""  # Updated docstring
         self.setUp()
 
         # Test with failing meter computation
-        class FailingMeter(BaseMeter):  # Changed from FailingMetric and BaseMetric
+        class FailingMeter(BaseMeter):
             def compute(self):
                 raise ValueError("Computation failed")
 
@@ -1087,9 +1055,7 @@ class TestMetersIntegration:  # Changed from TestMetricsIntegration
                 pass
 
         with metrics_group("test_group"):
-            log_metric(
-                "failing_meter", lambda: FailingMeter()
-            )  # Changed to failing_meter and FailingMeter
+            log_metric("failing_meter", lambda: FailingMeter())
 
         # Should crash the compute_metrics function when accessing directly
         # We test that it indeed raises the exception

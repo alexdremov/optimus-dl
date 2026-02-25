@@ -134,11 +134,14 @@ class TrainRecipe(
             eval_iterations=cfg.common.eval_iterations,
         )
         assert self.evaluator is not None, "Evaluator not initialized"
-        
+
         from optimus_dl.modules.metrics.engine import MetricEngine
-        self.metric_engine = MetricEngine(
-            group_name="train", configs=cfg.metrics
-        ) if getattr(cfg, "metrics", []) else None
+
+        self.metric_engine = (
+            MetricEngine(group_name="train", configs=cfg.metrics)
+            if getattr(cfg, "metrics", [])
+            else None
+        )
 
         # Initialize training logic mixins
         TrainingContextMixin.__init__(self, cfg.optimization)
@@ -433,7 +436,7 @@ class TrainRecipe(
                         if self.metric_engine:
                             engine_metrics = self.metric_engine.compute(current_metrics)
                             current_metrics.update(engine_metrics)
-                            
+
                         if collective.is_local_master:
                             pbar.set_postfix(current_metrics, refresh=False)
 

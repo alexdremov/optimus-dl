@@ -241,7 +241,11 @@ class TrainingIterationMixin:
                     logger.error(f"Error getting batch: {e}")
                     continue
 
-                if metric_engine is not None and eval_train_metrics and is_last_microbatch:
+                if (
+                    metric_engine is not None
+                    and eval_train_metrics
+                    and is_last_microbatch
+                ):
                     was_training = model.training
                     model.eval()
                     metric_engine.update(model, batch)

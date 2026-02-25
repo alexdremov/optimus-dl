@@ -5,7 +5,10 @@ from abc import (
     ABC,
     abstractmethod,
 )
-from dataclasses import dataclass, field
+from dataclasses import (
+    dataclass,
+    field,
+)
 from typing import (
     Any,
 )
@@ -20,6 +23,7 @@ from optimus_dl.core.registry import (
 
 class StandardProtocols:
     """Standardized string constants for common metric data protocols."""
+
     LOGITS = "logits"
     LOSS = "loss"
     GENERATED_IDS = "generated_ids"
@@ -30,10 +34,11 @@ class StandardProtocols:
 @dataclass
 class MetricSourceConfig(RegistryConfigStrict):
     """Base configuration for metric sources.
-    
+
     Attributes:
         dependencies: Maps internal role requirements to source names within the group.
     """
+
     dependencies: dict[str, str] = field(default_factory=dict)
 
 
@@ -52,18 +57,23 @@ class MetricSource(ABC):
         """Returns a deterministic hash of the source's configuration for cross-group caching."""
         if self._hash is None:
             import dataclasses
+
             if dataclasses.is_dataclass(self.cfg):
                 cfg_dict = dataclasses.asdict(self.cfg)
             else:
-                cfg_dict = self.cfg.__dict__ if hasattr(self.cfg, '__dict__') else str(self.cfg)
-            
+                cfg_dict = (
+                    self.cfg.__dict__
+                    if hasattr(self.cfg, "__dict__")
+                    else str(self.cfg)
+                )
+
             def make_hashable(obj: Any) -> Any:
                 if isinstance(obj, (tuple, list)):
                     return tuple(make_hashable(e) for e in obj)
                 if isinstance(obj, dict):
                     return tuple(sorted((k, make_hashable(v)) for k, v in obj.items()))
                 return obj
-            
+
             stable_repr = str(make_hashable(cfg_dict))
             # Include the class name so different source types with same config don't collide
             stable_repr = f"{self.__class__.__name__}:{stable_repr}"
@@ -79,20 +89,20 @@ class MetricSource(ABC):
     @property
     def requires(self) -> dict[str, set[str]]:
         """Mapping from internal dependency role name to required protocol strings.
-        
+
         Override this if your source depends on the output of other sources.
         """
         return {}
 
     @abstractmethod
     def __call__(
-        self, 
-        model: torch.nn.Module, 
-        batch: dict[str, Any], 
-        dependencies: dict[str, dict[str, Any]]
+        self,
+        model: torch.nn.Module,
+        batch: dict[str, Any],
+        dependencies: dict[str, dict[str, Any]],
     ) -> dict[str, Any]:
         """Execute the source and return a dictionary mapping Protocol string to data.
-        
+
         Args:
             model: The PyTorch model.
             batch: The current batch dictionary.
@@ -112,7 +122,7 @@ class ForwardSource(MetricSource):
 
     Provides whatever the model natively provides (defaulting to LOGITS).
     """
-    
+
     def __init__(self, cfg: ForwardSourceConfig):
         super().__init__(cfg)
         self._provides_cache: set[str] | None = None
@@ -127,22 +137,23 @@ class ForwardSource(MetricSource):
         return {StandardProtocols.LOGITS}
 
     def __call__(
-        self, model: torch.nn.Module, batch: dict[str, Any], dependencies: dict[str, dict[str, Any]]
+        self,
+        model: torch.nn.Module,
+        batch: dict[str, Any],
+        dependencies: dict[str, dict[str, Any]],
     ) -> dict[str, Any]:
         with torch.no_grad():
             outputs = model(**batch)
-            
+
             # If the model explicitly tells us what it provides, we could map it.
             # But the standard contract is returning outputs.
-            result = {
-                StandardProtocols.LOGITS: outputs.get("logits", outputs)
-            }
+            result = {StandardProtocols.LOGITS: outputs.get("logits", outputs)}
             # Also merge anything else the model explicitly returned that matches a protocol
             if hasattr(model, "provides"):
                 for p in model.provides:
                     if p in outputs:
                         result[p] = outputs[p]
-            
+
             return result
 
 
@@ -154,27 +165,28 @@ class CausalLMSourceConfig(MetricSourceConfig):
 @register_source("causal_lm", CausalLMSourceConfig)
 class CausalLMSource(MetricSource):
     """Causal LM forward pass. Assumes causal shifting of labels.
-    
+
     Provides: LOGITS, TARGETS
     """
+
     @property
     def provides(self) -> set[str]:
         return {StandardProtocols.LOGITS, StandardProtocols.TARGETS}
 
     def __call__(
-        self, model: torch.nn.Module, batch: dict[str, Any], dependencies: dict[str, dict[str, Any]]
+        self,
+        model: torch.nn.Module,
+        batch: dict[str, Any],
+        dependencies: dict[str, dict[str, Any]],
     ) -> dict[str, Any]:
         with torch.no_grad():
             outputs = model(**batch)
             logits = outputs.get("logits", outputs)
-            
+
         targets = batch["input_ids"][:, 1:]
         logits = logits[:, :-1, :]
-        
-        return {
-            StandardProtocols.LOGITS: logits,
-            StandardProtocols.TARGETS: targets
-        }
+
+        return {StandardProtocols.LOGITS: logits, StandardProtocols.TARGETS: targets}
 
 
 @dataclass
@@ -193,12 +205,16 @@ class GenerationSource(MetricSource):
 
     Provides: GENERATED_IDS
     """
+
     @property
     def provides(self) -> set[str]:
         return {StandardProtocols.GENERATED_IDS}
 
     def __call__(
-        self, model: torch.nn.Module, batch: dict[str, Any], dependencies: dict[str, dict[str, Any]]
+        self,
+        model: torch.nn.Module,
+        batch: dict[str, Any],
+        dependencies: dict[str, dict[str, Any]],
     ) -> dict[str, Any]:
         with torch.no_grad():
             generated_ids = model.generate(

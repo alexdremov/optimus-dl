@@ -6,7 +6,6 @@ from abc import (
 )
 from dataclasses import (
     dataclass,
-    field,
 )
 from typing import (
     Any,
@@ -50,7 +49,7 @@ class Metric(ABC):
     @property
     def accumulators(self) -> dict[str, str]:
         """Define how each sub-metric should be aggregated across batches.
-        
+
         Returns a mapping from sub-metric names to accumulator types
         (e.g., 'average', 'sum', 'gather', 'perplexity').
         """
@@ -123,10 +122,7 @@ class AccuracyMetric(Metric):
         else:
             _, top_k_indices = torch.topk(valid_logits, self.cfg.top_k, dim=-1)
             correct = (
-                (top_k_indices == valid_targets.unsqueeze(-1))
-                .any(dim=-1)
-                .float()
-                .sum()
+                (top_k_indices == valid_targets.unsqueeze(-1)).any(dim=-1).float().sum()
             )
 
         return {

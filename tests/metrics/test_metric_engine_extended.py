@@ -1,10 +1,14 @@
-import pytest
+from dataclasses import (
+    dataclass,
+    field,
+)
 from unittest.mock import MagicMock
 
-from optimus_dl.modules.metrics.source import (
-    MetricSource,
-    MetricSourceConfig,
-    register_source,
+import pytest
+
+from optimus_dl.modules.metrics.base import (
+    _active_meter_groups,
+    _meter_groups,
 )
 from optimus_dl.modules.metrics.definitions import (
     Metric,
@@ -12,9 +16,11 @@ from optimus_dl.modules.metrics.definitions import (
     register_metric,
 )
 from optimus_dl.modules.metrics.engine import MetricEngine
-from optimus_dl.modules.metrics.base import _meter_groups, _active_meter_groups
-
-from dataclasses import dataclass, field
+from optimus_dl.modules.metrics.source import (
+    MetricSource,
+    MetricSourceConfig,
+    register_source,
+)
 
 
 @dataclass
@@ -89,17 +95,23 @@ class TestMetricEngineExtended:
                 "metrics": [
                     {
                         "_name": "metric_1",
-                        "type": {"_name": "simple_metric", "required_proto": "value_proto"},
+                        "type": {
+                            "_name": "simple_metric",
+                            "required_proto": "value_proto",
+                        },
                         "role_mapping": {"input": "shared_source"},
-                        "accumulators": {"value_proto": "average"}
+                        "accumulators": {"value_proto": "average"},
                     },
                     {
                         "_name": "metric_2",
-                        "type": {"_name": "simple_metric", "required_proto": "value_proto"},
+                        "type": {
+                            "_name": "simple_metric",
+                            "required_proto": "value_proto",
+                        },
                         "role_mapping": {"input": "shared_source"},
-                        "accumulators": {"value_proto": "average"}
-                    }
-                ]
+                        "accumulators": {"value_proto": "average"},
+                    },
+                ],
             }
         ]
 
@@ -114,6 +126,7 @@ class TestMetricEngineExtended:
         assert model.source_called == 1
 
         from optimus_dl.modules.metrics import compute_metrics
+
         raw_results = compute_metrics("test_group", aggregate=False)
         results = engine.compute(raw_results)
 
@@ -133,15 +146,15 @@ class TestMetricEngineExtended:
                         "_name": "metric_a",
                         "type": {"_name": "simple_metric", "required_proto": "proto_a"},
                         "role_mapping": {"input": "provider"},
-                        "accumulators": {"proto_a": "average"}
+                        "accumulators": {"proto_a": "average"},
                     },
                     {
                         "_name": "metric_b",
                         "type": {"_name": "simple_metric", "required_proto": "proto_b"},
                         "role_mapping": {"input": "provider"},
-                        "accumulators": {"proto_b": "average"}
-                    }
-                ]
+                        "accumulators": {"proto_b": "average"},
+                    },
+                ],
             }
         ]
 
@@ -152,6 +165,7 @@ class TestMetricEngineExtended:
         engine.update(model, batch)
 
         from optimus_dl.modules.metrics import compute_metrics
+
         raw_results = compute_metrics("multi_group", aggregate=False)
         results = engine.compute(raw_results)
 
@@ -170,14 +184,18 @@ class TestMetricEngineExtended:
                 "metrics": [
                     {
                         "_name": "metric_fail",
-                        "type": {"_name": "simple_metric", "required_proto": "non_existent_proto"},
-                        "role_mapping": {"input": "provider"}
+                        "type": {
+                            "_name": "simple_metric",
+                            "required_proto": "non_existent_proto",
+                        },
+                        "role_mapping": {"input": "provider"},
                     }
-                ]
+                ],
             }
         ]
 
-        with pytest.raises(ValueError, match="does not provide required protocols {'non_existent_proto'}"):
+        with pytest.raises(
+            ValueError,
+            match="does not provide required protocols {'non_existent_proto'}",
+        ):
             MetricEngine("fail_group", configs)
-
-

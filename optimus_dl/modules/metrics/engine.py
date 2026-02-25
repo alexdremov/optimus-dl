@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import Any
 from collections.abc import Callable
+from dataclasses import (
+    dataclass,
+    field,
+)
+from typing import Any
 
 import torch
 
@@ -12,12 +15,11 @@ from optimus_dl.modules.metrics.base import (
     BaseMeter,
     log_metric,
     metrics_group,
-    compute_metrics,
 )
 from optimus_dl.modules.metrics.common import (
+    AveragedExponentMeter,
     AverageMeter,
     SummedMeter,
-    AveragedExponentMeter,
 )
 from optimus_dl.modules.metrics.definitions import (
     Metric,
@@ -65,13 +67,16 @@ class GatherMetric(BaseMeter):
 @dataclass
 class EngineMetricConfig(RegistryConfigStrict):
     """Configuration for a single Metric within a group."""
+
     type: dict[str, Any] = field(
         default_factory=dict,
-        metadata={"help": "Config for the Metric (e.g., AccuracyMetricConfig)."}
+        metadata={"help": "Config for the Metric (e.g., AccuracyMetricConfig)."},
     )
     role_mapping: dict[str, str] = field(
         default_factory=dict,
-        metadata={"help": "Maps metric role requirements to source names in the group."}
+        metadata={
+            "help": "Maps metric role requirements to source names in the group."
+        },
     )
     reset: bool = field(
         default=True,
@@ -147,28 +152,32 @@ class MetricEngine:
                     component_name=s_name,
                     component_requires=source.requires,
                     available_sources=group.sources,
-                    role_mapping=getattr(source.cfg, 'dependencies', {}),
+                    role_mapping=getattr(source.cfg, "dependencies", {}),
                     group_prefix=prefix,
-                    component_type="Source"
+                    component_type="Source",
                 )
 
             # 3. Build Metrics and perform Protocol Handshake
             for m_dict in metrics_list:
-                if "_name" not in m_dict and "type" in m_dict and "_name" in m_dict["type"]:
+                if (
+                    "_name" not in m_dict
+                    and "type" in m_dict
+                    and "_name" in m_dict["type"]
+                ):
                     m_dict["_name"] = m_dict["type"]["_name"]
                 elif "_name" not in m_dict:
-                     m_dict["_name"] = "unnamed_metric"
+                    m_dict["_name"] = "unnamed_metric"
 
                 m_cfg = EngineMetricConfig(**m_dict)
                 metric_impl = build_metric(m_cfg.type)
 
                 self._validate_handshake(
-                    component_name=m_cfg.type.get('_name', 'unnamed_metric'),
+                    component_name=m_cfg.type.get("_name", "unnamed_metric"),
                     component_requires=metric_impl.requires,
                     available_sources=group.sources,
                     role_mapping=m_cfg.role_mapping,
                     group_prefix=prefix,
-                    component_type="Metric"
+                    component_type="Metric",
                 )
 
                 group.metrics.append((metric_impl, m_cfg))
@@ -182,7 +191,7 @@ class MetricEngine:
         available_sources: dict[str, MetricSource],
         role_mapping: dict[str, str],
         group_prefix: str,
-        component_type: str
+        component_type: str,
     ):
         """Validates that all dependencies and protocols for a component are met."""
         for req_role, req_protocols in component_requires.items():
@@ -209,7 +218,7 @@ class MetricEngine:
         model: torch.nn.Module,
         batch: dict[str, Any],
         global_cache: dict[str, dict[str, Any]],
-        _evaluating: set[str] | None = None
+        _evaluating: set[str] | None = None,
     ) -> dict[str, Any]:
         """Recursively evaluates a source and its dependencies, using a global cross-group cache.
 
@@ -241,7 +250,9 @@ class MetricEngine:
             _evaluating = set()
 
         if source_name in _evaluating:
-            raise RuntimeError(f"Cyclic dependency detected for source '{source_name}' in group '{group.prefix}'.")
+            raise RuntimeError(
+                f"Cyclic dependency detected for source '{source_name}' in group '{group.prefix}'."
+            )
 
         _evaluating.add(source_name)
 
@@ -249,9 +260,13 @@ class MetricEngine:
             # Evaluate dependencies first
             deps_data: dict[str, dict[str, Any]] = {}
             for req_role in source.requires:
-                mapped_dep_name = getattr(source.cfg, 'dependencies', {}).get(req_role, req_role)
+                mapped_dep_name = getattr(source.cfg, "dependencies", {}).get(
+                    req_role, req_role
+                )
                 try:
-                    deps_data[req_role] = self._eval_source(group, mapped_dep_name, model, batch, global_cache, _evaluating)
+                    deps_data[req_role] = self._eval_source(
+                        group, mapped_dep_name, model, batch, global_cache, _evaluating
+                    )
                 except Exception as e:
                     # If a dependency fails, mark this as failed too
                     global_cache[h] = e
@@ -306,7 +321,11 @@ class MetricEngine:
                         mapped_source_name = m_cfg.role_mapping.get(req_role, req_role)
                         try:
                             sources_data[req_role] = self._eval_source(
-                                group, mapped_source_name, model, batch, global_source_cache
+                                group,
+                                mapped_source_name,
+                                model,
+                                batch,
+                                global_source_cache,
                             )
                         except Exception as e:
                             logger.error(
@@ -328,10 +347,20 @@ class MetricEngine:
                         continue
 
                     for sub_name, log_kwargs in batch_results.items():
-                        base_name = f"{metric_name}/{sub_name}" if sub_name != metric_name else metric_name
-                        full_name = f"{group.prefix}/{base_name}" if group.prefix != "default" else base_name
+                        base_name = (
+                            f"{metric_name}/{sub_name}"
+                            if sub_name != metric_name
+                            else metric_name
+                        )
+                        full_name = (
+                            f"{group.prefix}/{base_name}"
+                            if group.prefix != "default"
+                            else base_name
+                        )
 
-                        acc_type = m_cfg.accumulators.get(sub_name) or metric.accumulators.get(sub_name, "average")
+                        acc_type = m_cfg.accumulators.get(
+                            sub_name
+                        ) or metric.accumulators.get(sub_name, "average")
                         factory = self._get_accumulator_factory(acc_type)
 
                         log_metric(
@@ -353,9 +382,7 @@ class MetricEngine:
             return lambda: AveragedExponentMeter()
         raise ValueError(f"Unknown accumulator type: {acc_type}")
 
-    def compute(
-        self, raw_results: dict[str, Any]
-    ) -> dict[str, Any]:
+    def compute(self, raw_results: dict[str, Any]) -> dict[str, Any]:
         """Runs finalization logic for each metric based on raw computed results."""
         final_report: dict[str, Any] = {}
 
@@ -365,12 +392,26 @@ class MetricEngine:
 
                 acc_data: dict[str, Any] = {}
                 # Use m_cfg.accumulators if provided, otherwise fallback to metric's defaults
-                configured_sub_metrics = m_cfg.accumulators.keys() if m_cfg.accumulators else metric.accumulators.keys()
-                expected_keys = configured_sub_metrics if configured_sub_metrics else [metric_name]
+                configured_sub_metrics = (
+                    m_cfg.accumulators.keys()
+                    if m_cfg.accumulators
+                    else metric.accumulators.keys()
+                )
+                expected_keys = (
+                    configured_sub_metrics if configured_sub_metrics else [metric_name]
+                )
 
                 for sub_name in expected_keys:
-                    base_name = f"{metric_name}/{sub_name}" if sub_name != metric_name else metric_name
-                    full_name = f"{group.prefix}/{base_name}" if group.prefix != "default" else base_name
+                    base_name = (
+                        f"{metric_name}/{sub_name}"
+                        if sub_name != metric_name
+                        else metric_name
+                    )
+                    full_name = (
+                        f"{group.prefix}/{base_name}"
+                        if group.prefix != "default"
+                        else base_name
+                    )
 
                     if full_name in raw_results:
                         acc_data[sub_name] = raw_results[full_name]
@@ -387,8 +428,14 @@ class MetricEngine:
                     continue
 
                 for k, v in finalized.items():
-                    base_name = f"{metric_name}/{k}" if k != metric_name else metric_name
-                    full_name = f"{group.prefix}/{base_name}" if group.prefix != "default" else base_name
+                    base_name = (
+                        f"{metric_name}/{k}" if k != metric_name else metric_name
+                    )
+                    full_name = (
+                        f"{group.prefix}/{base_name}"
+                        if group.prefix != "default"
+                        else base_name
+                    )
                     final_report[full_name] = v
 
         return final_report

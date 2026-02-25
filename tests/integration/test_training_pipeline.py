@@ -22,7 +22,7 @@ from optimus_dl.modules.lr_scheduler.linear_warmup import (
     LinearWarmupLR,
     LinearWarmupLRConfig,
 )
-from optimus_dl.modules.metrics.common import AverageMetric
+from optimus_dl.modules.metrics.common import AverageMeter
 from optimus_dl.modules.optim.adamw import (
     AdamWConfig,
     make_adamw,
@@ -92,7 +92,7 @@ class TestTrainingPipelineIntegration:
             logger = JsonlLogger(config, group="integration_test")
 
             # Simulate training with metrics
-            metric = AverageMetric(round=4)
+            metric = AverageMeter(round=4)
             losses = []
 
             for epoch in range(3):
@@ -120,7 +120,7 @@ class TestTrainingPipelineIntegration:
                 )
 
                 # Reset metric for next epoch
-                metric = AverageMetric(round=4)
+                metric = AverageMeter(round=4)
 
             # Verify loss decreased over training
             assert losses[-1] < losses[0]

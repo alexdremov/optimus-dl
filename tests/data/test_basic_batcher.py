@@ -194,5 +194,5 @@ class TestBasicBatcher:
         new_batcher_node.reset(state)
 
         # Next item should be 2 (skipping 1)
-        batch = new_next(batcher_node)
+        batch = next(new_batcher_node)
         np.testing.assert_array_equal(batch["input_ids"], np.array([[2]]))

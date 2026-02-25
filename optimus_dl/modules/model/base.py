@@ -54,7 +54,7 @@ class BaseModel(torch.nn.Module):
     @property
     def provides(self) -> set[str]:
         """Returns the set of protocol strings this model natively provides.
-        
+
         By default, language models return LOGITS. Subclasses can override this
         if they provide additional or different protocols (like generations).
         """
@@ -114,4 +114,3 @@ class BaseModel(torch.nn.Module):
             **kwargs: Additional model-specific TP flags (e.g., sequence_parallel).
         """
         ...
-

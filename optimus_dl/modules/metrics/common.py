@@ -14,8 +14,8 @@ from typing import (
 import numpy as np
 import torch
 
-from .base import BaseMeter  # Changed from BaseMetric
 from .base import (
+    BaseMeter,
     log_metric,
 )
 
@@ -55,7 +55,7 @@ def safe_round(number: float | int | Any, ndigits: int | None) -> float | int:
         return number
 
 
-class AverageMeter(BaseMeter):  # Changed from AverageMetric
+class AverageMeter(BaseMeter):
     """Meter that computes a weighted average of logged values.
 
     This meter accumulates weighted values and computes the average when
@@ -120,7 +120,7 @@ class AverageMeter(BaseMeter):  # Changed from AverageMetric
         self.count += other_state["count"]
 
 
-class SummedMeter(BaseMeter):  # Changed from SummedMetric
+class SummedMeter(BaseMeter):
     """Meter that sums logged values.
 
     This meter simply accumulates values without averaging. Useful for
@@ -174,7 +174,7 @@ class SummedMeter(BaseMeter):  # Changed from SummedMetric
         self.sum += other_state["sum"]
 
 
-class FrequencyMeter(BaseMeter):  # Changed from FrequencyMetric
+class FrequencyMeter(BaseMeter):
     """Meter that computes the frequency (duration per call) of an event.
 
     Measures time between successive calls to `log()`.
@@ -194,7 +194,7 @@ class FrequencyMeter(BaseMeter):  # Changed from FrequencyMetric
                 results are not rounded.
         """
         self.round = round
-        self.start: Optional[int] = None
+        self.start: int | None = None
         self.elapsed: int = 0
         self.counter: int = 0
 
@@ -343,7 +343,7 @@ class AveragedExponentMeter(BaseMeter):  # Ensures it inherits from BaseMeter
             round: Number of decimal places to round results to. If None,
                 results are not rounded.
         """
-        self._internal = AverageMeter()  # Changed to AverageMeter
+        self._internal = AverageMeter()
         self.round = round
 
     def log(self, value: float | int, weight: float | int):
@@ -438,7 +438,7 @@ def log_averaged(
         ```"""
     log_metric(
         name=name,
-        meter_factory=lambda: AverageMeter(round=round),  # Changed to AverageMeter
+        meter_factory=lambda: AverageMeter(round=round),
         reset=reset,
         priority=priority,
         value=value,
@@ -510,7 +510,7 @@ def log_summed(
         ```"""
     log_metric(
         name=name,
-        meter_factory=lambda: SummedMeter(round=round),  # Changed to SummedMeter
+        meter_factory=lambda: SummedMeter(round=round),
         reset=reset,
         priority=priority,
         value=value,
@@ -611,7 +611,7 @@ def log_event_occurence(
     """
     log_metric(
         name=name,
-        meter_factory=lambda: FrequencyMeter(round=round),  # Changed to FrequencyMeter
+        meter_factory=lambda: FrequencyMeter(round=round),
         reset=reset,
         priority=priority,
         force_log=True,  # Always log event occurrences

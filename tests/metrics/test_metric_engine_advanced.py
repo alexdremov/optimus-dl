@@ -1,26 +1,27 @@
-import pytest
-import torch
-from typing import Any
+from dataclasses import dataclass
 from unittest.mock import MagicMock
 
-from optimus_dl.modules.metrics.source import (
-    StandardProtocols,
-    MetricSource,
-    MetricSourceConfig,
-    ForwardSourceConfig,
-    CausalLMSourceConfig,
-    register_source,
+import torch
+import pytest
+
+from optimus_dl.modules.metrics.base import (
+    _active_meter_groups,
+    _meter_groups,
 )
 from optimus_dl.modules.metrics.definitions import (
     Metric,
     MetricConfig,
-    AccuracyMetricConfig,
     register_metric,
 )
 from optimus_dl.modules.metrics.engine import MetricEngine
-from optimus_dl.modules.metrics.base import _meter_groups, _active_meter_groups
+from optimus_dl.modules.metrics.source import (
+    CausalLMSourceConfig,
+    ForwardSourceConfig,
+    MetricSource,
+    MetricSourceConfig,
+    register_source,
+)
 
-from dataclasses import dataclass
 
 @dataclass
 class DummySourceConfig(MetricSourceConfig):
@@ -85,7 +86,10 @@ class TestMetricEngineAdvanced:
         cfg2 = ForwardSourceConfig()
         cfg3 = CausalLMSourceConfig()
 
-        from optimus_dl.modules.metrics.source import ForwardSource, CausalLMSource
+        from optimus_dl.modules.metrics.source import (
+            CausalLMSource,
+            ForwardSource,
+        )
 
         src1 = ForwardSource(cfg1)
         src2 = ForwardSource(cfg2)
@@ -104,16 +108,16 @@ class TestMetricEngineAdvanced:
                     "consumer": {
                         "_name": "dependent_source",
                         "multiplier": 3,
-                        "dependencies": {"base": "provider"}
+                        "dependencies": {"base": "provider"},
                     },
                 },
                 "metrics": [
                     {
                         "_name": "dummy_metric",
                         "type": {"_name": "dummy_metric"},
-                        "role_mapping": {"input": "consumer"}
+                        "role_mapping": {"input": "consumer"},
                     }
-                ]
+                ],
             }
         ]
 
@@ -126,6 +130,7 @@ class TestMetricEngineAdvanced:
 
         # Compute results
         from optimus_dl.modules.metrics import compute_metrics
+
         raw_results = compute_metrics("test_group", aggregate=False)
         results = engine.compute(raw_results)
 
@@ -136,21 +141,23 @@ class TestMetricEngineAdvanced:
     def test_cross_group_caching(self):
         # We will use a mock model to count forward passes
         model = MagicMock()
-        model.return_value = {"logits": torch.tensor([[[1.0, 0.0], [0.0, 1.0], [0.0, 0.0]]])}
+        model.return_value = {
+            "logits": torch.tensor([[[1.0, 0.0], [0.0, 1.0], [0.0, 0.0]]])
+        }
 
         configs = [
             {
                 "_name": "source_group",
                 "prefix": "group1",
                 "sources": {"default": {"_name": "causal_lm"}},
-                "metrics": [{"_name": "accuracy", "type": {"_name": "accuracy"}}]
+                "metrics": [{"_name": "accuracy", "type": {"_name": "accuracy"}}],
             },
             {
                 "_name": "source_group",
                 "prefix": "group2",
                 "sources": {"default": {"_name": "causal_lm"}},
-                "metrics": [{"_name": "accuracy", "type": {"_name": "accuracy"}}]
-            }
+                "metrics": [{"_name": "accuracy", "type": {"_name": "accuracy"}}],
+            },
         ]
 
         engine = MetricEngine("test_group", configs)
@@ -163,12 +170,7 @@ class TestMetricEngineAdvanced:
         assert model.call_count == 1
 
     def test_accuracy_metric_causal_lm(self):
-        configs = [
-            {
-                "_name": "accuracy",
-                "type": {"_name": "accuracy"}
-            }
-        ]
+        configs = [{"_name": "accuracy", "type": {"_name": "accuracy"}}]
 
         engine = MetricEngine("test_group", configs)
 
@@ -178,9 +180,9 @@ class TestMetricEngineAdvanced:
         # Model predicts 2 for the first token (correct), 4 for the second (incorrect)
         # Logits shape: [1, 3, vocab_size]
         logits = torch.zeros(1, 3, 10)
-        logits[0, 0, 2] = 10.0 # Predicts 2
-        logits[0, 1, 4] = 10.0 # Predicts 4
-        logits[0, 2, 5] = 10.0 # Ignored (shifted)
+        logits[0, 0, 2] = 10.0  # Predicts 2
+        logits[0, 1, 4] = 10.0  # Predicts 4
+        logits[0, 2, 5] = 10.0  # Ignored (shifted)
 
         model = MagicMock()
         model.return_value = {"logits": logits}
@@ -188,6 +190,7 @@ class TestMetricEngineAdvanced:
         engine.update(model, batch)
 
         from optimus_dl.modules.metrics import compute_metrics
+
         raw_results = compute_metrics("test_group", aggregate=False)
         results = engine.compute(raw_results)
 
@@ -197,30 +200,20 @@ class TestMetricEngineAdvanced:
         assert results["accuracy"] == 0.5
 
     def test_cyclic_dependency_detection(self, caplog):
-        configs = [
-            {
-                "_name": "source_group",
-                "prefix": "test_cycle",
-                "sources": {
-                    "source_a": {"_name": "dependent_source", "multiplier": 1, "dependencies": {"base": "source_b"}},
-                    "source_b": {"_name": "dependent_source", "multiplier": 1, "dependencies": {"base": "source_a"}},
-                },
-                "metrics": []
-            }
-        ]
-
         @dataclass
         class CycleSourceConfig(MetricSourceConfig):
             _name: str = "cycle_source"
-            
+
         @register_source("cycle_source", CycleSourceConfig)
         class CycleSource(MetricSource):
             @property
             def provides(self) -> set[str]:
                 return {"cycle_proto"}
+
             @property
             def requires(self) -> dict[str, set[str]]:
                 return {"base": {"cycle_proto"}}
+
             def __call__(self, model, batch, dependencies):
                 return {"cycle_proto": 1}
 
@@ -229,19 +222,25 @@ class TestMetricEngineAdvanced:
                 "_name": "source_group",
                 "prefix": "test_cycle",
                 "sources": {
-                    "source_a": {"_name": "cycle_source", "dependencies": {"base": "source_b"}},
-                    "source_b": {"_name": "cycle_source", "dependencies": {"base": "source_a"}},
+                    "source_a": {
+                        "_name": "cycle_source",
+                        "dependencies": {"base": "source_b"},
+                    },
+                    "source_b": {
+                        "_name": "cycle_source",
+                        "dependencies": {"base": "source_a"},
+                    },
                 },
                 "metrics": [
                     {
                         "_name": "cycle_metric",
                         "type": {"_name": "cycle_metric"},
-                        "role_mapping": {"input": "source_a"}
+                        "role_mapping": {"input": "source_a"},
                     }
-                ]
+                ],
             }
         ]
-        
+
         @dataclass
         class CycleMetricConfig(MetricConfig):
             _name: str = "cycle_metric"
@@ -251,17 +250,18 @@ class TestMetricEngineAdvanced:
             @property
             def requires(self) -> dict[str, set[str]]:
                 return {"input": {"cycle_proto"}}
+
             def __call__(self, batch, sources_data):
                 return {"cycle_metric": {"value": 1.0, "weight": 1.0}}
 
         engine = MetricEngine("test_group", configs_cycle)
-        
+
         model = MagicMock()
         batch = {}
-        
+
         # update should log the cyclic error and skip metric computation
         engine.update(model, batch)
-        
+
         assert "Cyclic dependency detected for source" in caplog.text
 
     def test_slice_filter(self):
@@ -271,32 +271,37 @@ class TestMetricEngineAdvanced:
                 "prefix": "filtered",
                 "sources": {
                     "provider": {"_name": "dummy_source", "val": 10},
-                    "consumer": {"_name": "dependent_source", "multiplier": 1, "dependencies": {"base": "provider"}},
+                    "consumer": {
+                        "_name": "dependent_source",
+                        "multiplier": 1,
+                        "dependencies": {"base": "provider"},
+                    },
                 },
                 "metrics": [
                     {
                         "_name": "dummy_metric",
                         "type": {"_name": "dummy_metric"},
                         "role_mapping": {"input": "consumer"},
-                        "slice_filter": "batch.get('is_valid', False)"
+                        "slice_filter": "batch.get('is_valid', False)",
                     }
-                ]
+                ],
             }
         ]
 
         engine = MetricEngine("test_group", configs)
         model = MagicMock()
-        
+
         # Batch 1 is not valid
         engine.update(model, {"is_valid": False})
-        
+
         # Batch 2 is valid
         engine.update(model, {"is_valid": True})
-        
+
         from optimus_dl.modules.metrics import compute_metrics
+
         raw_results = compute_metrics("test_group", aggregate=False)
         results = engine.compute(raw_results)
-        
+
         # Only the second batch should be logged, so the value is 10 (since dummy_metric just returns val)
         assert "filtered/dummy_metric" in results
         assert results["filtered/dummy_metric"] == 10.0
@@ -315,7 +320,7 @@ class TestMetricEngineAdvanced:
                         "type": {"_name": "dummy_metric"},
                         # Intentionally missing role_mapping for 'input'
                     }
-                ]
+                ],
             }
         ]
 
