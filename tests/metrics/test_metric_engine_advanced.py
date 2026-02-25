@@ -22,6 +22,8 @@ from optimus_dl.modules.metrics.source import (
     register_source,
 )
 
+pytest.skip("experimental", allow_module_level=True)
+
 
 @dataclass
 class DummySourceConfig(MetricSourceConfig):

@@ -75,6 +75,7 @@ class TestCheckpointResumption:
             "++model.n_head=1",
             "++model.n_embd=64",
             "++model.intermediate_size=64",
+            "lr_scheduler.warmup_steps=0",
         ]
         if extra_args:
             cmd.extend(extra_args)

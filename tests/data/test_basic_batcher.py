@@ -29,6 +29,7 @@ class MockSourceNode(BaseNode):
         return item
 
     def reset(self, initial_state: dict | None = None):
+        super().reset(initial_state)
         self.idx = initial_state["idx"] if initial_state else 0
 
     def state_dict(self) -> dict[str, Any]:
