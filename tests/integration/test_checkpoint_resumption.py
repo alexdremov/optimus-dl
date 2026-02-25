@@ -30,6 +30,7 @@ class TestCheckpointResumption:
         self.temp_dir = Path(tempfile.mkdtemp())
         self.output_full = self.temp_dir / "full"
         self.output_split = self.temp_dir / "split"
+        self.output_split_final = self.output_split / "split_final"
         self.data_path = self.temp_dir / "data.txt"
 
         # Create dummy data for training
@@ -48,6 +49,8 @@ class TestCheckpointResumption:
         iterations: int,
         save_freq: int,
         extra_args: list[str] | None = None,
+        resume_from_iter: int | None = None,
+        resume_from_path: str | Path | None = None,
     ):
         """Run the training script via subprocess."""
         cmd = [
@@ -79,6 +82,9 @@ class TestCheckpointResumption:
         ]
         if extra_args:
             cmd.extend(extra_args)
+        if resume_from_iter:
+            assert resume_from_path
+            cmd.append(f"++common.load_checkpoint={resume_from_path}/checkpoint_{resume_from_iter:09d}")
 
         env = os.environ.copy()
         env["PYTHONPATH"] = "."
@@ -102,11 +108,11 @@ class TestCheckpointResumption:
         self.run_train(self.output_full, iterations=total_steps, save_freq=total_steps)
 
         # 2. Run first half of split training
-        self.run_train(self.output_split, iterations=split_step, save_freq=split_step)
+        self.run_train(self.output_split, iterations=total_steps, save_freq=split_step)
 
         # 3. Resume and run second half of split training
         # Resuming is automatic when common.output_path remains the same
-        self.run_train(self.output_split, iterations=total_steps, save_freq=total_steps)
+        self.run_train(self.output_split_final, iterations=total_steps, save_freq=total_steps, resume_from_path=self.output_split, resume_from_iter=split_step)
 
         # 4. Compare resulting checkpoints
         mgr = CheckpointManager(CheckpointManagerConfig(_name="base"))
