@@ -291,7 +291,7 @@ class RotarySelfAttention(nn.Module):
                     seq_lens_view = seq_lens.view(-1, 1, 1, 1)
                     seq_lens_mask = (q_idx < seq_lens_view) & (kv_idx < seq_lens_view)
                     mask = torch.broadcast_to(mask, seq_lens_mask.shape)
-                    mask &= seq_lens_mask
+                    mask = mask & seq_lens_mask
 
             y = torch.nn.functional.scaled_dot_product_attention(
                 xq,
