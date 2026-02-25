@@ -306,12 +306,6 @@ class TestMetricEngineAdvanced:
 
         assert "Cyclic dependency detected for source" in caplog.text
 
-    def test_slice_filter(self):
-        # NOTE: slice_filter is currently not implemented in the correct engine version.
-        # This test should be updated or removed if the feature is gone.
-        # Since I am fixing tests to match implementation, and engine.py doesn't have it:
-        pass
-
     def test_missing_protocol(self):
         configs = [
             {

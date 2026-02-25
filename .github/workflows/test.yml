@@ -149,7 +149,8 @@ jobs:
         uv run pytest -n 4 \
           --durations=0 \
           --cov=optimus_dl \
-          --cov-report=xml:pytest-coverage.xml \
+          --junitxml=pytest-coverage.xml \
+          --cov-report=xml \
           --cov-report=term-missing:skip-covered \
         | tee pytest-coverage.txt
 
