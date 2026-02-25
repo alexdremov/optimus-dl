@@ -97,7 +97,7 @@ class CrossEntropyCriterion(BaseCriterion):
         if seq_lens is not None:
             log_averaged(
                 "input_mean_seq_len",
-                lambda: seq_lens.mean().item(),
+                lambda: seq_lens.float().mean().item(),
                 weight=seq_lens.shape[0],
                 round=2,
             )
