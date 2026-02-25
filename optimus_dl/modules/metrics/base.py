@@ -58,7 +58,7 @@ class MeterEntry:
             "meter_class": self.meter.__class__.__name__,
         }
 
-    def load_state_dict(self, state_dict: dict[str, Any]):
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Restore the `MeterEntry`'s state from a checkpoint.
 
         This method reconstructs the `BaseMeter` instance and restores its
@@ -243,7 +243,7 @@ class MeterGroup:
             "iteration_counter": self._iteration_counter,
         }
 
-    def load_state_dict(self, state_dict: dict[str, Any]):
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Restore the `MeterGroup` state from a checkpoint.
 
         Reconstructs the group's internal state, including all its meters
@@ -378,7 +378,7 @@ class BaseMeter(ABC):
         """
         return self.__dict__
 
-    def load_state_dict(self, state_dict: dict[str, Any]):
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Restore the internal meter state from a dictionary.
 
         By default, this updates `self.__dict__` with the provided `state_dict`.
@@ -514,7 +514,7 @@ def compute_metrics(
     return aggregated_metrics
 
 
-def step_metrics(name: str):
+def step_metrics(name: str) -> None:
     """Explicitly step the iteration counter for a named `MeterGroup`.
 
     This function allows external components to manually advance the iteration
@@ -530,7 +530,7 @@ def step_metrics(name: str):
         logger.debug(f"Attempted to step non-existent MeterGroup '{name}'.")
 
 
-def reset_metrics(name: str):
+def reset_metrics(name: str) -> None:
     """Reset all resettable meters within a named `MeterGroup`.
 
     This function triggers the `reset()` method on the specified `MeterGroup`,
@@ -561,7 +561,7 @@ def state_dict() -> dict[str, Any]:
     }
 
 
-def load_state_dict(state_dict: dict[str, Any]):
+def load_state_dict(state_dict: dict[str, Any]) -> None:
     """Restore the state for all managed `MeterGroup`s from a state dictionary.
 
     This function iterates through the provided `state_dict`, recreating

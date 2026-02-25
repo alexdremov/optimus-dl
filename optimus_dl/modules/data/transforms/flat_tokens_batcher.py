@@ -79,7 +79,7 @@ class FlatTokensBatcherNode(BaseNode):
     def next(self) -> Any:
         """Yield the next complete batch of tokens, filling from source as needed."""
         while len(self.buffer) < self.target_size:
-            self.buffer.extend(self.node.next()[self.cfg.field])
+            self.buffer.extend(next(self.node)[self.cfg.field])
 
         return_buff = self.buffer[: self.target_size]
         self.buffer = self.buffer[self.target_size :]

@@ -1,30 +1,22 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import (
-    dataclass,
-    field,
-)
-from typing import (
-    Any,
-)
+from dataclasses import dataclass, field
+from typing import Any
 from collections.abc import Callable
 
 import torch
 
 from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.metrics.base import (
-    BaseMeter,  # Changed from BaseMetric to BaseMeter
-)
-from optimus_dl.modules.metrics.base import (
-    log_metric,  # Ensure log_metric is imported from base
-)
-from optimus_dl.modules.metrics.base import (
+    BaseMeter,
+    log_metric,
     metrics_group,
+    compute_metrics,
 )
-from optimus_dl.modules.metrics.common import AverageMeter  # Changed from AverageMetric
-from optimus_dl.modules.metrics.common import SummedMeter  # Changed from SummedMetric
-from optimus_dl.modules.metrics.common import (  # Re-importing specific meters for local scope
+from optimus_dl.modules.metrics.common import (
+    AverageMeter,
+    SummedMeter,
     AveragedExponentMeter,
 )
 from optimus_dl.modules.metrics.definitions import (
@@ -39,7 +31,7 @@ from optimus_dl.modules.metrics.source import (
 logger = logging.getLogger(__name__)
 
 
-class GatherMetric(BaseMeter):  # Changed from BaseMetric to BaseMeter
+class GatherMetric(BaseMeter):
     """Accumulator that gathers all raw values across the entire dataset.
 
     Use this for meters that require full dataset context (e.g., BLEU, ROC-AUC).
@@ -50,297 +42,311 @@ class GatherMetric(BaseMeter):  # Changed from BaseMetric to BaseMeter
         self.values: list[Any] = []
 
     def log(self, value: Any):
-        """Logs a single value to be gathered.
-
-        Args:
-            value: The value to append to the internal list.
-        """
+        """Logs a single value to be gathered."""
         self.values.append(value)
 
     def compute(self) -> list[Any]:
-        """Returns the list of all gathered values.
-
-        Returns:
-            A list containing all values that have been logged.
-        """
+        """Returns the list of all gathered values."""
         return self.values
 
     def merge(self, other_state: dict[str, Any]):
-        """Merges the state from another GatherMetric instance.
-
-        Extends the current list of values with the values from `other_state`.
-
-        Args:
-            other_state: A dictionary containing the 'values' key from another
-                         GatherMetric instance.
-        """
+        """Merges the state from another GatherMetric instance."""
         self.values.extend(other_state["values"])
 
     def state_dict(self) -> dict[str, Any]:
-        """Returns the state of the GatherMetric for checkpointing.
-
-        Returns:
-            A dictionary containing the 'values' list.
-        """
+        """Returns the state of the GatherMetric for checkpointing."""
         return {"values": self.values}
 
     def load_state_dict(self, state_dict: dict[str, Any]):
-        """Restores the state of the GatherMetric from a state dictionary.
-
-        Args:
-            state_dict: A dictionary containing the 'values' key to restore from.
-        """
+        """Restores the state of the GatherMetric from a state dictionary."""
         self.values = state_dict["values"]
 
 
 @dataclass
 class EngineMetricConfig(RegistryConfigStrict):
-    """Configuration for a single Metric in the Engine.
-
-    This dataclass defines how a specific `Metric` (stateless logic) should be
-    configured within the `MetricEngine`. It specifies the `Metric` type,
-    how its sub-metrics should be accumulated, and optional filtering rules.
-
-    Attributes:
-        _name: The registered name of the component to instantiate. This field is
-               explicitly defined here as non-optional to satisfy dataclass
-               ordering rules, as `type` is also a non-default field.
-        type: Configuration for the `Metric` itself (e.g., AccuracyMetricConfig).
-              This should be a dictionary that can be used by `build_metric`.
-        accumulators: A mapping from sub-metric names (as emitted by `Metric.batch_call`)
-                      to accumulator types (e.g., 'average', 'sum', 'gather', 'perplexity').
-                      If a sub-metric is not specified here, it defaults to 'average'.
-        reset: If True, the meters associated with this metric will be reset
-               (removed from the group) after each logging step. Defaults to True.
-        priority: An integer priority for logging order. Lower numbers mean
-                  higher priority. Defaults to 100.
-        slice_filter: An optional Python expression (string) that is evaluated
-                      against the current `batch`. If the expression evaluates
-                      to False, the metric is skipped for that batch. This allows
-                      conditional metric computation.
-    """
-
-    _name: str = field(
-        metadata={"help": "The registered name of the component to instantiate."}
-    )  # Make it explicitly non-default and redefine to ensure proper order
+    """Configuration for a single Metric within a group."""
     type: dict[str, Any] = field(
+        default_factory=dict,
         metadata={"help": "Config for the Metric (e.g., AccuracyMetricConfig)."}
     )
-    accumulators: dict[str, str] = field(
+    role_mapping: dict[str, str] = field(
         default_factory=dict,
-        metadata={
-            "help": "Mapping from sub-metric names to accumulator types. Supported: 'average', 'sum', 'gather', 'perplexity'. Defaults to 'average' if not specified for a sub-metric."
-        },
+        metadata={"help": "Maps metric role requirements to source names in the group."}
     )
     reset: bool = field(
         default=True,
-        metadata={
-            "help": "Whether to reset the meters for this metric after each logging step."
-        },
+        metadata={"help": "Whether to reset the meters after each logging step."},
     )
     priority: int = field(
         default=100,
-        metadata={
-            "help": "Priority for ordering meters in logs (lower is higher priority)."
-        },
+        metadata={"help": "Priority for ordering meters in logs (lower is higher)."},
     )
     slice_filter: str | None = field(
         default=None,
-        metadata={
-            "help": "Optional Python expression to filter batches before computing this metric."
-        },
+        metadata={"help": "Optional Python expression to filter batches."},
     )
+
+
+class ParsedGroup:
+    """Internal representation of a validated metric group."""
+
+    def __init__(self, prefix: str):
+        self.prefix = prefix
+        self.sources: dict[str, MetricSource] = {}
+        self.metrics: list[tuple[Metric, EngineMetricConfig]] = []
 
 
 class MetricEngine:
     """Orchestrator for complex metric calculation and aggregation.
 
-    The `MetricEngine` is responsible for coordinating the entire metrics
-    pipeline. It manages:
-    - `MetricSource`s: Data producers that extract relevant information from
-      model outputs and batch inputs.
-    - `Metric`s: Stateless logic that defines how raw data from sources is
-      transformed into batch-level results.
-    - `BaseMeter`s (Accumulators): Stateful components that store and aggregate
-      these batch-level results until final computation.
-
-    It ensures lazy execution of sources, handles conditional metric computation
-    via `slice_filter`, and orchestrates distributed aggregation and finalization.
+    The `MetricEngine` coordinates `MetricSource`s (data producers) and
+    `Metric`s (stateless compute logic). It handles:
+    - Protocol Handshake: Ensuring sources provide the data metrics require.
+    - Lazy Evaluation: Executing each source at most once per batch across all groups via hash caching.
+    - Grouping: Allowing the same metric to run over different sources.
+    - Source Dependencies: Allowing sources to depend on other sources in the group.
     """
 
     def __init__(
         self,
         group_name: str,
-        metrics_configs: list[EngineMetricConfig],
-        source_configs: dict[str, dict[str, Any]],
+        configs: list[dict[str, Any]],
     ):
         """Initializes the MetricEngine.
 
         Args:
-            group_name: The name of the `MeterGroup` that this engine will operate within.
-                        All meters managed by this engine will belong to this group.
-            metrics_configs: A list of `EngineMetricConfig` objects, each defining
-                             a specific `Metric` to be managed by the engine.
-            source_configs: A dictionary mapping source names (strings) to their
-                            configuration dictionaries. These are used to build
-                            `MetricSource` instances.
+            group_name: The name of the `MeterGroup` (logging namespace).
+            configs: A list of configuration dicts.
         """
         self.group_name = group_name
-        self._sources: dict[str, MetricSource] = {
-            name: build_source(cfg) for name, cfg in source_configs.items()
-        }
+        self.groups: list[ParsedGroup] = []
 
-        self._metrics: dict[str, Metric] = {}
-        self._metric_configs: dict[str, EngineMetricConfig] = {}
+        self._parse_and_validate_configs(configs)
 
-        # Ensure a 'forward' source exists as it's commonly used.
-        if "forward" not in self._sources:
-            logger.debug(
-                "No 'forward' source configured. Adding default ForwardSource."
-            )
-            from optimus_dl.modules.metrics.source import ForwardSourceConfig
+    def _parse_and_validate_configs(self, configs: list[dict[str, Any]]):
+        """Parses configurations, builds sources/metrics, and performs handshakes."""
+        for idx, cfg in enumerate(configs):
+            if cfg.get("_name") == "source_group":
+                prefix = cfg.get("prefix", f"group_{idx}")
+                sources_dict = cfg.get("sources", {"default": {"_name": "causal_lm"}})
+                metrics_list = cfg.get("metrics", [])
+            else:
+                prefix = "default"
+                sources_dict = {"default": {"_name": "causal_lm"}}
+                metrics_list = [cfg]
 
-            self._sources["forward"] = build_source(ForwardSourceConfig())
+            group = ParsedGroup(prefix=prefix)
 
-        # Build all Metric instances based on configurations
-        for m_cfg in metrics_configs:
-            metric_impl = build_metric(m_cfg.type)
-            # The name for the metric logic is taken from its config's _name
-            name = m_cfg.type.get("_name") or metric_impl.__class__.__name__
-            if name in self._metrics:
-                logger.warning(
-                    f"Duplicate metric name '{name}' detected. Overwriting existing metric definition."
+            # 1. Build Sources
+            for role, s_cfg in sources_dict.items():
+                group.sources[role] = build_source(s_cfg)
+
+            # 2. Validate Source Dependencies (Internal Handshake)
+            for s_name, source in group.sources.items():
+                self._validate_handshake(
+                    component_name=s_name,
+                    component_requires=source.requires,
+                    available_sources=group.sources,
+                    role_mapping=getattr(source.cfg, 'dependencies', {}),
+                    group_prefix=prefix,
+                    component_type="Source"
                 )
-            self._metrics[name] = metric_impl
-            self._metric_configs[name] = m_cfg
 
-        self._source_cache: dict[str, Any] = (
-            {}
-        )  # Cache for lazy source execution results
+            # 3. Build Metrics and perform Protocol Handshake
+            for m_dict in metrics_list:
+                if "_name" not in m_dict and "type" in m_dict and "_name" in m_dict["type"]:
+                    m_dict["_name"] = m_dict["type"]["_name"]
+                elif "_name" not in m_dict:
+                     m_dict["_name"] = "unnamed_metric"
 
-    def update(self, model: torch.nn.Module, batch: dict[str, Any]):
-        """Runs sources and metrics for a given batch, updating internal accumulators.
+                m_cfg = EngineMetricConfig(**m_dict)
+                metric_impl = build_metric(m_cfg.type)
 
-        This method is typically called once per training/evaluation step.
-        It orchestrates the flow:
-        1. Clears the source cache.
-        2. Checks if logging is due for the current `MeterGroup`. If not, skips.
-        3. For each configured `Metric`:
-           a. Applies `slice_filter` if defined.
-           b. Lazily executes required `MetricSource`s and caches their results.
-           c. Calls the `Metric`'s stateless logic to get batch-level results.
-           d. Logs these results to the appropriate `BaseMeter` (accumulator).
+                self._validate_handshake(
+                    component_name=m_cfg.type.get('_name', 'unnamed_metric'),
+                    component_requires=metric_impl.requires,
+                    available_sources=group.sources,
+                    role_mapping=m_cfg.role_mapping,
+                    group_prefix=prefix,
+                    component_type="Metric"
+                )
+
+                group.metrics.append((metric_impl, m_cfg))
+
+            self.groups.append(group)
+
+    def _validate_handshake(
+        self,
+        component_name: str,
+        component_requires: dict[str, set[str]],
+        available_sources: dict[str, MetricSource],
+        role_mapping: dict[str, str],
+        group_prefix: str,
+        component_type: str
+    ):
+        """Validates that all dependencies and protocols for a component are met."""
+        for req_role, req_protocols in component_requires.items():
+            mapped_source_name = role_mapping.get(req_role, req_role)
+
+            if mapped_source_name not in available_sources:
+                raise ValueError(
+                    f"{component_type} '{component_name}' requires role '{req_role}' mapped to "
+                    f"'{mapped_source_name}', but it is not provided in group '{group_prefix}'."
+                )
+
+            provided_protocols = available_sources[mapped_source_name].provides
+            missing = req_protocols - provided_protocols
+            if missing:
+                raise ValueError(
+                    f"{component_type} handshake failed in group '{group_prefix}'. Source '{mapped_source_name}' "
+                    f"does not provide required protocols {missing} for {component_type.lower()} '{component_name}'."
+                )
+
+    def _eval_source(
+        self,
+        group: ParsedGroup,
+        source_name: str,
+        model: torch.nn.Module,
+        batch: dict[str, Any],
+        global_cache: dict[str, dict[str, Any]],
+        _evaluating: set[str] | None = None
+    ) -> dict[str, Any]:
+        """Recursively evaluates a source and its dependencies, using a global cross-group cache.
 
         Args:
-            model: The PyTorch model, typically in evaluation mode during metric computation.
-            batch: The current batch of data (e.g., from a DataLoader).
-        """
-        self._source_cache.clear()
+            group: The ParsedGroup containing the source.
+            source_name: The name of the source to evaluate within the group.
+            model: The PyTorch model being evaluated.
+            batch: The current batch of data.
+            global_cache: A dictionary caching results across all groups to prevent redundant computation.
+            _evaluating: Internal set used for cycle detection during recursive evaluation.
 
-        # Use the context manager to check if logging should occur
+        Returns:
+            A dictionary containing the source's provided protocols and their corresponding data.
+
+        Raises:
+            RuntimeError: If a cyclic dependency is detected between sources.
+            Exception: Re-raises any exception that occurs during source execution.
+        """
+        source = group.sources[source_name]
+        h = source.config_hash
+
+        # Cross-group cache hit
+        if h in global_cache:
+            if isinstance(global_cache[h], Exception):
+                raise global_cache[h]
+            return global_cache[h]
+
+        if _evaluating is None:
+            _evaluating = set()
+
+        if source_name in _evaluating:
+            raise RuntimeError(f"Cyclic dependency detected for source '{source_name}' in group '{group.prefix}'.")
+
+        _evaluating.add(source_name)
+
+        try:
+            # Evaluate dependencies first
+            deps_data: dict[str, dict[str, Any]] = {}
+            for req_role in source.requires:
+                mapped_dep_name = getattr(source.cfg, 'dependencies', {}).get(req_role, req_role)
+                try:
+                    deps_data[req_role] = self._eval_source(group, mapped_dep_name, model, batch, global_cache, _evaluating)
+                except Exception as e:
+                    # If a dependency fails, mark this as failed too
+                    global_cache[h] = e
+                    raise e
+
+            # Evaluate this source
+            try:
+                result = source(model, batch, deps_data)
+                global_cache[h] = result
+                return result
+            except Exception as e:
+                global_cache[h] = e
+                raise e
+        finally:
+            _evaluating.remove(source_name)
+
+    def update(self, model: torch.nn.Module, batch: dict[str, Any]):
+        """Runs sources and metrics for a given batch.
+
+        Args:
+            model: PyTorch model.
+            batch: Data dictionary.
+        """
         with metrics_group(self.group_name) as should_log:
             if not should_log:
-                return  # Skip if not a logging step
+                return
 
-            for name, metric in self._metrics.items():
-                m_cfg = self._metric_configs[name]
+            # Global cache for the entire batch. Keys are source config hashes.
+            global_source_cache: dict[str, Any] = {}
 
-                # 1. Filter Check: Skip metric computation for this batch if filter fails
-                if m_cfg.slice_filter:
-                    try:
-                        # eval() can be dangerous. Ensure filter expressions are trusted.
-                        if not eval(
-                            m_cfg.slice_filter,
-                            {"batch": batch, "torch": torch, "model": model},
-                        ):
-                            logger.debug(
-                                f"Metric '{name}' skipped for batch due to slice_filter."
-                            )
-                            continue
-                    except Exception as e:
-                        logger.error(
-                            f"Error evaluating slice_filter for metric '{name}': {e}. Skipping metric for this batch."
-                        )
-                        continue
+            for group in self.groups:
+                for metric, m_cfg in group.metrics:
+                    metric_name = m_cfg.type.get("_name") or metric.__class__.__name__
 
-                # 2. Gather Data (Lazy execution of sources)
-                sources_data: dict[str, Any] = {}
-                for source_name in metric.required_sources:
-                    if source_name not in self._sources:
-                        logger.error(
-                            f"Metric '{name}' requires source '{source_name}' but it is not configured. Skipping metric for this batch."
-                        )
-                        # This should ideally be caught during initialization or validation
-                        continue
-
-                    if source_name not in self._source_cache:
+                    if m_cfg.slice_filter:
                         try:
-                            # Execute source and cache result
-                            self._source_cache[source_name] = self._sources[
-                                source_name
-                            ](model, batch)
+                            if not eval(
+                                m_cfg.slice_filter,
+                                {"batch": batch, "torch": torch, "model": model},
+                            ):
+                                continue
                         except Exception as e:
                             logger.error(
-                                f"Error executing source '{source_name}' for metric '{name}': {e}. Skipping metric for this batch."
+                                f"Filter evaluation failed for '{metric_name}' in group '{group.prefix}': {e}"
                             )
-                            # Prevent further processing for this metric if its source fails
-                            self._source_cache[source_name] = None  # Mark as failed
                             continue
 
-                    if self._source_cache[source_name] is not None:
-                        sources_data[source_name] = self._source_cache[source_name]
-                    else:
-                        # Source failed in previous step, skip this metric
+                    sources_data: dict[str, dict[str, Any]] = {}
+                    execution_failed = False
+
+                    for req_role in metric.requires:
+                        mapped_source_name = m_cfg.role_mapping.get(req_role, req_role)
+                        try:
+                            sources_data[req_role] = self._eval_source(
+                                group, mapped_source_name, model, batch, global_source_cache
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"Source execution failed for role '{req_role}' "
+                                f"(mapped to '{mapped_source_name}') in group '{group.prefix}': {e}"
+                            )
+                            execution_failed = True
+                            break
+
+                    if execution_failed:
                         continue
 
-                # If any required source failed or was skipped, skip this metric
-                if len(sources_data) != len(metric.required_sources):
-                    logger.debug(
-                        f"Not all required sources available for metric '{name}'. Skipping for this batch."
-                    )
-                    continue
+                    try:
+                        batch_results = metric(batch, sources_data)
+                    except Exception as e:
+                        logger.error(
+                            f"Metric computation failed for '{metric_name}' in group '{group.prefix}': {e}"
+                        )
+                        continue
 
-                # 3. Compute raw results using the Metric's stateless logic
-                try:
-                    batch_results = metric(batch, sources_data)
-                except Exception as e:
-                    logger.error(
-                        f"Error computing batch results for metric '{name}': {e}. Skipping logging for this metric."
-                    )
-                    continue
+                    for sub_name, log_kwargs in batch_results.items():
+                        base_name = f"{metric_name}/{sub_name}" if sub_name != metric_name else metric_name
+                        full_name = f"{group.prefix}/{base_name}" if group.prefix != "default" else base_name
 
-                # 4. Log to stateful accumulators (Meters)
-                # Removed redundant imports here as they are now at the top of the file
-                for sub_name, log_kwargs in batch_results.items():
-                    # Construct full name: e.g., "Accuracy/top1" or just "Loss"
-                    full_name = f"{name}/{sub_name}" if sub_name != name else name
+                        acc_type = m_cfg.accumulators.get(sub_name) or metric.accumulators.get(sub_name, "average")
+                        factory = self._get_accumulator_factory(acc_type)
 
-                    acc_type = m_cfg.accumulators.get(sub_name, "average")
-                    factory = self._get_accumulator_factory(acc_type)
+                        log_metric(
+                            name=full_name,
+                            meter_factory=factory,
+                            reset=m_cfg.reset,
+                            priority=m_cfg.priority,
+                            **log_kwargs,
+                        )
 
-                    log_metric(
-                        name=full_name,
-                        meter_factory=factory,  # Changed to meter_factory
-                        reset=m_cfg.reset,
-                        priority=m_cfg.priority,
-                        **log_kwargs,
-                    )
-
-    def _get_accumulator_factory(
-        self, acc_type: str
-    ) -> Callable[[], BaseMeter]:  # Return type changed to BaseMeter
-        """Returns a factory function for creating a specific type of accumulator (Meter)."""
-        # Re-importing specific meters for local scope
-        # (already imported at file-level, but explicit here for clarity in this method's context)
-        # from optimus_dl.modules.metrics.common import (
-        #     AverageMeter,  # Changed from AverageMetric
-        #     SummedMeter,   # Changed from SummedMetric
-        #     AveragedExponentMeter,
-        # )
+    def _get_accumulator_factory(self, acc_type: str) -> Callable[[], BaseMeter]:
         if acc_type == "average":
-            return lambda: AverageMeter()  # Changed to AverageMeter
+            return lambda: AverageMeter()
         if acc_type == "sum":
-            return lambda: SummedMeter()  # Changed to SummedMeter
+            return lambda: SummedMeter()
         if acc_type == "gather":
             return lambda: GatherMetric()
         if acc_type == "perplexity":
@@ -348,69 +354,41 @@ class MetricEngine:
         raise ValueError(f"Unknown accumulator type: {acc_type}")
 
     def compute(
-        self, aggregate: bool = False, collective: Any | None = None
+        self, raw_results: dict[str, Any]
     ) -> dict[str, Any]:
-        """Aggregates meter data and runs finalization logic for each metric.
-
-        This method is called to get the final, reportable metric values
-        after accumulating data over several batches or an entire epoch.
-        It orchestrates:
-        1. Global aggregation of meter states (if `aggregate` is True).
-        2. Finalization of each `Metric` definition using the aggregated data.
-
-        Args:
-            aggregate: If True, meter states are aggregated across distributed
-                       ranks before finalization.
-            collective: The distributed collective for aggregation, required if
-                        `aggregate` is True.
-
-        Returns:
-            A dictionary where keys are finalized metric names (e.g., "Accuracy/top1")
-            and values are their computed results.
-        """
-        from optimus_dl.modules.metrics.base import (  # Ensure compute_metrics is imported from base
-            compute_metrics,
-        )
-
-        # First, compute results from all meters (locally or aggregated)
-        raw_results = compute_metrics(
-            self.group_name, aggregate=aggregate, collective=collective
-        )
-
+        """Runs finalization logic for each metric based on raw computed results."""
         final_report: dict[str, Any] = {}
-        for name, metric in self._metrics.items():
-            m_cfg = self._metric_configs[name]
 
-            # Collect all relevant meter data for this specific Metric definition
-            acc_data: dict[str, Any] = {}
-            # Iterate through the expected sub-metrics from the config, or assume the metric itself
-            # for simpler metrics that don't emit sub_names
-            configured_sub_metrics = m_cfg.accumulators.keys()
-            if (
-                not configured_sub_metrics and name in raw_results
-            ):  # Handle simple metrics without explicit sub_names
-                configured_sub_metrics = [name]
+        for group in self.groups:
+            for metric, m_cfg in group.metrics:
+                metric_name = m_cfg.type.get("_name") or metric.__class__.__name__
 
-            for sub_name in configured_sub_metrics:
-                full_name = f"{name}/{sub_name}" if sub_name != name else name
-                if full_name in raw_results:
-                    acc_data[sub_name] = raw_results[full_name]
-                else:
-                    logger.warning(
-                        f"Accumulated data for '{full_name}' not found for metric '{name}'. Skipping its finalization if required."
+                acc_data: dict[str, Any] = {}
+                # Use m_cfg.accumulators if provided, otherwise fallback to metric's defaults
+                configured_sub_metrics = m_cfg.accumulators.keys() if m_cfg.accumulators else metric.accumulators.keys()
+                expected_keys = configured_sub_metrics if configured_sub_metrics else [metric_name]
+
+                for sub_name in expected_keys:
+                    base_name = f"{metric_name}/{sub_name}" if sub_name != metric_name else metric_name
+                    full_name = f"{group.prefix}/{base_name}" if group.prefix != "default" else base_name
+
+                    if full_name in raw_results:
+                        acc_data[sub_name] = raw_results[full_name]
+
+                if not acc_data:
+                    continue
+
+                try:
+                    finalized = metric.finalize(acc_data)
+                except Exception as e:
+                    logger.error(
+                        f"Metric finalization failed for '{metric_name}' in group '{group.prefix}': {e}"
                     )
+                    continue
 
-            # Finalize the metric using the collected accumulator data
-            try:
-                finalized = metric.finalize(acc_data)
-            except Exception as e:
-                logger.error(
-                    f"Error finalizing metric '{name}' with data {acc_data}: {e}. Skipping its report."
-                )
-                continue
-
-            # Map finalized results back to the report
-            for k, v in finalized.items():
-                final_report[f"{name}/{k}" if k != name else name] = v
+                for k, v in finalized.items():
+                    base_name = f"{metric_name}/{k}" if k != metric_name else metric_name
+                    full_name = f"{group.prefix}/{base_name}" if group.prefix != "default" else base_name
+                    final_report[full_name] = v
 
         return final_report

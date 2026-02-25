@@ -204,6 +204,8 @@ class TrainingIterationMixin:
         train_data_iter: Iterator,
         training_context: dict[str, Any],
         lr_scheduler: Any | None = None,
+        metric_engine: Any | None = None,
+        eval_train_metrics: bool = False,
     ) -> None:
         """Execute one full training iteration, including gradient accumulation.
 
@@ -217,6 +219,8 @@ class TrainingIterationMixin:
             train_data_iter: Iterator yielding training batches.
             training_context: Dict with scaler, amp_ctx, etc.
             lr_scheduler: Optional learning rate scheduler.
+            metric_engine: Optional MetricEngine for complex metric computation.
+            eval_train_metrics: If True, evaluates MetricEngine metrics on training batches.
         """
         with metrics_group("train", log_freq=self.log_freq):
             optimizer.zero_grad()
@@ -236,6 +240,13 @@ class TrainingIterationMixin:
                 except Exception as e:
                     logger.error(f"Error getting batch: {e}")
                     continue
+
+                if metric_engine is not None and eval_train_metrics and is_last_microbatch:
+                    was_training = model.training
+                    model.eval()
+                    metric_engine.update(model, batch)
+                    if was_training:
+                        model.train()
 
                 with self.accumulation_context(model, is_last_microbatch):
                     forward_result = self.execute_forward_pass(

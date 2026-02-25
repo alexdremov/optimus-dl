@@ -78,11 +78,11 @@ class TestHuggingFaceDataset:
         dataset.reset()
 
         # Test iteration
-        first_item = dataset.next()
+        first_item = next(dataset)
         assert first_item == {"text": "first item"}
         assert dataset.position == 1
 
-        second_item = dataset.next()
+        second_item = next(dataset)
         assert second_item == {"text": "second item"}
         assert dataset.position == 2
 

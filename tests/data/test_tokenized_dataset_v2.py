@@ -198,7 +198,7 @@ class TestTokenizedDatasetV2(unittest.TestCase):
         dataset.reset()
 
         # Take 5 chunks
-        items1 = [dataset.next() for _ in range(5)]
+        items1 = [next(dataset) for _ in range(5)]
         state = dataset.get_state()
 
         # Resume
@@ -206,12 +206,12 @@ class TestTokenizedDatasetV2(unittest.TestCase):
         dataset2.reset(state)
 
         # Next 5
-        items2 = [dataset2.next() for _ in range(5)]
+        items2 = [next(dataset2) for _ in range(5)]
 
         # Continuous run
         dataset_full = TokenizedDataset(config, rank=0, world_size=1, seed=42)
         dataset_full.reset()
-        items_full = [dataset_full.next() for _ in range(10)]
+        items_full = [next(dataset_full) for _ in range(10)]
 
         # Compare
         for i in range(5):
@@ -236,7 +236,7 @@ class TestTokenizedDatasetV2(unittest.TestCase):
         )
         ds1 = TokenizedDataset(cfg1, rank=0, world_size=1, seed=42)
         ds1.reset()
-        tokens1 = ds1.next()["input_ids"]
+        tokens1 = next(ds1)["input_ids"]
 
         # Config 2: offset=True
         cfg2 = TokenizedDatasetConfig(
@@ -249,7 +249,7 @@ class TestTokenizedDatasetV2(unittest.TestCase):
         )
         ds2 = TokenizedDataset(cfg2, rank=0, world_size=1, seed=42)
         ds2.reset()
-        tokens2 = ds2.next()["input_ids"]
+        tokens2 = next(ds2)["input_ids"]
 
         # With high probability, tokens should differ because of shift
         # (unless offset happened to be 0)
@@ -289,7 +289,7 @@ class TestTokenizedDatasetV2(unittest.TestCase):
         found_multi = False
         for _ in range(10):
             try:
-                item = ds.next()
+                item = next(ds)
                 if len(item["seq_lens"]) > 1:
                     found_multi = True
                     # Check types

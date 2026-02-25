@@ -50,7 +50,7 @@ class TestBasicBatcher:
         config = BasicBatcherConfig(batch_size=4, pad_token_id=0)
         batcher_node = BasicBatcherNode(source, config)
 
-        batch = batcher_node.next()
+        batch = next(batcher_node)
 
         assert "input_ids" in batch
         assert "seq_lens" in batch
@@ -84,7 +84,7 @@ class TestBasicBatcher:
         config = BasicBatcherConfig(batch_size=2, pad_token_id=-1)  # Custom pad token
         batcher_node = BasicBatcherNode(source, config)
 
-        batch = batcher_node.next()
+        batch = next(batcher_node)
 
         assert isinstance(batch["input_ids"], np.ndarray)
 
@@ -107,7 +107,7 @@ class TestBasicBatcher:
         config = BasicBatcherConfig(batch_size=2, pad_token_id=99)
         batcher_node = BasicBatcherNode(source, config)
 
-        batch = batcher_node.next()
+        batch = next(batcher_node)
 
         # Output should be torch tensors
         assert isinstance(batch["input_ids"], torch.Tensor)
@@ -132,17 +132,17 @@ class TestBasicBatcher:
         batcher_node = BasicBatcherNode(source, config)
 
         # First batch
-        batch1 = batcher_node.next()
+        batch1 = next(batcher_node)
         assert batch1["input_ids"].shape == (2, 1)
 
         # Second (partial) batch
-        batch2 = batcher_node.next()
+        batch2 = next(batcher_node)
         assert batch2["input_ids"].shape == (1, 1)
         np.testing.assert_array_equal(batch2["input_ids"], np.array([[3]]))
 
         # Exhausted
         with pytest.raises(StopIteration):
-            batcher_node.next()
+            next(batcher_node)
 
     def test_custom_field_name(self):
         """Test that the batcher works with custom dictionary field names."""
@@ -154,7 +154,7 @@ class TestBasicBatcher:
         config = BasicBatcherConfig(batch_size=2, pad_token_id=0, field="custom_tokens")
         batcher_node = BasicBatcherNode(source, config)
 
-        batch = batcher_node.next()
+        batch = next(batcher_node)
 
         assert "custom_tokens" in batch
         assert "seq_lens" in batch
@@ -181,7 +181,7 @@ class TestBasicBatcher:
         batcher_node = BasicBatcherNode(source, config)
 
         # Consume first item
-        batcher_node.next()
+        next(batcher_node)
 
         # Save state
         state = batcher_node.get_state()
@@ -194,5 +194,5 @@ class TestBasicBatcher:
         new_batcher_node.reset(state)
 
         # Next item should be 2 (skipping 1)
-        batch = new_batcher_node.next()
+        batch = new_next(batcher_node)
         np.testing.assert_array_equal(batch["input_ids"], np.array([[2]]))

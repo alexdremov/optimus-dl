@@ -65,7 +65,7 @@ class BasicBatcherNode(BaseNode):
         # Collect batch_size items from the source node
         try:
             for _ in range(self.cfg.batch_size):
-                batch_items.append(self.node.next())
+                batch_items.append(next(self.node))
         except StopIteration:
             # Yield whatever we have collected so far as a final, smaller batch
             if not batch_items:

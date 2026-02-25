@@ -11,6 +11,8 @@ from typing import Any
 
 import torch.nn
 
+from optimus_dl.modules.metrics.source import StandardProtocols
+
 logger = logging.getLogger(__name__)
 
 
@@ -48,6 +50,15 @@ class BaseModel(torch.nn.Module):
     def __init__(self):
         """Initialize the base model."""
         super().__init__()
+
+    @property
+    def provides(self) -> set[str]:
+        """Returns the set of protocol strings this model natively provides.
+        
+        By default, language models return LOGITS. Subclasses can override this
+        if they provide additional or different protocols (like generations).
+        """
+        return {StandardProtocols.LOGITS}
 
     @classmethod
     def register_arch(cls, arch_name: str) -> Callable[[Callable[[], Any]], Any]:
@@ -103,3 +114,4 @@ class BaseModel(torch.nn.Module):
             **kwargs: Additional model-specific TP flags (e.g., sequence_parallel).
         """
         ...
+
