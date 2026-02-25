@@ -110,7 +110,7 @@ class WandbLogger(BaseMetricsLogger):
                 name=self.cfg.name or experiment_name,
                 group=self.cfg.group,
                 job_type=self.cfg.job_type,
-                tags=list(self.cfg.tags.keys()) if self.cfg.tags else None,
+                tags=list(self.cfg.tags) if self.cfg.tags else None,
                 notes=self.cfg.notes,
                 save_code=self.cfg.save_code,
                 config=config,

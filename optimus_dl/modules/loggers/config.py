@@ -15,5 +15,5 @@ class MetricsLoggerConfig(RegistryConfig):
     id: str = II("._name")
 
     # Optional experiment metadata
-    tags: dict[str, Any] | None = None
+    tags: list[str] | None = None
     notes: str | None = None
