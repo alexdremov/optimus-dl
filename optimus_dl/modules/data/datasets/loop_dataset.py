@@ -55,11 +55,11 @@ class LoopDataset(BaseDataset):
             raise ValueError("Inner dataset not initialized")
 
         try:
-            return self.inner_dataset.next()
+            return next(self.inner_dataset)
         except StopIteration:
             logger.info("Inner dataset exhausted, recreating loop...")
             self._build_inner()
-            return self.inner_dataset.next()
+            return next(self.inner_dataset)
 
     def reset(self, initial_state: dict | None = None):
         """Reset or restore the loop dataset state.

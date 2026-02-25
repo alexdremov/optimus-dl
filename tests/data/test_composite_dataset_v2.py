@@ -89,7 +89,7 @@ class TestCompositeDataset(unittest.TestCase):
         items = []
         try:
             while True:
-                items.append(dataset.next())
+                items.append(next(dataset))
         except StopIteration:
             pass
 
@@ -119,7 +119,7 @@ class TestCompositeDataset(unittest.TestCase):
         items = []
         try:
             for _ in range(10):  # Limit to avoid infinite loop if bug
-                items.append(dataset.next())
+                items.append(next(dataset))
         except StopIteration:
             pass
 
@@ -136,7 +136,7 @@ class TestCompositeDataset(unittest.TestCase):
         dataset.reset()
 
         # Consume some items
-        items_1 = [dataset.next() for _ in range(3)]
+        items_1 = [next(dataset) for _ in range(3)]
 
         # Save state
         state = dataset.get_state()
@@ -149,7 +149,7 @@ class TestCompositeDataset(unittest.TestCase):
         items_2 = []
         try:
             while True:
-                items_2.append(dataset2.next())
+                items_2.append(next(dataset2))
         except StopIteration:
             pass
 
@@ -167,20 +167,20 @@ class TestCompositeDataset(unittest.TestCase):
         dataset.reset()
 
         # Run N steps
-        [dataset.next() for _ in range(3)]
+        [next(dataset) for _ in range(3)]
 
         # Save state
         state = dataset.get_state()
 
         # Run M more steps (Path A)
-        continued_items = [dataset.next() for _ in range(4)]
+        continued_items = [next(dataset) for _ in range(4)]
 
         # Restore state
         dataset2 = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         dataset2.reset(state)
 
         # Run M more steps (Path B)
-        restored_items = [dataset2.next() for _ in range(4)]
+        restored_items = [next(dataset2) for _ in range(4)]
 
         self.assertEqual(
             continued_items,
@@ -199,7 +199,7 @@ class TestCompositeDataset(unittest.TestCase):
         # Since we don't know order, let's run until we see 3 items from ds2.
         count_ds2 = 0
         while count_ds2 < 3:
-            item = dataset.next()
+            item = next(dataset)
             if item >= 100:
                 count_ds2 += 1
 
@@ -217,7 +217,7 @@ class TestCompositeDataset(unittest.TestCase):
         # So let's consume ALL items.
         try:
             while True:
-                dataset.next()
+                next(dataset)
         except StopIteration:
             pass
 
@@ -249,7 +249,7 @@ class TestCompositeDataset(unittest.TestCase):
         # ds1 size 2. Consume 3 ds1 items.
         ds1_count = 0
         while ds1_count < 3:
-            item = dataset.next()
+            item = next(dataset)
             items.append(item)
             if item < 100:
                 ds1_count += 1
@@ -262,7 +262,7 @@ class TestCompositeDataset(unittest.TestCase):
         dataset2.reset(state)
 
         # Continue
-        dataset2.next()
+        next(dataset2)
 
         # Verify continuity?
         # Hard to verify strictly without knowing exact sequence, but it shouldn't crash.
@@ -286,7 +286,7 @@ class TestCompositeDataset(unittest.TestCase):
         items = []
         try:
             while True:
-                items.append(dataset.next())
+                items.append(next(dataset))
         except StopIteration:
             pass
 
@@ -297,7 +297,7 @@ class TestCompositeDataset(unittest.TestCase):
         # Train model with 2 datasets
         dataset = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         dataset.reset()
-        dataset.next()
+        next(dataset)
         state = dataset.get_state()
 
         # Create new config with 3 datasets
@@ -327,17 +327,17 @@ class TestCompositeDataset(unittest.TestCase):
         ds1 = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         ds1.reset()
         # Increased sample size to reduce collision probability
-        items1 = [ds1.next() for _ in range(8)]
+        items1 = [next(ds1) for _ in range(8)]
 
         # Run 2 (same seed)
         ds2 = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=42)
         ds2.reset()
-        items2 = [ds2.next() for _ in range(8)]
+        items2 = [next(ds2) for _ in range(8)]
 
         # Run 3 (diff seed)
         ds3 = CompositeDataset(self.comp_cfg, rank=0, world_size=1, seed=421)
         ds3.reset()
-        items3 = [ds3.next() for _ in range(8)]
+        items3 = [next(ds3) for _ in range(8)]
 
         self.assertEqual(items1, items2, "Same seed should produce same sequence")
         self.assertNotEqual(
@@ -358,7 +358,7 @@ class TestCompositeDataset(unittest.TestCase):
         items = []
         # Pull many more than capacity
         for _ in range(20):
-            items.append(dataset.next())
+            items.append(next(dataset))
 
         self.assertEqual(len(items), 20)
         # Verify we see items cycling
@@ -380,7 +380,7 @@ class TestCompositeDataset(unittest.TestCase):
         items = []
         try:
             while True:
-                items.append(dataset.next())
+                items.append(next(dataset))
         except StopIteration:
             pass
 
@@ -407,7 +407,7 @@ class TestCompositeDataset(unittest.TestCase):
         dataset.reset()
 
         n_samples = 2000
-        items = [dataset.next() for _ in range(n_samples)]
+        items = [next(dataset) for _ in range(n_samples)]
 
         count_ds1 = sum(1 for i in items if i < 10000)
         count_ds2 = sum(1 for i in items if i >= 10000)
@@ -456,7 +456,7 @@ class TestCompositeDataset(unittest.TestCase):
         items = []
         try:
             while True:
-                item = dataset.next()
+                item = next(dataset)
                 items.append(item["text"])
         except StopIteration:
             pass
@@ -483,7 +483,7 @@ class TestCompositeDataset(unittest.TestCase):
         items = []
         try:
             for _ in range(20):
-                items.append(dataset.next())
+                items.append(next(dataset))
         except StopIteration:
             pass
 
@@ -516,7 +516,7 @@ class TestCompositeDataset(unittest.TestCase):
         items = []
         # Consume enough to ensure ds2 exhausts and ds1 cycles multiple times
         for _ in range(50):
-            items.append(dataset.next())
+            items.append(next(dataset))
 
         ds2_items = [i for i in items if i >= 100]
         self.assertEqual(len(ds2_items), 2, "ds2 should stop yielding after 2 items")
@@ -542,12 +542,12 @@ class TestCompositeDataset(unittest.TestCase):
         # Consume until ds2 exhausted (seen 2 items)
         count_ds2 = 0
         while count_ds2 < 2:
-            item = dataset.next()
+            item = next(dataset)
             if item >= 100:
                 count_ds2 += 1
 
         for _ in range(10):
-            item = dataset.next()
+            item = next(dataset)
             self.assertTrue(
                 item < 100, "Should only yield ds1 items after ds2 exhausted"
             )
@@ -567,7 +567,7 @@ class TestCompositeDataset(unittest.TestCase):
 
         # Verify continued execution
         for _ in range(10):
-            item = dataset2.next()
+            item = next(dataset2)
             self.assertTrue(item < 100, "Restored dataset should only yield ds1 items")
 
 

@@ -423,6 +423,7 @@ class TrainRecipe(
                             aggregate=True,
                             collective=collective,
                         )
+
                         if collective.is_local_master:
                             pbar.set_postfix(current_metrics, refresh=False)
 

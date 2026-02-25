@@ -1,9 +1,12 @@
 from optimus_dl.core.bootstrap import bootstrap_module
 
 from .base import (
-    BaseMetric,
+    BaseMeter,
+    MeterEntry,
+    MeterGroup,
     compute_metrics,
     load_state_dict,
+    log_metric,
     metrics_group,
     reset_metrics,
     state_dict,
@@ -11,17 +14,16 @@ from .base import (
 )
 from .common import (
     AveragedExponentMeter,
-    AverageMetric,
-    FrequencyMetric,
+    AverageMeter,
+    FrequencyMeter,
     StopwatchMeter,
-    SummedMetric,
+    SummedMeter,
     cached_lambda,
     log_averaged,
     log_averaged_exponent,
     log_event_end,
     log_event_occurence,
     log_event_start,
-    log_metric,
     log_summed,
 )
 

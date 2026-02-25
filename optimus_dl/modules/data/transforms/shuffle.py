@@ -82,7 +82,7 @@ class ShuffleTransformNode(BaseNode):
         """Yield a randomly selected item from the shuffle buffer."""
         while len(self.buffer) < self.cfg.buffer_size and not self.terminated:
             try:
-                self.buffer.append(self.node.next())
+                self.buffer.append(next(self.node))
             except StopIteration:
                 self.terminated = True
                 break

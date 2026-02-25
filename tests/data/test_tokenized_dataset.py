@@ -168,7 +168,7 @@ class TestTokenizedDataset(unittest.TestCase):
 
         # Consume some documents
         num_to_consume = 5
-        consumed_items = [dataset.next() for _ in range(num_to_consume)]
+        consumed_items = [next(dataset) for _ in range(num_to_consume)]
 
         # Save state
         state = dataset.get_state()
@@ -186,7 +186,7 @@ class TestTokenizedDataset(unittest.TestCase):
         remaining_items = []
         try:
             while True:
-                remaining_items.append(dataset2.next())
+                remaining_items.append(next(dataset2))
         except StopIteration:
             pass
 
@@ -205,7 +205,7 @@ class TestTokenizedDataset(unittest.TestCase):
         dataset1 = TokenizedDataset(self.config, rank=0, world_size=1, seed=42)
         dataset1.reset()
 
-        [dataset1.next() for _ in range(self.total_docs_created // 3)]
+        [next(dataset1) for _ in range(self.total_docs_created // 3)]
 
         # Save state
         state = dataset1.get_state()
@@ -214,7 +214,7 @@ class TestTokenizedDataset(unittest.TestCase):
         items1_part2 = []
         try:
             while True:
-                items1_part2.append(dataset1.next())
+                items1_part2.append(next(dataset1))
         except StopIteration:
             pass
 
@@ -225,7 +225,7 @@ class TestTokenizedDataset(unittest.TestCase):
         items2_part2 = []
         try:
             while True:
-                items2_part2.append(dataset2.next())
+                items2_part2.append(next(dataset2))
         except StopIteration:
             pass
 
@@ -252,7 +252,7 @@ class TestTokenizedDataset(unittest.TestCase):
         dataset.reset()
 
         with pytest.raises(StopIteration):
-            dataset.next()
+            next(dataset)
 
     def test_data_corruption_lens_mismatch(self):
         # Create mock data but corrupt a lens file
@@ -281,7 +281,7 @@ class TestTokenizedDataset(unittest.TestCase):
 
         # Iterate until error or exhaustion
         with pytest.raises(RuntimeError, match="Data corruption"):
-            dataset.next()
+            next(dataset)
 
     def test_limit_parameter(self):
         self.config.limit = 10  # Limit to 10 documents
@@ -291,7 +291,7 @@ class TestTokenizedDataset(unittest.TestCase):
         doc_count = 0
         try:
             while True:
-                dataset.next()
+                next(dataset)
                 doc_count += 1
         except StopIteration:
             pass
@@ -306,5 +306,5 @@ class TestTokenizedDataset(unittest.TestCase):
         dataset = TokenizedDataset(config_str, rank=0, world_size=1, seed=42)
         dataset.reset()
 
-        item = dataset.next()
+        item = next(dataset)
         assert item["input_ids"].dtype == np.uint16

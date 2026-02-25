@@ -62,7 +62,7 @@ class ChunkTransformNode(BaseNode):
     def next(self):
         """Yield the next chunk of tokens, refilling the buffer if empty."""
         if len(self.buffer) == 0:
-            self.buffer = self.node.next()["input_ids"]
+            self.buffer = next(self.node)["input_ids"]
 
         taken = min(
             self.cfg.max_seq_len + (1 if self.cfg.add_one_for_shift else 0),
