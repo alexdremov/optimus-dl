@@ -84,12 +84,6 @@ class TrainRecipeConfig:
     eval_freq: int = field(
         default=100, metadata={"description": "Frequency of evaluations. Zero disables"}
     )
-    eval_train_metrics: bool = field(
-        default=False,
-        metadata={
-            "description": "Whether to compute MetricEngine metrics on training batches. This can be computationally expensive."
-        },
-    )
     # Checkpointing
     save_freq: int = field(
         default=II(".eval_freq"),
@@ -159,10 +153,6 @@ class TrainConfig(RegistryConfigStrict):
     # Metrics logging configuration
     loggers: list[MetricsLoggerConfig] | None = field(
         default=None, metadata={"description": "List of metrics logger configurations"}
-    )
-    metrics: list[dict] = field(
-        default_factory=list,
-        metadata={"description": "List of metric configurations for the MetricEngine"},
     )
 
     # Model transforms configuration
