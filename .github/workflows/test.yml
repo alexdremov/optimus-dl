@@ -146,10 +146,19 @@ jobs:
 
     - name: Test with pytest
       run: |
-        uv run pytest -n 2 --durations=0 --cov=optimus_dl --cov-report=xml --cov-report=term-missing | tee pytest-coverage.txt
+        uv run pytest -n 4 \
+          --durations=0 \
+          --cov=optimus_dl \
+          --cov-report=xml:pytest-coverage.xml \
+          --cov-report=term-missing:skip-covered \
+        | tee pytest-coverage.txt
 
     - name: Pytest coverage comment
-      uses: MishaKav/pytest-coverage-comment@main
+      uses: MishaKav/pytest-coverage-comment@v1.4.0
       with:
         pytest-coverage-path: ./pytest-coverage.txt
-        junitxml-path: ./pytest.xml
+        junitxml-path: ./pytest-coverage.xml
+        xml-skip-covered: true
+        remove-links-to-files: true
+        remove-links-to-lines: true
+
