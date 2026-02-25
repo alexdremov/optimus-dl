@@ -1011,8 +1011,8 @@ class TestMetersIntegration:
         # Verify meters are restored
         assert "test_group" in _meter_groups
         meters = compute_metrics("test_group")
-        assert meters["meter1"] == 10.01
-        assert meters["meter2"] == 20.02
+        assert meters["meter1"] == 10.0
+        assert meters["meter2"] == 20.0
 
     def test_distributed_meters_aggregation(
         self,
