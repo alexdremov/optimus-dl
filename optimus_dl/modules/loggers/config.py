@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Any
 
 from omegaconf import II
 
@@ -15,5 +14,5 @@ class MetricsLoggerConfig(RegistryConfig):
     id: str = II("._name")
 
     # Optional experiment metadata
-    tags: dict[str, Any] | None = None
+    tags: list[str] | None = None
     notes: str | None = None
