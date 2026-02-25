@@ -1,5 +1,6 @@
 from optimus_dl.core.bootstrap import bootstrap_module
 
+from . import sources
 from .base import (
     BaseMeter,
     MeterEntry,
@@ -25,6 +26,13 @@ from .common import (
     log_event_occurence,
     log_event_start,
     log_summed,
+)
+from .source import (
+    MetricSource,
+    MetricSourceConfig,
+    StandardProtocols,
+    build_metric_source,
+    register_metric_source,
 )
 
 bootstrap_module(__name__)

@@ -82,6 +82,7 @@ dev = [
     "ipython>=8.37.0",
     "isort>=6.0.1",
     "pytest>=8.4.1",
+    "pytest-cov>=6.0.0",
     "ruff>=0.14.10",
     "pytest-xdist>=3.6.0",
 ]

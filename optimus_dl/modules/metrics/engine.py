@@ -1,16 +1,11 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import (
-    dataclass,
-    field,
-)
 from typing import Any
 
-import torch
 
-from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.metrics.base import (
     BaseMeter,
     log_metric,
@@ -19,77 +14,19 @@ from optimus_dl.modules.metrics.base import (
 from optimus_dl.modules.metrics.common import (
     AveragedExponentMeter,
     AverageMeter,
+    GatherMeter,
     SummedMeter,
 )
-from optimus_dl.modules.metrics.definitions import (
+from optimus_dl.modules.metrics.metrics import (
     Metric,
     build_metric,
 )
 from optimus_dl.modules.metrics.source import (
     MetricSource,
-    build_source,
+    build_metric_source,
 )
 
 logger = logging.getLogger(__name__)
-
-
-class GatherMeter(BaseMeter):
-    """Accumulator that gathers all raw values across the entire dataset.
-
-    Use this for meters that require full dataset context (e.g., BLEU, ROC-AUC).
-    """
-
-    def __init__(self):
-        """Initializes the GatherMeter with an empty list to store values."""
-        self.values: list[Any] = []
-
-    def log(self, value: Any):
-        """Logs a single value to be gathered."""
-        self.values.append(value)
-
-    def compute(self) -> list[Any]:
-        """Returns the list of all gathered values."""
-        return self.values
-
-    def merge(self, other_state: dict[str, Any]):
-        """Merges the state from another GatherMeter instance."""
-        self.values.extend(other_state["values"])
-
-    def state_dict(self) -> dict[str, Any]:
-        """Returns the state of the GatherMeter for checkpointing."""
-        return {"values": self.values}
-
-    def load_state_dict(self, state_dict: dict[str, Any]):
-        """Restores the state of the GatherMeter from a state dictionary."""
-        self.values = state_dict["values"]
-
-
-@dataclass
-class EngineMetricConfig(RegistryConfigStrict):
-    """Configuration for a single Metric within a group."""
-
-    type: dict[str, Any] = field(
-        default_factory=dict,
-        metadata={"help": "Config for the Metric (e.g., AccuracyMetricConfig)."},
-    )
-    role_mapping: dict[str, str] = field(
-        default_factory=dict,
-        metadata={
-            "help": "Maps metric role requirements to source names in the group."
-        },
-    )
-    reset: bool = field(
-        default=True,
-        metadata={"help": "Whether to reset the meters after each logging step."},
-    )
-    priority: int = field(
-        default=100,
-        metadata={"help": "Priority for ordering meters in logs (lower is higher)."},
-    )
-    slice_filter: str | None = field(
-        default=None,
-        metadata={"help": "Optional Python expression to filter batches."},
-    )
 
 
 class ParsedGroup:
@@ -98,7 +35,18 @@ class ParsedGroup:
     def __init__(self, prefix: str):
         self.prefix = prefix
         self.sources: dict[str, MetricSource] = {}
-        self.metrics: list[tuple[Metric, EngineMetricConfig]] = []
+        self.metrics: list[Metric] = []
+
+    @property
+    def protocols_to_sources(self):
+        protocols_to_sources = defaultdict(list)
+        for source_name, source in self.sources.items():
+            for protocol in source.provides:
+                protocols_to_sources[protocol].append(source_name)
+        return {
+            protocol: list(sources)
+            for protocol, sources in protocols_to_sources.items()
+        }
 
 
 class MetricEngine:
@@ -133,90 +81,58 @@ class MetricEngine:
         for idx, cfg in enumerate(configs):
             if cfg.get("_name") == "source_group":
                 prefix = cfg.get("prefix", f"group_{idx}")
-                sources_dict = cfg.get("sources", {"default": {"_name": "causal_lm"}})
+                sources_dict = cfg.get("sources", {})
                 metrics_list = cfg.get("metrics", [])
             else:
-                prefix = "default"
-                sources_dict = {"default": {"_name": "causal_lm"}}
+                prefix = ""
+                sources_dict = {}
                 metrics_list = [cfg]
 
             group = ParsedGroup(prefix=prefix)
 
             # 1. Build Sources
             for role, s_cfg in sources_dict.items():
-                group.sources[role] = build_source(s_cfg)
+                group.sources[role] = build_metric_source(s_cfg)
 
             # 2. Validate Source Dependencies (Internal Handshake)
-            for s_name, source in group.sources.items():
+            for source in group.sources.values():
                 self._validate_handshake(
-                    component_name=s_name,
                     component_requires=source.requires,
                     available_sources=group.sources,
-                    role_mapping=getattr(source.cfg, "dependencies", {}),
-                    group_prefix=prefix,
-                    component_type="Source",
                 )
 
             # 3. Build Metrics and perform Protocol Handshake
             for m_dict in metrics_list:
-                if (
-                    "_name" not in m_dict
-                    and "type" in m_dict
-                    and "_name" in m_dict["type"]
-                ):
-                    m_dict["_name"] = m_dict["type"]["_name"]
-                elif "_name" not in m_dict:
-                    m_dict["_name"] = "unnamed_metric"
-
-                m_cfg = EngineMetricConfig(**m_dict)
-                metric_impl = build_metric(m_cfg.type)
+                metric_impl = build_metric(m_dict)
 
                 self._validate_handshake(
-                    component_name=m_cfg.type.get("_name", "unnamed_metric"),
                     component_requires=metric_impl.requires,
                     available_sources=group.sources,
-                    role_mapping=m_cfg.role_mapping,
-                    group_prefix=prefix,
-                    component_type="Metric",
                 )
 
-                group.metrics.append((metric_impl, m_cfg))
+                group.metrics.append(metric_impl)
 
             self.groups.append(group)
 
     def _validate_handshake(
         self,
-        component_name: str,
-        component_requires: dict[str, set[str]],
+        component_requires: set[str],
         available_sources: dict[str, MetricSource],
-        role_mapping: dict[str, str],
-        group_prefix: str,
-        component_type: str,
     ):
         """Validates that all dependencies and protocols for a component are met."""
-        for req_role, req_protocols in component_requires.items():
-            mapped_source_name = role_mapping.get(req_role, req_role)
+        available_protocols = set()
+        for source in available_sources.values():
+            available_protocols |= source.provides
 
-            if mapped_source_name not in available_sources:
-                raise ValueError(
-                    f"{component_type} '{component_name}' requires role '{req_role}' mapped to "
-                    f"'{mapped_source_name}', but it is not provided in group '{group_prefix}'."
-                )
-
-            provided_protocols = available_sources[mapped_source_name].provides
-            missing = req_protocols - provided_protocols
-            if missing:
-                raise ValueError(
-                    f"{component_type} handshake failed in group '{group_prefix}'. Source '{mapped_source_name}' "
-                    f"does not provide required protocols {missing} for {component_type.lower()} '{component_name}'."
-                )
+        missing = component_requires - available_protocols
+        if missing:
+            raise ValueError(f"Handshake failed: no required protocols {missing = }")
 
     def _eval_source(
         self,
         group: ParsedGroup,
         source_name: str,
-        model: torch.nn.Module,
-        batch: dict[str, Any],
+        data: dict[str, Any],
         global_cache: dict[str, dict[str, Any]],
         _evaluating: set[str] | None = None,
     ) -> dict[str, Any]:
@@ -225,8 +141,7 @@ class MetricEngine:
         Args:
             group: The ParsedGroup containing the source.
             source_name: The name of the source to evaluate within the group.
-            model: The PyTorch model being evaluated.
-            batch: The current batch of data.
+            data: The input data to pass to the source.
             global_cache: A dictionary caching results across all groups to prevent redundant computation.
             _evaluating: Internal set used for cycle detection during recursive evaluation.
 
@@ -251,21 +166,33 @@ class MetricEngine:
 
         if source_name in _evaluating:
             raise RuntimeError(
-                f"Cyclic dependency detected for source '{source_name}' in group '{group.prefix}'."
+                f"Cyclic dependency detected for source '{source_name}' in group '{group.prefix}'. {_evaluating = }"
             )
 
         _evaluating.add(source_name)
 
+        protocols_to_sources = group.protocols_to_sources
+
         try:
             # Evaluate dependencies first
             deps_data: dict[str, dict[str, Any]] = {}
-            for req_role in source.requires:
-                mapped_dep_name = getattr(source.cfg, "dependencies", {}).get(
-                    req_role, req_role
-                )
+
+            for req_protocol in source.requires:
                 try:
-                    deps_data[req_role] = self._eval_source(
-                        group, mapped_dep_name, model, batch, global_cache, _evaluating
+                    providers = protocols_to_sources[req_protocol]
+                    if len(providers) == 0:
+                        raise ValueError(
+                            f"No source provides the required protocol {req_protocol}"
+                        )
+
+                    provider = providers[0]
+
+                    deps_data[req_protocol] = self._eval_source(
+                        group=group,
+                        source_name=provider,
+                        data=data,
+                        global_cache=global_cache,
+                        _evaluating=_evaluating,
                     )
                 except Exception as e:
                     # If a dependency fails, mark this as failed too
@@ -274,7 +201,7 @@ class MetricEngine:
 
             # Evaluate this source
             try:
-                result = source(model, batch, deps_data)
+                result = source(deps_data, **data)
                 global_cache[h] = result
                 return result
             except Exception as e:
@@ -283,54 +210,43 @@ class MetricEngine:
         finally:
             _evaluating.remove(source_name)
 
-    def update(self, model: torch.nn.Module, batch: dict[str, Any]):
-        """Runs sources and metrics for a given batch.
+    def update(self, data: dict[str, Any]):
+        """Runs sources and metrics for a given data.
 
         Args:
-            model: PyTorch model.
-            batch: Data dictionary.
+            data: Data dictionary containing inputs for sources and metrics.
         """
-        with metrics_group(self.group_name) as should_log:
-            if not should_log:
-                return
-
+        with metrics_group(self.group_name, force_recreate=False):
             # Global cache for the entire batch. Keys are source config hashes.
             global_source_cache: dict[str, Any] = {}
 
             for group in self.groups:
-                for metric, m_cfg in group.metrics:
-                    metric_name = m_cfg.type.get("_name") or metric.__class__.__name__
+                protocols_to_sources = group.protocols_to_sources
 
-                    if m_cfg.slice_filter:
-                        try:
-                            if not eval(
-                                m_cfg.slice_filter,
-                                {"batch": batch, "torch": torch, "model": model},
-                            ):
-                                continue
-                        except Exception as e:
-                            logger.error(
-                                f"Filter evaluation failed for '{metric_name}' in group '{group.prefix}': {e}"
-                            )
-                            continue
+                for i, metric in enumerate(group.metrics):
+                    metric_name = metric.nested_name or f"metric_{i}"
 
                     sources_data: dict[str, dict[str, Any]] = {}
                     execution_failed = False
 
-                    for req_role in metric.requires:
-                        mapped_source_name = m_cfg.role_mapping.get(req_role, req_role)
+                    for req_protocol in metric.requires:
                         try:
-                            sources_data[req_role] = self._eval_source(
-                                group,
-                                mapped_source_name,
-                                model,
-                                batch,
-                                global_source_cache,
+                            providers = protocols_to_sources[req_protocol]
+                            if len(providers) == 0:
+                                raise ValueError(
+                                    f"No source provides the required protocol {req_protocol}"
+                                )
+
+                            provider = providers[0]
+                            sources_data[req_protocol] = self._eval_source(
+                                group=group,
+                                source_name=provider,
+                                data=data,
+                                global_cache=global_source_cache,
                             )
                         except Exception as e:
                             logger.error(
-                                f"Source execution failed for role '{req_role}' "
-                                f"(mapped to '{mapped_source_name}') in group '{group.prefix}': {e}"
+                                f"Source execution failed for the metric {metric} in group '{group.prefix}': {e}"
                             )
                             execution_failed = True
                             break
@@ -339,7 +255,7 @@ class MetricEngine:
                         continue
 
                     try:
-                        batch_results = metric(batch, sources_data)
+                        batch_results = metric(sources_data)
                     except Exception as e:
                         logger.error(
                             f"Metric computation failed for '{metric_name}' in group '{group.prefix}': {e}"
@@ -347,28 +263,44 @@ class MetricEngine:
                         continue
 
                     for sub_name, log_kwargs in batch_results.items():
-                        base_name = (
-                            f"{metric_name}/{sub_name}"
-                            if sub_name != metric_name
-                            else metric_name
-                        )
+                        is_internal = sub_name.startswith("_")
+                        base_name = f"{metric_name}/{sub_name}"
                         full_name = (
-                            f"{group.prefix}/{base_name}"
-                            if group.prefix != "default"
-                            else base_name
+                            f"{group.prefix}/{base_name}" if group.prefix else base_name
                         )
 
-                        acc_type = m_cfg.accumulators.get(
-                            sub_name
-                        ) or metric.accumulators.get(sub_name, "average")
+                        if is_internal:
+                            full_name = f"_internal/{full_name}"
+
+                        acc_type = metric.accumulators.get(sub_name)
+                        if acc_type is None:
+                            logger.warning(
+                                f"No accumulator defined for sub-metric '{sub_name}' in metric '{metric_name}'. Skipping."
+                            )
+                            continue
+
                         factory = self._get_accumulator_factory(acc_type)
+
+                        # Filter log_kwargs to only include arguments accepted by the meter's log method
+                        import inspect
+
+                        # We need an instance to inspect its log method
+                        temp_meter = factory()
+                        sig = inspect.signature(temp_meter.log)
+                        filtered_kwargs = {
+                            k: v
+                            for k, v in log_kwargs.items()
+                            if k in sig.parameters
+                            or any(
+                                p.kind == inspect.Parameter.VAR_KEYWORD
+                                for p in sig.parameters.values()
+                            )
+                        }
 
                         log_metric(
                             name=full_name,
                             meter_factory=factory,
-                            reset=m_cfg.reset,
-                            priority=m_cfg.priority,
-                            **log_kwargs,
+                            **filtered_kwargs,
                         )
 
     def _get_accumulator_factory(self, acc_type: str) -> Callable[[], BaseMeter]:
@@ -387,34 +319,25 @@ class MetricEngine:
         final_report: dict[str, Any] = {}
 
         for group in self.groups:
-            for metric, m_cfg in group.metrics:
-                metric_name = m_cfg.type.get("_name") or metric.__class__.__name__
+            for i, metric in enumerate(group.metrics):
+                metric_name = metric.nested_name or f"metric_{i}"
 
                 acc_data: dict[str, Any] = {}
-                # Use m_cfg.accumulators if provided, otherwise fallback to metric's defaults
-                configured_sub_metrics = (
-                    m_cfg.accumulators.keys()
-                    if m_cfg.accumulators
-                    else metric.accumulators.keys()
-                )
-                expected_keys = (
-                    configured_sub_metrics if configured_sub_metrics else [metric_name]
-                )
+                # Use metric.accumulators if provided, otherwise fallback to metric's defaults
+                expected_keys = metric.accumulators.keys()
 
                 for sub_name in expected_keys:
-                    base_name = (
-                        f"{metric_name}/{sub_name}"
-                        if sub_name != metric_name
-                        else metric_name
-                    )
+                    is_internal = sub_name.startswith("_")
+                    base_name = f"{metric_name}/{sub_name}"
                     full_name = (
-                        f"{group.prefix}/{base_name}"
-                        if group.prefix != "default"
-                        else base_name
+                        f"{group.prefix}/{base_name}" if group.prefix else base_name
                     )
 
+                    if is_internal:
+                        full_name = f"_internal/{full_name}"
+
                     if full_name in raw_results:
-                        acc_data[sub_name] = raw_results[full_name]
+                        acc_data[sub_name] = raw_results.pop(full_name)
 
                 if not acc_data:
                     continue
@@ -428,14 +351,15 @@ class MetricEngine:
                     continue
 
                 for k, v in finalized.items():
+                    if k.startswith("_"):
+                        continue
+
                     base_name = (
                         f"{metric_name}/{k}" if k != metric_name else metric_name
                     )
                     full_name = (
-                        f"{group.prefix}/{base_name}"
-                        if group.prefix != "default"
-                        else base_name
+                        f"{group.prefix}/{base_name}" if group.prefix else base_name
                     )
                     final_report[full_name] = v
 
-        return final_report
+        return raw_results | final_report

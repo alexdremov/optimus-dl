@@ -1,7 +1,10 @@
 """Evaluation mixin for evaluation functionality."""
 
 import logging
-from dataclasses import dataclass
+from dataclasses import (
+    dataclass,
+    field,
+)
 from typing import Any
 
 import torch
@@ -31,7 +34,12 @@ logger = logging.getLogger(__name__)
 class EvaluatorConfig(RegistryConfig):
     """Configuration for the Evaluator."""
 
-    pass
+    metrics: list[dict[str, Any]] = field(
+        default_factory=list,
+        metadata={
+            "description": "List of metric group configurations for MetricEngine"
+        },
+    )
 
 
 class Evaluator:
@@ -54,6 +62,7 @@ class Evaluator:
         eval_iterations: int | None = None,
         **kwargs: Any,
     ):
+        self.cfg = cfg
         self.eval_freq = eval_freq
         self.eval_iterations = eval_iterations
 
@@ -119,6 +128,13 @@ class Evaluator:
         total_metrics = {}
         for eval_name, eval_data in eval_data_dict.items():
             logger.info(f"Running evaluation {eval_name}")
+
+            engine = None
+            if hasattr(self.cfg, "metrics") and self.cfg.metrics:
+                from optimus_dl.modules.metrics.engine import MetricEngine
+
+                engine = MetricEngine(f"eval/{eval_name}", self.cfg.metrics)
+
             with (
                 torch.no_grad(),
                 metrics_group(f"eval/{eval_name}", log_freq=1, force_recreate=True),
@@ -135,7 +151,17 @@ class Evaluator:
                         log_event_occurence("perf/full_iteration")
 
                         elapsed_batch_get, batch = measured_next(eval_iter)
-                        criterion(model, batch)
+                        loss = criterion(model, batch)
+
+                        if engine:
+                            data = dict(
+                                model=model,
+                                batch=batch,
+                                criterion=criterion,
+                                loss=loss,
+                            )
+                            engine.update(data)
+
                         log_summed("num_batches", lambda: 1)
                         log_averaged(
                             "perf/batch_get",
@@ -157,6 +183,10 @@ class Evaluator:
                 aggregate=True,
                 collective=collective,
             )
+
+            if engine:
+                eval_metrics = engine.compute(eval_metrics)
+
             logger.info(f"Finished eval: {eval_metrics}")
             total_metrics[f"eval/{eval_name}"] = eval_metrics
         return total_metrics
