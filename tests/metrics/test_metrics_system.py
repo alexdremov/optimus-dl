@@ -497,7 +497,7 @@ class TestMeterEntry:
 
         assert entry.reset is True
         assert entry.priority == 5
-        assert isinstance(entry.meter, AverageMeter) and AverageMeter
+        assert isinstance(entry.meter, AverageMeter)
 
 
 class TestMeterGroup:

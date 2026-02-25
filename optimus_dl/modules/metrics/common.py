@@ -92,12 +92,9 @@ class AverageMeter(BaseMeter):
 
         Returns:
             Weighted average of all logged values, optionally rounded.
-
-        Raises:
-            ZeroDivisionError: If no values have been logged (count == 0).
         """
         if self.count == 0:
-            return 0  # Or raise an error, depending on desired behavior
+            return 0
         return safe_round(self.sum / self.count, self.round)
 
     def log(self, value: float | int, weight: float | int) -> None:

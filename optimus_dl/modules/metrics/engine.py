@@ -33,14 +33,14 @@ from optimus_dl.modules.metrics.source import (
 logger = logging.getLogger(__name__)
 
 
-class GatherMetric(BaseMeter):
+class GatherMeter(BaseMeter):
     """Accumulator that gathers all raw values across the entire dataset.
 
     Use this for meters that require full dataset context (e.g., BLEU, ROC-AUC).
     """
 
     def __init__(self):
-        """Initializes the GatherMetric with an empty list to store values."""
+        """Initializes the GatherMeter with an empty list to store values."""
         self.values: list[Any] = []
 
     def log(self, value: Any):
@@ -52,15 +52,15 @@ class GatherMetric(BaseMeter):
         return self.values
 
     def merge(self, other_state: dict[str, Any]):
-        """Merges the state from another GatherMetric instance."""
+        """Merges the state from another GatherMeter instance."""
         self.values.extend(other_state["values"])
 
     def state_dict(self) -> dict[str, Any]:
-        """Returns the state of the GatherMetric for checkpointing."""
+        """Returns the state of the GatherMeter for checkpointing."""
         return {"values": self.values}
 
     def load_state_dict(self, state_dict: dict[str, Any]):
-        """Restores the state of the GatherMetric from a state dictionary."""
+        """Restores the state of the GatherMeter from a state dictionary."""
         self.values = state_dict["values"]
 
 
@@ -377,7 +377,7 @@ class MetricEngine:
         if acc_type == "sum":
             return lambda: SummedMeter()
         if acc_type == "gather":
-            return lambda: GatherMetric()
+            return lambda: GatherMeter()
         if acc_type == "perplexity":
             return lambda: AveragedExponentMeter()
         raise ValueError(f"Unknown accumulator type: {acc_type}")

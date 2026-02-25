@@ -98,6 +98,21 @@ class MeterEntry:
 
         # Use getattr to fetch the meter class, then reconstruct it
         meter_cls = getattr(metrics, class_name)
+        legacy_class_name_map = {
+            "AverageMetric": "AverageMeter",
+            "SummedMetric": "SummedMeter",
+            "FrequencyMetric": "FrequencyMeter",
+            "BaseMetric": "BaseMeter",
+        }
+        mapped_class_name = legacy_class_name_map.get(class_name, class_name)
+        if mapped_class_name != class_name:
+            logger.info(
+                "Mapping legacy metric class '%s' to meter class '%s' when loading MeterEntry.",
+                class_name,
+                mapped_class_name,
+            )
+        # Use getattr to fetch the meter class, then reconstruct it
+        meter_cls = getattr(metrics, mapped_class_name)
         self.meter = meter_cls.from_state_dict(meter_state)
         self.reset = state_dict["reset"]
         self.priority = state_dict["priority"]
