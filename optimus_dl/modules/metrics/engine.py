@@ -5,7 +5,6 @@ from collections import defaultdict
 from collections.abc import Callable
 from typing import Any
 
-
 from optimus_dl.modules.metrics.base import (
     BaseMeter,
     log_metric,

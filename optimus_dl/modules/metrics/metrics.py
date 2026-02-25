@@ -12,7 +12,6 @@ from typing import (
     Any,
 )
 
-
 from optimus_dl.core.registry import (
     RegistryConfigStrict,
     make_registry,
