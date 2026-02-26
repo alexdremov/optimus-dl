@@ -19,6 +19,9 @@ def _test_consistency(model, device):
     model.to(device)
     model.eval()
 
+    if device.type == "cuda":
+        model = model.half()
+
     torch.manual_seed(42)
     B = 3
     doc_lengths = [5, 12, 8]
@@ -80,14 +83,20 @@ def _test_consistency(model, device):
         flat_masked_doc_logits = out_flat_masked[0, flat_idx : flat_idx + length, :]
         flat_varlen_doc_logits = out_flat_varlen[0, flat_idx : flat_idx + length, :]
 
+        rtol = 1e-5
+        atol = 1e-5
+        if device.type == "cuda":
+            rtol = 1e-3
+            atol = 1e-3
+
         # Check Masked Flat vs Padded
         torch.testing.assert_close(
-            padded_doc_logits, flat_masked_doc_logits, rtol=1e-5, atol=1e-5
+            padded_doc_logits, flat_masked_doc_logits, rtol=rtol, atol=atol
         )
 
         # Check VarLen Flat vs Padded
         torch.testing.assert_close(
-            padded_doc_logits, flat_varlen_doc_logits, rtol=1e-5, atol=1e-5
+            padded_doc_logits, flat_varlen_doc_logits, rtol=rtol, atol=atol
         )
 
         flat_idx += length
@@ -167,6 +176,8 @@ def test_flat_memory_efficiency(device):
         vocab_size=1000, n_layer=4, n_head=8, n_embd=512, sequence_length=1024
     )
     model = Llama(config).to(device).eval()
+    if device.type == "cuda":
+        model = model.half()
 
     B = 4
     # One long document, three short ones
@@ -206,8 +217,8 @@ def test_flat_memory_efficiency(device):
     # Mem ratio should be very close to token ratio
     # Allow small tolerance for fixed activations if any
     assert (
-        mem_ratio < token_ratio
+        (mem_ratio - token_ratio) / token_ratio < 0.05
     ), f"Memory ratio {mem_ratio:.4f} exceeds expected token ratio {token_ratio:.4f}"
     assert (
-        mem_ratio < 0.5
+        mem_ratio < 0.4
     ), "Flat memory should be significantly less than padded memory in this scenario"

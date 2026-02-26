@@ -119,6 +119,10 @@ class TestAttentionModesEquivalence:
         attn.eval()
 
         x_flat = d["x_flat"].to(device)
+        if device.type == "cuda":
+            x_flat = x_flat.half()  # Use FP16 on CUDA
+            attn = attn.half()
+
         freqs_cis = d["freqs_cis"].to(device)
         doc_ids = d["document_ids_flat"].to(device)
         pos_ids = d["position_ids_flat"].to(device)
