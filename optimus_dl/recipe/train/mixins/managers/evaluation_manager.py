@@ -224,7 +224,7 @@ class Evaluator:
                 eval_metrics["perf/ms_per_batch"] = (total_time / iterations) * 1000
 
             logger.info(f"Finished eval {eval_name}: {eval_metrics}")
-            total_metrics[eval_name] = eval_metrics
+            total_metrics[f"{metrics_prefix}/{eval_name}"] = eval_metrics
         return total_metrics
 
 
