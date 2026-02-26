@@ -43,7 +43,7 @@ class CausalLMSource(MetricSource):
         Args:
             dependencies: Data from required sources (none for this source).
             model: The model to run forward pass on.
-            batch: The input batch, expected to contain 'labels'.
+            batch: The input batch, expected to contain 'input_ids'.
             **kwargs: Additional arguments (like criterion if needed).
         """
         batch = copy.copy(batch)
