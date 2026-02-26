@@ -390,8 +390,16 @@ class RotarySelfAttention(nn.Module):
 
         enable_gqa = self.n_rep > 1
 
+        y = None
         if cu_seqlens is not None:
-            if VARLEN_ATTENTION_AVAILABLE and xq.is_cuda:
+            # We use varlen_attn only if:
+            # 1. It's available and we are on CUDA
+            # 2. We are NOT using a sliding window (varlen_attn usually doesn't support it)
+            if (
+                VARLEN_ATTENTION_AVAILABLE
+                and xq.is_cuda
+                and self.sliding_window is None
+            ):
                 # Flash Attention Varlen path
                 # Reshape to (total_tokens, n_heads, head_dim)
                 xq_varlen = xq.reshape(-1, self.n_head, self.head_dim)
@@ -417,9 +425,17 @@ class RotarySelfAttention(nn.Module):
                 )
                 # Reshape back to (B, T, n_heads, head_dim)
                 y = y.view(B, T, self.n_head, self.head_dim)
+            elif xq.is_cuda:
+                # On CUDA but cannot use varlen_attn (e.g. sliding window)
+                # Fallback to Flex Attention path by converting cu_seqlens to document_ids
+                if document_ids is None:
+                    document_ids = torch.zeros(1, T, dtype=torch.long, device=x.device)
+                    for i in range(len(cu_seqlens) - 1):
+                        document_ids[0, cu_seqlens[i] : cu_seqlens[i + 1]] = i
+                # By clearing cu_seqlens here, we'll enter the SDPA/Flex logic below
+                cu_seqlens = None
             else:
-                # CPU fallback path for testing and non-CUDA devices
-                # We need max_seqlen
+                # CPU path or no varlen_attn available: use the un-flattening fallback
                 max_q = (
                     max_seqlen
                     if max_seqlen is not None
@@ -428,7 +444,8 @@ class RotarySelfAttention(nn.Module):
                 y = self._varlen_attn_fallback(
                     xq, xk, xv, cu_seqlens=cu_seqlens, max_seqlen=max_q
                 )
-        else:
+
+        if y is None:
             # SDPA or Flex Attention path
             xq = xq.transpose(1, 2)
             xk = xk.transpose(1, 2)
