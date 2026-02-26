@@ -187,7 +187,7 @@ class LossMetric(Metric):
 
     @property
     def accumulators(self) -> dict[str, str]:
-        return {"accuracy": "average"}
+        return {"loss": "average"}
 
     def __call__(
         self, sources_data: dict[str, dict[str, Any]]
