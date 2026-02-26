@@ -155,6 +155,14 @@ class TrainConfig(RegistryConfigStrict):
         default=None, metadata={"description": "List of metrics logger configurations"}
     )
 
+    # Metrics configuration for MetricEngine, mapped by dataset name (e.g. 'train', 'val')
+    metrics: dict[str, list[dict]] = field(
+        default_factory=dict,
+        metadata={
+            "description": "Metric configurations mapped by dataset name (e.g., 'train', 'val_slice_1')"
+        },
+    )
+
     # Model transforms configuration
     model_transforms: list[ModelTransformConfig] = field(
         default_factory=list,

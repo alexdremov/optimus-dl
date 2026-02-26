@@ -16,6 +16,7 @@ from optimus_dl.core.registry import (
     RegistryConfigStrict,
     make_registry,
 )
+from optimus_dl.modules.metrics.source import StandardProtocols
 
 
 @dataclass
@@ -87,4 +88,127 @@ class Metric(ABC):
         """
         return {
             k: v for k, v in aggregated_data.items() if not k.startswith("_internal/")
+        }
+
+
+@dataclass
+class AccuracyMetricConfig(MetricConfig):
+    _name: str = "accuracy"
+
+
+@register_metric("accuracy", AccuracyMetricConfig)
+class AccuracyMetric(Metric):
+    """Computes Top-1 accuracy for classification tasks."""
+
+    @property
+    def requires(self) -> set[str]:
+        return {StandardProtocols.CLASSIFICATION}
+
+    def __call__(
+        self, sources_data: dict[str, dict[str, Any]]
+    ) -> dict[str, dict[str, Any]]:
+        classif = sources_data.get(StandardProtocols.CLASSIFICATION)
+        if not classif:
+            return {}
+
+        data = classif.get(StandardProtocols.CLASSIFICATION)
+        if not data:
+            return {}
+
+        preds = data["predictions"]
+        targets = data["targets"]
+        mask = data.get("mask")
+
+        correct = preds == targets
+        if mask is not None:
+            correct = correct & mask
+            total = mask.sum().item()
+        else:
+            total = targets.numel()
+
+        if total == 0:
+            return {}
+
+        return {"accuracy": {"value": correct.sum().item() / total, "weight": total}}
+
+
+@dataclass
+class PerplexityMetricConfig(MetricConfig):
+    _name: str = "perplexity"
+
+
+@register_metric("perplexity", PerplexityMetricConfig)
+class PerplexityMetric(Metric):
+    """Computes perplexity (exp(loss))."""
+
+    @property
+    def requires(self) -> set[str]:
+        return {StandardProtocols.LOSS}
+
+    @property
+    def accumulators(self) -> dict[str, str]:
+        return {"perplexity": "perplexity"}
+
+    def __call__(
+        self, sources_data: dict[str, dict[str, Any]]
+    ) -> dict[str, dict[str, Any]]:
+        loss_dict = sources_data.get(StandardProtocols.LOSS)
+        if not loss_dict:
+            return {}
+
+        loss = loss_dict.get(StandardProtocols.LOSS)
+        if loss is None:
+            return {}
+
+        weight = 1.0
+        classif = sources_data.get(StandardProtocols.CLASSIFICATION)
+        if classif:
+            data = classif.get(StandardProtocols.CLASSIFICATION)
+            if data and "mask" in data:
+                weight = data["mask"].sum().item()
+
+        return {
+            "perplexity": {
+                "value": loss.item() if hasattr(loss, "item") else loss,
+                "weight": weight,
+            }
+        }
+
+
+@dataclass
+class LossMetricConfig(MetricConfig):
+    _name: str = "loss"
+
+
+@register_metric("loss", LossMetricConfig)
+class LossMetric(Metric):
+    """Simple wrapper to report loss via MetricEngine."""
+
+    @property
+    def requires(self) -> set[str]:
+        return {StandardProtocols.LOSS}
+
+    def __call__(
+        self, sources_data: dict[str, dict[str, Any]]
+    ) -> dict[str, dict[str, Any]]:
+        loss_dict = sources_data.get(StandardProtocols.LOSS)
+        if not loss_dict:
+            return {}
+
+        loss = loss_dict.get(StandardProtocols.LOSS)
+        if loss is None:
+            return {}
+
+        weight = 1.0
+        classif = sources_data.get(StandardProtocols.CLASSIFICATION)
+        if classif:
+            data = classif.get(StandardProtocols.CLASSIFICATION)
+            if data and "mask" in data:
+                weight = data["mask"].sum().item()
+
+        return {
+            "loss": {
+                "value": loss.item() if hasattr(loss, "item") else loss,
+                "weight": weight,
+            }
         }

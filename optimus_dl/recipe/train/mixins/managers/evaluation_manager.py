@@ -3,7 +3,6 @@
 import logging
 from dataclasses import (
     dataclass,
-    field,
 )
 from typing import Any
 
@@ -34,12 +33,7 @@ logger = logging.getLogger(__name__)
 class EvaluatorConfig(RegistryConfig):
     """Configuration for the Evaluator."""
 
-    metrics: list[dict[str, Any]] = field(
-        default_factory=list,
-        metadata={
-            "description": "List of metric group configurations for MetricEngine"
-        },
-    )
+    pass
 
 
 class Evaluator:
@@ -73,6 +67,7 @@ class Evaluator:
         criterion: BaseCriterion,
         eval_data: dict[str, Any],
         collective: Any = None,
+        all_metrics_configs: dict[str, list[dict]] | None = None,
     ) -> None | dict:
         """Run evaluation if the current iteration matches the frequency.
 
@@ -82,6 +77,7 @@ class Evaluator:
             criterion: The loss function.
             eval_data: Dictionary mapping dataset names to dataloaders.
             collective: Distributed collective for metric aggregation.
+            all_metrics_configs: Root metrics configuration from TrainConfig.
 
         Returns:
             Dictionary of computed metrics if evaluation ran, else None.
@@ -96,6 +92,7 @@ class Evaluator:
                 eval_data_dict=eval_data,
                 max_iterations=self.eval_iterations,
                 collective=collective,
+                all_metrics_configs=all_metrics_configs,
             )
         except Exception as e:
             logger.error(f"Evaluation failed: {e}")
@@ -108,6 +105,7 @@ class Evaluator:
         eval_data_dict: dict,
         max_iterations: int | None = None,
         collective: Any = None,
+        all_metrics_configs: dict[str, list[dict]] | None = None,
     ):
         """Execute the evaluation loop for all provided datasets.
 
@@ -120,20 +118,26 @@ class Evaluator:
             eval_data_dict: Dictionary of {name: dataloader}.
             max_iterations: Limit on number of batches.
             collective: Distributed collective.
+            all_metrics_configs: Root metrics configuration mapping dataset names to configs.
 
         Returns:
             Nested dictionary of results: {dataset_name: {metric_name: value}}.
         """
         model.eval()
         total_metrics = {}
+        all_metrics_configs = all_metrics_configs or {}
+
         for eval_name, eval_data in eval_data_dict.items():
             logger.info(f"Running evaluation {eval_name}")
 
             engine = None
-            if hasattr(self.cfg, "metrics") and self.cfg.metrics:
+            requested_protocols = None
+            dataset_metrics = all_metrics_configs.get(eval_name)
+            if dataset_metrics:
                 from optimus_dl.modules.metrics.engine import MetricEngine
 
-                engine = MetricEngine(f"eval/{eval_name}", self.cfg.metrics)
+                engine = MetricEngine(f"eval/{eval_name}", dataset_metrics)
+                requested_protocols = engine.required_external_protocols
 
             with (
                 torch.no_grad(),
@@ -144,23 +148,23 @@ class Evaluator:
                 eval_iter = iter(eval_data)
                 iterations = 0
                 try:
-                    # Note: We assume consistent number of batches across workers.
-                    # If workers have different number of batches, they might hang waiting for each other
-                    # during distributed metric aggregation if not handled correctly.
                     while max_iterations is None or iterations < max_iterations:
                         log_event_occurence("perf/full_iteration")
 
                         elapsed_batch_get, batch = measured_next(eval_iter)
-                        loss = criterion(model, batch)
+                        loss, exposed = criterion(
+                            model, batch, requested_protocols=requested_protocols
+                        )
 
                         if engine:
-                            data = dict(
-                                model=model,
-                                batch=batch,
-                                criterion=criterion,
-                                loss=loss,
+                            # Efficiency: Pass precomputed results (logits, classification, loss)
+                            # to avoid redundant forward pass in engine sources.
+                            computed_data = exposed.copy()
+                            computed_data["loss"] = loss
+                            engine.update(
+                                data=dict(model=model, batch=batch),
+                                computed_data=computed_data,
                             )
-                            engine.update(data)
 
                         log_summed("num_batches", lambda: 1)
                         log_averaged(
@@ -187,7 +191,7 @@ class Evaluator:
             if engine:
                 eval_metrics = engine.compute(eval_metrics)
 
-            logger.info(f"Finished eval: {eval_metrics}")
+            logger.info(f"Finished eval {eval_name}: {eval_metrics}")
             total_metrics[f"eval/{eval_name}"] = eval_metrics
         return total_metrics
 

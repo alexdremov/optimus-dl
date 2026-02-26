@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from unittest.mock import MagicMock
 
 import torch
-import pytest
 
 from optimus_dl.modules.metrics.base import (
     _active_meter_groups,
@@ -17,7 +16,6 @@ from optimus_dl.modules.metrics.metrics import (
 from optimus_dl.modules.metrics.source import (
     MetricSource,
     MetricSourceConfig,
-    StandardProtocols,
     register_metric_source,
 )
 from optimus_dl.modules.metrics.sources import (
@@ -94,43 +92,6 @@ class DummyMetric(Metric):
         return {"dummy_metric": {"value": val, "weight": 1.0}}
 
 
-@dataclass
-class AccuracyMetricConfig(MetricConfig):
-    _name: str = "accuracy"
-
-
-@register_metric("accuracy", AccuracyMetricConfig)
-class AccuracyMetric(Metric):
-    @property
-    def requires(self) -> set[str]:
-        return {StandardProtocols.LOGITS, StandardProtocols.LABELS}
-
-    def __call__(self, sources_data):
-        logits_dict = sources_data.get(StandardProtocols.LOGITS)
-        labels_dict = sources_data.get(StandardProtocols.LABELS)
-
-        if not logits_dict or not labels_dict:
-            return {}
-
-        logits = logits_dict.get(StandardProtocols.LOGITS)
-        labels = labels_dict.get(StandardProtocols.LABELS)
-
-        if logits is None or labels is None:
-            return {}
-
-        # Simple accuracy for testing
-        preds = logits.argmax(dim=-1)
-
-        # Handle shape mismatch if labels are not shifted but logits are (or vice versa)
-        if preds.shape != labels.shape:
-            min_s = min(preds.shape[1], labels.shape[1])
-            preds = preds[:, :min_s]
-            labels = labels[:, :min_s]
-
-        correct = (preds == labels).float()
-        return {"accuracy": {"value": correct.mean().item(), "weight": 1.0}}
-
-
 class TestMetricEngineAdvanced:
     def setup_method(self):
         _meter_groups.clear()
@@ -178,8 +139,9 @@ class TestMetricEngineAdvanced:
         results = engine.compute(raw_results)
 
         # 5 * 3 = 15
-        assert "test/metric_0/dummy_metric" in results
-        assert results["test/metric_0/dummy_metric"] == 15.0
+        # Descriptive naming: 'test/dummy_metric'
+        assert "test/dummy_metric" in results
+        assert results["test/dummy_metric"] == 15.0
 
     def test_cross_group_caching(self):
         # We will use a mock model to count forward passes
@@ -238,8 +200,8 @@ class TestMetricEngineAdvanced:
         # CausalLMSource returns logits for length-1 sequence if we shift labels.
         # Let's mock model to return logits already matching labels length.
         logits = torch.zeros(1, 2, 10)
-        logits[0, 0, 2] = 10.0  # Predicts 2
-        logits[0, 1, 4] = 10.0  # Predicts 4
+        logits[0, 0, 2] = 10.0  # Pos 0 -> Target 2
+        logits[0, 1, 4] = 10.0  # Pos 1 -> Target 3 (so incorrect)
 
         model = MagicMock()
         model.return_value = {"logits": logits}
@@ -251,8 +213,10 @@ class TestMetricEngineAdvanced:
         raw_results = compute_metrics("test_group", aggregate=False)
         results = engine.compute(raw_results)
 
-        # Accuracy = 1 / 2 = 0.5
-        assert results["metric_0/accuracy"] == 0.5
+        # Accuracy should be 0.5 (1/2)
+        # Descriptive naming: 'accuracy' (no prefix, _name == accuracy == sub_name)
+        assert "accuracy" in results
+        assert results["accuracy"] == 0.5
 
     def test_cyclic_dependency_detection(self, caplog):
         @dataclass
@@ -318,8 +282,10 @@ class TestMetricEngineAdvanced:
             }
         ]
 
-        with pytest.raises(ValueError, match="Handshake failed"):
-            MetricEngine("test_group", configs)
+        # Use required_external_protocols check instead of just raises ValueError on init
+        # because we changed init to only debug log missing protocols.
+        engine = MetricEngine("test_group", configs)
+        assert "dep_proto" in engine.required_external_protocols
 
     def test_metric_finalize(self):
         """Test metrics that use the finalize method for post-aggregation logic."""
@@ -383,19 +349,20 @@ class TestMetricEngineAdvanced:
 
         raw_results = compute_metrics("finalize_group", aggregate=False)
 
-        # Verify raw results contain the sums
-        assert "test/metric_0/sum_a" in raw_results
-        assert raw_results["test/metric_0/sum_a"] == 30.0
-        assert raw_results["test/metric_0/sum_b"] == 2.0
+        # Verify raw results contain the sums. Descriptive naming: 'test/finalize_metric/sum_a'
+        assert "test/finalize_metric/sum_a" in raw_results
+        assert raw_results["test/finalize_metric/sum_a"] == 30.0
+        assert "test/finalize_metric/sum_b" in raw_results
+        assert raw_results["test/finalize_metric/sum_b"] == 2.0
 
         # Run engine compute
         final_results = engine.compute(raw_results)
 
         # Verify finalized ratio: 30 / 2 = 15
-        assert "test/metric_0/ratio" in final_results
-        assert final_results["test/metric_0/ratio"] == 15.0
+        assert "test/finalize_metric/ratio" in final_results
+        assert final_results["test/finalize_metric/ratio"] == 15.0
         # sum_a and sum_b should be gone as they were consumed by compute
-        assert "test/metric_0/sum_a" not in final_results
+        assert "test/finalize_metric/sum_a" not in final_results
 
     def test_internal_metrics(self):
         """Test that metrics starting with _ are handled as internal."""
@@ -439,16 +406,16 @@ class TestMetricEngineAdvanced:
         # Internal metrics are stored under _internal/ prefix in the MeterGroup
         raw_results = compute_metrics("internal_group", aggregate=False)
 
-        assert "test/metric_0/public" in raw_results
-        assert "_internal/test/metric_0/_internal" in raw_results
-        assert raw_results["test/metric_0/public"] == 5.0
-        assert raw_results["_internal/test/metric_0/_internal"] == 10.0
+        assert "test/internal_metric/public" in raw_results
+        assert "_internal/test/internal_metric/_internal" in raw_results
+        assert raw_results["test/internal_metric/public"] == 5.0
+        assert raw_results["_internal/test/internal_metric/_internal"] == 10.0
 
         # Compute should keep public and filter out internal if finalize filters them
         # (Default Metric.finalize filters k.startswith('_'))
         final_results = engine.compute(raw_results)
 
-        assert "test/metric_0/public" in final_results
-        assert "test/metric_0/_internal" not in final_results
+        assert "test/internal_metric/public" in final_results
+        assert "test/internal_metric/_internal" not in final_results
         # The raw _internal/ key should be gone as it was consumed by compute
-        assert "_internal/test/metric_0/_internal" not in raw_results
+        assert "_internal/test/internal_metric/_internal" not in raw_results

@@ -21,9 +21,8 @@ class StandardProtocols:
     """Standardized string constants for common metric data protocols."""
 
     LOGITS = "logits"
-    LABELS = "labels"
     LOSS = "loss"
-    GENERATED_IDS = "generated_ids"
+    GENERATED_TOKENS = "generated_tokens"
     CLASSIFICATION = "classification"
 
 

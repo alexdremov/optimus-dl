@@ -125,7 +125,22 @@ class MetricEngine:
 
         missing = component_requires - available_protocols
         if missing:
-            raise ValueError(f"Handshake failed: no required protocols {missing = }")
+            logger.debug(
+                f"Handshake missing protocols: {missing}. These must be provided via 'computed_data' during update."
+            )
+
+    @property
+    def required_external_protocols(self) -> set[str]:
+        """Returns the set of protocols required by metrics but not provided by internal sources."""
+        external = set()
+        for group in self.groups:
+            internal_provides = set()
+            for source in group.sources.values():
+                internal_provides |= source.provides
+
+            for metric in group.metrics:
+                external |= metric.requires - internal_provides
+        return external
 
     def _eval_source(
         self,
@@ -209,26 +224,41 @@ class MetricEngine:
         finally:
             _evaluating.remove(source_name)
 
-    def update(self, data: dict[str, Any]):
-        """Runs sources and metrics for a given data.
+    def update(self, data: dict[str, Any], computed_data: dict[str, Any] | None = None):
+        """Runs sources and metrics for a given batch.
 
         Args:
-            data: Data dictionary containing inputs for sources and metrics.
+            data: Data dictionary containing inputs for sources (model, batch).
+            computed_data: Optional dictionary mapping protocol names to already computed data.
+                This allows reusing results (like logits) to avoid redundant forward passes.
         """
         with metrics_group(self.group_name, force_recreate=False):
             # Global cache for the entire batch. Keys are source config hashes.
             global_source_cache: dict[str, Any] = {}
 
+            # Seed cache with computed data if provided
+            computed_data = computed_data or {}
+
             for group in self.groups:
                 protocols_to_sources = group.protocols_to_sources
 
                 for i, metric in enumerate(group.metrics):
-                    metric_name = metric.nested_name or f"metric_{i}"
+                    metric_name = metric.nested_name or getattr(
+                        metric.cfg, "_name", f"metric_{i}"
+                    )
 
                     sources_data: dict[str, dict[str, Any]] = {}
                     execution_failed = False
 
                     for req_protocol in metric.requires:
+                        # 1. Try precomputed data first
+                        if req_protocol in computed_data:
+                            sources_data[req_protocol] = {
+                                req_protocol: computed_data[req_protocol]
+                            }
+                            continue
+
+                        # 2. Fallback to source evaluation
                         try:
                             providers = protocols_to_sources[req_protocol]
                             if len(providers) == 0:
@@ -263,7 +293,11 @@ class MetricEngine:
 
                     for sub_name, log_kwargs in batch_results.items():
                         is_internal = sub_name.startswith("_")
-                        base_name = f"{metric_name}/{sub_name}"
+                        base_name = (
+                            f"{metric_name}/{sub_name}"
+                            if metric_name != sub_name
+                            else metric_name
+                        )
                         full_name = (
                             f"{group.prefix}/{base_name}" if group.prefix else base_name
                         )
@@ -319,7 +353,9 @@ class MetricEngine:
 
         for group in self.groups:
             for i, metric in enumerate(group.metrics):
-                metric_name = metric.nested_name or f"metric_{i}"
+                metric_name = metric.nested_name or getattr(
+                    metric.cfg, "_name", f"metric_{i}"
+                )
 
                 acc_data: dict[str, Any] = {}
                 # Use metric.accumulators if provided, otherwise fallback to metric's defaults
@@ -327,7 +363,11 @@ class MetricEngine:
 
                 for sub_name in expected_keys:
                     is_internal = sub_name.startswith("_")
-                    base_name = f"{metric_name}/{sub_name}"
+                    base_name = (
+                        f"{metric_name}/{sub_name}"
+                        if metric_name != sub_name
+                        else metric_name
+                    )
                     full_name = (
                         f"{group.prefix}/{base_name}" if group.prefix else base_name
                     )

@@ -390,6 +390,13 @@ class TrainRecipe(
 
         train_data_iter = iter(train_datapipeline.dataloader)
 
+        # Setup training metric engine if config exists
+        train_metric_engine = None
+        if self.cfg.metrics and "train" in self.cfg.metrics:
+            from optimus_dl.modules.metrics.engine import MetricEngine
+
+            train_metric_engine = MetricEngine("train", self.cfg.metrics["train"])
+
         collective.barrier()
         logger.info("All ranks are ready")
 
@@ -413,6 +420,7 @@ class TrainRecipe(
                     train_data_iter=train_data_iter,
                     training_context=training_context,
                     lr_scheduler=lr_scheduler,
+                    metric_engine=train_metric_engine,
                 )
 
                 with metrics_group("train") as should_log:
@@ -423,6 +431,10 @@ class TrainRecipe(
                             aggregate=True,
                             collective=collective,
                         )
+                        if train_metric_engine:
+                            current_metrics = train_metric_engine.compute(
+                                current_metrics
+                            )
 
                         if collective.is_local_master:
                             pbar.set_postfix(current_metrics, refresh=False)
@@ -448,6 +460,7 @@ class TrainRecipe(
                             if v is not None
                         },
                         collective=collective,
+                        all_metrics_configs=self.cfg.metrics,
                     )
                 if metrics and collective.is_master:
                     for eval_name, eval_metrics in metrics.items():

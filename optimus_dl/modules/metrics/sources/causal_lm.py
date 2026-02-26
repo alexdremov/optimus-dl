@@ -1,5 +1,8 @@
+import copy
 from dataclasses import dataclass
 from typing import Any
+
+import torch
 
 from optimus_dl.modules.metrics.source import (
     MetricSource,
@@ -14,16 +17,20 @@ class CausalLMSourceConfig(MetricSourceConfig):
     """Configuration for CausalLMSource."""
 
     _name: str = "causal_lm"
+    padding_token_id: int = -100
 
 
 @register_metric_source("causal_lm", CausalLMSourceConfig)
 class CausalLMSource(MetricSource):
     """Source for Causal LM that extracts logits and labels from the model and batch."""
 
+    cfg: CausalLMSourceConfig
+
     @property
     def provides(self) -> set[str]:
-        return {StandardProtocols.LOGITS, StandardProtocols.LABELS}
+        return {StandardProtocols.LOGITS, StandardProtocols.CLASSIFICATION}
 
+    @torch.no_grad()
     def __call__(
         self,
         dependencies: dict[str, dict[str, Any]],
@@ -39,8 +46,13 @@ class CausalLMSource(MetricSource):
             batch: The input batch, expected to contain 'labels'.
             **kwargs: Additional arguments (like criterion if needed).
         """
-        # Run model forward pass
-        output = model(batch)
+        batch = copy.copy(batch)
+        input_ids = batch.pop("input_ids")
+        batch["input_ids"] = input_ids[:, :-1]
+
+        output = model(**batch)
+
+        targets = input_ids[:, 1:]
 
         # Handle different output types (dict, Namespace, or raw Tensor)
         if isinstance(output, dict):
@@ -50,14 +62,20 @@ class CausalLMSource(MetricSource):
         else:
             logits = output  # Assume it's the logits tensor
 
-        # Extract labels from batch
-        labels = None
-        if isinstance(batch, dict):
-            labels = batch.get("labels")
-        elif hasattr(batch, "labels"):
-            labels = batch.labels
+        mask = targets != self.cfg.padding_token_id
+        if "seq_lens" in batch:
+            mask = mask & (
+                torch.arange(mask.shape[1], device=mask.device)
+                < batch["seq_lens"][:, None]
+            )
+
+        classification = dict(
+            predictions=logits.argmax(dim=-1),
+            targets=targets,
+            mask=mask,
+        )
 
         return {
             StandardProtocols.LOGITS: logits,
-            StandardProtocols.LABELS: labels,
+            StandardProtocols.CLASSIFICATION: classification,
         }
