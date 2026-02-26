@@ -1,9 +1,5 @@
 from optimus_dl.core.bootstrap import bootstrap_module
 
-from . import (
-    metrics,
-    sources,
-)
 from .base import (
     BaseMeter,
     MeterEntry,

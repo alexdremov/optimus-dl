@@ -29,10 +29,6 @@ from optimus_dl.core.registry import (
 )
 from optimus_dl.modules.distributed import Collective
 from optimus_dl.modules.lr_scheduler import BaseLRScheduler
-from optimus_dl.modules.metrics import (
-    load_state_dict as metrics_load_state_dict,
-    state_dict as metrics_state_dict,
-)
 from optimus_dl.modules.model.base import BaseModel
 
 from .load_strategy import LoadStrategy
@@ -301,6 +297,11 @@ class CheckpointManager:
         ), "Data loaders should be passed separately"
         assert "metrics" not in kwargs_states, "Metrics should be passed separately"
         logger.info("Saving data loaders and metrics")
+
+        from optimus_dl.modules.metrics import (
+            state_dict as metrics_state_dict,
+        )
+
         per_rank_metadata = {
             "data_loaders": {
                 k: v.state_dict() for k, v in (data_loaders or {}).items()
@@ -480,6 +481,10 @@ class CheckpointManager:
             )
 
         if "metrics" in per_rank_metadata and load_strategy.load_metrics:
+            from optimus_dl.modules.metrics import (
+                load_state_dict as metrics_load_state_dict,
+            )
+
             metrics_load_state_dict(per_rank_metadata["metrics"])
             logger.info("Restoring metrics")
         else:
