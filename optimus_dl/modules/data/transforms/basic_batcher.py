@@ -19,37 +19,46 @@ class BasicBatcherConfig(RegistryConfigStrict):
     """Configuration for basic token batching with dynamic padding.
 
     Attributes:
-        batch_size: Number of sequences per batch.
+        batch_size: Maximum number of sequences per batch. If None, only max_tokens limit is used.
+        max_tokens: Maximum total number of tokens per batch. If None, only batch_size limit is used.
         pad_token_id: The token ID used to pad sequences to the maximum length.
         field: The dictionary key containing the tokens (defaults to input_ids).
         flatten: If True, yields a single flat sequence of shape (1, sum(lengths)) instead of (B, max_len).
     """
 
-    batch_size: int = MISSING
+    batch_size: int | None = None
+    max_tokens: int | None = None
     pad_token_id: int = MISSING
     field: str = "input_ids"
     flatten: bool = False
+
+    def __post_init__(self):
+        if self.batch_size is None and self.max_tokens is None:
+            raise ValueError("Either batch_size or max_tokens must be specified.")
 
 
 class BasicBatcherNode(BaseNode):
     """Internal node for performing dynamic padding and batching.
 
-    Accumulates sequences from the source node up to the specified batch size,
-    finds the maximum sequence length within that batch, and pads all sequences
-    to match that length. Also records the original unpadded sequence lengths.
+    Accumulates sequences from the source node up to the specified batch size
+    or token limit, finds the maximum sequence length within that batch,
+    and pads all sequences to match that length (or flattens them).
     """
 
     def __init__(self, node: BaseNode, cfg: BasicBatcherConfig, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cfg = cfg
         self.node = node
+        self._peeked_item = None
 
     def reset(self, initial_state: dict | None = None):
         """Restore source node state."""
         super().reset(initial_state)
+        self._peeked_item = None
         if initial_state:
             self.cfg = initial_state["cfg"]
             self.node.reset(initial_state["source_state"])
+            self._peeked_item = initial_state.get("_peeked_item")
         else:
             self.node.reset()
 
@@ -58,20 +67,52 @@ class BasicBatcherNode(BaseNode):
         return {
             "cfg": self.cfg,
             "source_state": self.node.state_dict(),
+            "_peeked_item": self._peeked_item,
         }
 
     def next(self) -> dict[str, Any]:
         """Yield the next complete batch of padded tokens and their original lengths."""
         batch_items = []
+        current_tokens = 0
+        current_count = 0
 
-        # Collect batch_size items from the source node
-        try:
-            for _ in range(self.cfg.batch_size):
-                batch_items.append(next(self.node))
-        except StopIteration:
-            # Yield whatever we have collected so far as a final, smaller batch
-            if not batch_items:
-                raise
+        # Collect items from the source node
+        while True:
+            # Check if we reached batch_size limit
+            if self.cfg.batch_size is not None and current_count >= self.cfg.batch_size:
+                break
+
+            # Get next item (either peeked or from source)
+            try:
+                if self._peeked_item is not None:
+                    item = self._peeked_item
+                    self._peeked_item = None
+                else:
+                    item = next(self.node)
+            except StopIteration:
+                if not batch_items:
+                    raise
+                break
+
+            seq_len = len(item[self.cfg.field])
+
+            # Check if we reached max_tokens limit
+            if self.cfg.max_tokens is not None:
+                # If adding this sequence exceeds max_tokens, but we already have items,
+                # save it for next batch and stop.
+                if current_tokens + seq_len > self.cfg.max_tokens:
+                    if batch_items:
+                        self._peeked_item = item
+                        break
+                    else:
+                        # Single item exceeds max_tokens, yield it anyway as a single-item batch
+                        # (standard behavior for token-based batchers to avoid deadlocks)
+                        batch_items.append(item)
+                        break
+
+            batch_items.append(item)
+            current_tokens += seq_len
+            current_count += 1
 
         # Extract sequence data
         seqs = [item[self.cfg.field] for item in batch_items]

@@ -5,7 +5,6 @@ from dataclasses import (
 from typing import Any
 
 import numpy as np
-from omegaconf import MISSING
 from torchdata.nodes.base_node import BaseNode
 
 from optimus_dl.core.registry import RegistryConfigStrict
@@ -21,17 +20,19 @@ class FlatTokensBatcherConfig(RegistryConfigStrict):
     """Configuration for token aggregation and batching.
 
     Attributes:
-        batch_size: Number of sequences per batch.
-        seq_len: Sequence length for each sample.
+        batch_size: Number of sequences per batch. Required if max_tokens is None.
+        seq_len: Sequence length for each sample. Required if max_tokens is None.
+        max_tokens: Total number of tokens per batch. If provided, overrides batch_size * seq_len.
         worker_cfg: Configuration for map workers (not used directly by batcher).
         field: The dictionary key containing the tokens (defaults to input_ids).
-        add_one_for_shift: If True, yields seq_len + 1 tokens per sample.
+        add_one_for_shift: If True, yields seq_len + 1 tokens per sample (only if max_tokens is None).
         mask_documents: If True, tracks document boundaries and emits document_ids/position_ids.
         flatten: If True, yields a single flat sequence of shape (1, B*T) instead of (B, T).
     """
 
-    batch_size: int = MISSING
-    seq_len: int = MISSING
+    batch_size: int | None = None
+    seq_len: int | None = None
+    max_tokens: int | None = None
     worker_cfg: MapperConfig = field(
         default_factory=MapperConfig,
     )
@@ -39,6 +40,13 @@ class FlatTokensBatcherConfig(RegistryConfigStrict):
     add_one_for_shift: bool = True
     mask_documents: bool = False
     flatten: bool = False
+
+    def __post_init__(self):
+        if self.max_tokens is None:
+            if self.batch_size is None or self.seq_len is None:
+                raise ValueError(
+                    "Either max_tokens or both batch_size and seq_len must be specified."
+                )
 
 
 class FlatTokensBatcherNode(BaseNode):
@@ -60,6 +68,9 @@ class FlatTokensBatcherNode(BaseNode):
     @property
     def target_size(self):
         """Calculate total number of tokens needed for one batch."""
+        if self.cfg.max_tokens is not None:
+            return self.cfg.max_tokens
+
         return self.cfg.batch_size * (
             self.cfg.seq_len + (1 if self.cfg.add_one_for_shift else 0)
         )
