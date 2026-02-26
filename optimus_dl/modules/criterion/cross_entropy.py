@@ -273,16 +273,28 @@ class CrossEntropyCriterion(BaseCriterion):
         device = t.device
         dtype = t.dtype
         num_docs = len(cu_seqlens) - 1
+        total_tokens = int(cu_seqlens[-1].item())
 
-        # Prepare output buffer (batch, max_time, ...)
-        out = torch.full(
-            (num_docs, max_seqlen, *t.shape[2:]), pad_val, device=device, dtype=dtype
+        # seqlens of each document
+        seqlens = cu_seqlens[1:] - cu_seqlens[:-1]
+
+        # Batch index for each token: [0,0,0, 1,1, 2,2,2,2, ...]
+        batch_idx = torch.repeat_interleave(
+            torch.arange(num_docs, device=device), seqlens.to(torch.long)
         )
 
-        for i in range(num_docs):
-            start, end = cu_seqlens[i].item(), cu_seqlens[i + 1].item()
-            length = end - start
-            out[i, :length] = t[0, start:end]
+        # Local index for each token: [0,1,2, 0,1, 0,1,2,3, ...]
+        # Global index minus sequence start index
+        local_idx = torch.arange(total_tokens, device=device) - torch.repeat_interleave(
+            cu_seqlens[:-1].to(torch.long), seqlens.to(torch.long)
+        )
+
+        # Prepare output buffer (batch, max_time, ...)
+        out_shape = (num_docs, max_seqlen, *t.shape[2:])
+        out = torch.full(out_shape, pad_val, device=device, dtype=dtype)
+
+        # Vectorized assignment: out[batch_idx, local_idx] = t[0, :total_tokens]
+        out[batch_idx, local_idx] = t[0]
 
         return out
 
