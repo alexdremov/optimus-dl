@@ -207,7 +207,7 @@ class MetricEngine:
                         data=data,
                         global_cache=global_cache,
                         _evaluating=_evaluating,
-                    )
+                    )[req_protocol]
                 except Exception as e:
                     # If a dependency fails, mark this as failed too
                     global_cache[h] = e
@@ -255,9 +255,7 @@ class MetricEngine:
                     for req_protocol in metric.requires:
                         # 1. Try precomputed data first
                         if req_protocol in computed_data:
-                            sources_data[req_protocol] = {
-                                req_protocol: computed_data[req_protocol]
-                            }
+                            sources_data[req_protocol] = computed_data[req_protocol]
                             continue
 
                         # 2. Fallback to source evaluation
@@ -274,9 +272,9 @@ class MetricEngine:
                                 source_name=provider,
                                 data=data,
                                 global_cache=global_source_cache,
-                            )
+                            )[req_protocol]
                         except Exception as e:
-                            logger.error(
+                            logger.exception(
                                 f"Source execution failed for the metric {metric} in group '{group.prefix}': {e}"
                             )
                             execution_failed = True
@@ -288,7 +286,7 @@ class MetricEngine:
                     try:
                         batch_results = metric(sources_data)
                     except Exception as e:
-                        logger.error(
+                        logger.exception(
                             f"Metric computation failed for '{metric_name}' in group '{group.prefix}': {e}"
                         )
                         continue
@@ -370,7 +368,7 @@ class MetricEngine:
                 try:
                     finalized = metric.finalize(acc_data)
                 except Exception as e:
-                    logger.error(
+                    logger.exception(
                         f"Metric finalization failed for '{metric_name}' in group '{group.prefix}': {e}"
                     )
                     continue
