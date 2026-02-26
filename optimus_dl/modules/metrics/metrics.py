@@ -102,6 +102,10 @@ class AccuracyMetric(Metric):
     def requires(self) -> set[str]:
         return {StandardProtocols.CLASSIFICATION}
 
+    @property
+    def accumulators(self) -> dict[str, str]:
+        return {"accuracy": "average"}
+
     def __call__(
         self, sources_data: dict[str, dict[str, Any]]
     ) -> dict[str, dict[str, Any]]:
@@ -177,6 +181,10 @@ class LossMetric(Metric):
     @property
     def requires(self) -> set[str]:
         return {StandardProtocols.LOSS}
+
+    @property
+    def accumulators(self) -> dict[str, str]:
+        return {"accuracy": "average"}
 
     def __call__(
         self, sources_data: dict[str, dict[str, Any]]
