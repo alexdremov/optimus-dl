@@ -3,7 +3,6 @@ from dataclasses import (
 )
 from unittest.mock import MagicMock
 
-
 from optimus_dl.modules.metrics.base import (
     _active_meter_groups,
     _meter_groups,
