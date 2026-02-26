@@ -57,6 +57,12 @@ def setup_logging(
 
     handlers = []
 
+    is_interactive = sys.stdout.isatty()
+
+    # Override use_rich if we are not in a real terminal
+    if not is_interactive:
+        use_rich = False
+
     # Console handler setup
     if use_rich:
         # Rich handler for beautiful console output
