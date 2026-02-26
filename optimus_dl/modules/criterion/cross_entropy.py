@@ -112,29 +112,33 @@ class CrossEntropyCriterion(BaseCriterion):
                 if isinstance(v, torch.Tensor) and v.ndim >= 2 and v.shape[1] == T:
                     batch[k] = v[:, :-1]
 
-        if not (B == 1 and "cu_seqlens" in batch):
+        # Log sequence statistics accurately for all schemes
+        if "cu_seqlens" in batch:
+            # Packed/Flat batch: metadata already adjusted for shifting
+            cu = batch["cu_seqlens"]
+            doc_lens = (cu[1:] - cu[:-1]).float()
+            log_averaged("input_max_seq_len", doc_lens.max().item(), round=2)
             log_averaged(
-                "input_max_seq_len",
-                batch["input_ids"].shape[1],
+                "input_mean_seq_len",
+                lambda: doc_lens.mean().item(),
+                weight=len(doc_lens),
                 round=2,
             )
-        seq_lens = batch.get("seq_lens")
-        # For flat batches (B=1), mean seq len is just the total length, which is logged above
-        if seq_lens is not None:
-            if B == 1 and "cu_seqlens" in batch:
-                log_averaged(
-                    "input_mean_seq_len",
-                    batch["input_ids"].shape[1],
-                    weight=len(batch["cu_seqlens"]),
-                    round=2,
-                )
-            else:
-                log_averaged(
-                    "input_mean_seq_len",
-                    lambda: seq_lens.float().mean().item(),
-                    weight=seq_lens.shape[0],
-                    round=2,
-                )
+        elif "seq_lens" in batch:
+            # Padded batch: lengths represent un-shifted sequences, we adjust here
+            sl = (batch["seq_lens"] - 1).float()
+            log_averaged("input_max_seq_len", sl.max().item(), round=2)
+            log_averaged(
+                "input_mean_seq_len",
+                lambda: sl.mean().item(),
+                weight=sl.shape[0],
+                round=2,
+            )
+        else:
+            # Fixed-size batch
+            current_T = batch["input_ids"].shape[1]
+            log_averaged("input_max_seq_len", current_T, round=2)
+            log_averaged("input_mean_seq_len", current_T, weight=B, round=2)
 
         model_out = model(**batch)
         logits = model_out["logits"]
@@ -224,6 +228,7 @@ class CrossEntropyCriterion(BaseCriterion):
         ):
             with torch.no_grad():
                 is_flat = B == 1 and "cu_seqlens" in batch
+                current_seq_lens = batch.get("seq_lens")
 
                 if StandardProtocols.LOGITS in requested_protocols:
                     res_logits = logits
@@ -242,11 +247,11 @@ class CrossEntropyCriterion(BaseCriterion):
 
                     # Base mask for valid tokens
                     res_mask = res_targets != self.padding_token_id
-                    # Refine mask for padded batches if seq_lens is available
-                    if not is_flat and seq_lens is not None:
+                    # Refine mask for padded batches if current_seq_lens is available
+                    if not is_flat and current_seq_lens is not None:
                         res_mask = res_mask & (
                             torch.arange(res_mask.shape[1], device=res_mask.device)
-                            < seq_lens[:, None]
+                            < current_seq_lens[:, None]
                         )
 
                     if is_flat:

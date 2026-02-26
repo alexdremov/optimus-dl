@@ -32,10 +32,6 @@ class BasicBatcherConfig(RegistryConfigStrict):
     field: str = "input_ids"
     flatten: bool = False
 
-    def __post_init__(self):
-        if self.batch_size is None and self.max_tokens is None:
-            raise ValueError("Either batch_size or max_tokens must be specified.")
-
 
 class BasicBatcherNode(BaseNode):
     """Internal node for performing dynamic padding and batching.
@@ -50,6 +46,11 @@ class BasicBatcherNode(BaseNode):
         self.cfg = cfg
         self.node = node
         self._peeked_item = None
+
+        if self.cfg.batch_size is None and self.cfg.max_tokens is None:
+            raise ValueError(
+                "Either batch_size or max_tokens must be specified in BasicBatcherConfig."
+            )
 
     def reset(self, initial_state: dict | None = None):
         """Restore source node state."""

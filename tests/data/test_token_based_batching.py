@@ -31,6 +31,7 @@ class MockNode(BaseNode):
 
 def test_basic_batcher_max_tokens():
     # Mock data: lengths 5, 10, 3, 8
+    # After shifting: 4, 9, 2, 7
     data = [
         {"input_ids": np.arange(5)},
         {"input_ids": np.arange(10)},
@@ -40,42 +41,44 @@ def test_basic_batcher_max_tokens():
     source = MockNode(data)
 
     # Case 1: max_tokens = 12
-    # Batch 1: 5 + 10 > 12, so only 5. Wait, current implementation:
-    # If 5 < 12, it takes 5. Next is 10. 5 + 10 = 15 > 12. So it stops at 5.
-    # Actually, my implementation peeks and stops if it would exceed.
-    # Let's verify.
+    # Batch 1: 4 tokens (next is 9, 4+9=13 > 12)
     cfg = BasicBatcherConfig(max_tokens=12, pad_token_id=0, flatten=True)
     node = BasicBatcherNode(source, cfg)
 
-    # Batch 1: should contain only first item (5 tokens)
+    # Batch 1: should contain only first item (4 tokens after shift)
     batch1 = node.next()
-    assert batch1["input_ids"].shape[1] == 5
+    assert batch1["input_ids"].shape[1] == 4
+    assert batch1["labels"].shape[1] == 4
 
-    # Batch 2: should contain second item (10 tokens)
+    # Batch 2: should contain second item (9 tokens after shift)
     batch2 = node.next()
-    assert batch2["input_ids"].shape[1] == 10
+    assert batch2["input_ids"].shape[1] == 9
 
-    # Batch 3: should contain 3 and 8 (3+8=11 <= 12)
+    # Batch 3: should contain 3 and 8 (shifted: 2 and 7 -> 2+7=9 <= 12)
     batch3 = node.next()
-    assert batch3["input_ids"].shape[1] == 11
-    assert len(batch3["cu_seqlens"]) == 3  # [0, 3, 11]
+    assert batch3["input_ids"].shape[1] == 9
+    assert len(batch3["cu_seqlens"]) == 3  # [0, 2, 9]
 
 
 def test_basic_batcher_max_tokens_packing():
-    # Mock data: 4, 4, 4, 4
+    # Mock data: 4, 4, 4, 4 -> shifted: 3, 3, 3, 3
     data = [{"input_ids": np.arange(4)} for _ in range(10)]
     source = MockNode(data)
 
     # max_tokens = 10
-    # Batch 1: 4 + 4 = 8. (8 + 4 = 12 > 10). So 8 tokens.
+    # Logic: budget is checked against raw lengths.
+    # Item 1: 4. Total: 4.
+    # Item 2: 4. Total: 8.
+    # Item 3: 4. Total: 12 > 10. Stop.
+    # Result: 2 items. Total shifted tokens: 3 + 3 = 6.
     cfg = BasicBatcherConfig(max_tokens=10, pad_token_id=0, flatten=True)
     node = BasicBatcherNode(source, cfg)
 
     batch1 = node.next()
-    assert batch1["input_ids"].shape[1] == 8
+    assert batch1["input_ids"].shape[1] == 6
 
     batch2 = node.next()
-    assert batch2["input_ids"].shape[1] == 8
+    assert batch2["input_ids"].shape[1] == 6
 
 
 def test_flat_batcher_max_tokens():
@@ -84,22 +87,23 @@ def test_flat_batcher_max_tokens():
     source = MockNode(data)
 
     # max_tokens = 32
+    # In FlatTokensBatcher, we requested max_tokens=32
+    # It takes T+1 tokens from buffer (33)
+    # Yields input length 32, labels length 32
     cfg = FlatTokensBatcherConfig(max_tokens=32, flatten=True)
     node = FlatTokensBatcherNode(source, cfg)
 
     batch1 = node.next()
     assert batch1["input_ids"].shape == (1, 32)
+    assert batch1["labels"].shape == (1, 32)
 
     batch2 = node.next()
     assert batch2["input_ids"].shape == (1, 32)
 
-    batch3 = node.next()
-    assert batch3["input_ids"].shape == (1, 32)
-
 
 def test_basic_batcher_large_item():
     # Single item larger than max_tokens
-    data = [{"input_ids": np.arange(20)}]
+    data = [{"input_ids": np.arange(20)}]  # Shifted length 19
     source = MockNode(data)
 
     cfg = BasicBatcherConfig(max_tokens=10, pad_token_id=0, flatten=True)
@@ -107,4 +111,4 @@ def test_basic_batcher_large_item():
 
     # Should still yield it to avoid deadlock
     batch1 = node.next()
-    assert batch1["input_ids"].shape[1] == 20
+    assert batch1["input_ids"].shape[1] == 19

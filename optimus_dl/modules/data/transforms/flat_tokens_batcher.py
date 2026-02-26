@@ -39,13 +39,6 @@ class FlatTokensBatcherConfig(RegistryConfigStrict):
     mask_documents: bool = False
     flatten: bool = False
 
-    def __post_init__(self):
-        if self.max_tokens is None:
-            if self.batch_size is None or self.seq_len is None:
-                raise ValueError(
-                    "Either max_tokens or both batch_size and seq_len must be specified."
-                )
-
 
 class FlatTokensBatcherNode(BaseNode):
     """Internal node for performing token aggregation and batching.
@@ -62,6 +55,12 @@ class FlatTokensBatcherNode(BaseNode):
         self.position_ids_buffer = []
         self.document_ids_buffer = []
         self._current_doc_id = 0
+
+        if self.cfg.max_tokens is None:
+            if self.cfg.batch_size is None or self.cfg.seq_len is None:
+                raise ValueError(
+                    "Either max_tokens or both batch_size and seq_len must be specified in FlatTokensBatcherConfig."
+                )
 
     @property
     def target_size(self):
@@ -101,7 +100,7 @@ class FlatTokensBatcherNode(BaseNode):
 
     def next(self) -> Any:
         """Yield the next complete batch of tokens, filling from source as needed."""
-        # We need T+1 tokens to produce T inputs and T labels
+        # We need enough tokens to produce shifted inputs and labels
         while len(self.buffer) < self.target_size:
             item = next(self.node)
             tokens = item[self.cfg.field]
@@ -112,52 +111,62 @@ class FlatTokensBatcherNode(BaseNode):
                 self._current_doc_id += 1
 
         # Extract segments
-        full_segment = self.buffer[: self.target_size]
+        full_segment = np.array(self.buffer[: self.target_size], dtype=np.int64)
         self.buffer = self.buffer[
-            self.target_size - 1 :
-        ]  # Keep last token for next shift
-
-        input_tokens = full_segment[:-1]
-        target_tokens = list(full_segment[1:])  # Convert to list for modification
+            self.target_size - (1 if self.cfg.flatten else self.cfg.batch_size) :
+        ]
 
         if self.cfg.flatten:
+            input_tokens = full_segment[:-1]
+            target_tokens = full_segment[1:]
             reshape_args = (1, -1)
         else:
+            # Reshape first to (B, T+1), then slice each row
+            full_segment = full_segment.reshape(self.cfg.batch_size, -1)
+            input_tokens = full_segment[:, :-1]
+            target_tokens = full_segment[:, 1:]
             reshape_args = (self.cfg.batch_size, -1)
+
+        output = {
+            "input_ids": input_tokens.reshape(*reshape_args),
+            "labels": target_tokens.reshape(*reshape_args),
+        }
 
         if self.cfg.mask_documents:
             # We need metadata for the inputs
-            pos_full = self.position_ids_buffer[: self.target_size]
-            doc_full = self.document_ids_buffer[: self.target_size]
-            self.position_ids_buffer = self.position_ids_buffer[self.target_size - 1 :]
-            self.document_ids_buffer = self.document_ids_buffer[self.target_size - 1 :]
+            pos_full = np.array(
+                self.position_ids_buffer[: self.target_size], dtype=np.int64
+            )
+            doc_full = np.array(
+                self.document_ids_buffer[: self.target_size], dtype=np.int64
+            )
+            self.position_ids_buffer = self.position_ids_buffer[
+                self.target_size - (1 if self.cfg.flatten else self.cfg.batch_size) :
+            ]
+            self.document_ids_buffer = self.document_ids_buffer[
+                self.target_size - (1 if self.cfg.flatten else self.cfg.batch_size) :
+            ]
 
-            # Mask cross-document labels
-            # target_tokens[i] corresponds to full_segment[i+1]
-            # input_tokens[i] corresponds to full_segment[i]
-            # Prediction is invalid if doc[i] != doc[i+1]
-            for i in range(len(input_tokens)):
-                if doc_full[i] != doc_full[i + 1]:
-                    target_tokens[i] = -100  # Standard ignore index
-
-            # Sliced to inputs
-            pos_in = pos_full[:-1]
-            doc_in = doc_full[:-1]
+            if self.cfg.flatten:
+                pos_in = pos_full[:-1]
+                doc_in = doc_full[:-1]
+                # Also mask cross-document labels for flatten mode
+                target_mask = doc_full[:-1] != doc_full[1:]
+                output["labels"].view(-1)[target_mask] = -100
+            else:
+                pos_full = pos_full.reshape(self.cfg.batch_size, -1)
+                doc_full = doc_full.reshape(self.cfg.batch_size, -1)
+                pos_in = pos_full[:, :-1]
+                doc_in = doc_full[:, :-1]
+                # Mask cross-document labels
+                target_mask = doc_full[:, :-1] != doc_full[:, 1:]
+                output["labels"][target_mask] = -100
 
             # Re-base document IDs
-            doc_ids = np.array(doc_in, dtype=np.int64)
-            _, doc_ids = np.unique(doc_ids, return_inverse=True)
+            _, doc_ids = np.unique(doc_in, return_inverse=True)
 
-            output = {
-                "input_ids": np.array(input_tokens, dtype=np.int64).reshape(
-                    *reshape_args
-                ),
-                "labels": np.array(target_tokens, dtype=np.int64).reshape(
-                    *reshape_args
-                ),
-                "position_ids": np.array(pos_in, dtype=np.int64).reshape(*reshape_args),
-                "document_ids": doc_ids.reshape(*reshape_args),
-            }
+            output["position_ids"] = pos_in.reshape(*reshape_args)
+            output["document_ids"] = doc_ids.reshape(*reshape_args)
 
             if self.cfg.flatten:
                 # Compute cu_seqlens for the flat batch
@@ -169,15 +178,6 @@ class FlatTokensBatcherNode(BaseNode):
                 )
                 output["cu_seqlens"] = cu_seqlens
                 output["max_seqlen"] = int(np.max(np.diff(cu_seqlens)))
-        else:
-            output = {
-                "input_ids": np.array(input_tokens, dtype=np.int64).reshape(
-                    *reshape_args
-                ),
-                "labels": np.array(target_tokens, dtype=np.int64).reshape(
-                    *reshape_args
-                ),
-            }
 
         return output
 
