@@ -407,11 +407,14 @@ class RotarySelfAttention(nn.Module):
                 xv_varlen = xv.reshape(-1, self.n_kv_head, self.head_dim)
 
                 # Use provided max_seqlen or compute if missing (fallback)
-                max_q = (
-                    max_seqlen
-                    if max_seqlen is not None
-                    else int((cu_seqlens[1:] - cu_seqlens[:-1]).max().item())
-                )
+                if max_seqlen is not None:
+                    max_q = (
+                        int(max_seqlen.item())
+                        if isinstance(max_seqlen, torch.Tensor)
+                        else int(max_seqlen)
+                    )
+                else:
+                    max_q = int((cu_seqlens[1:] - cu_seqlens[:-1]).max().item())
 
                 y = varlen_attn(
                     xq_varlen,
