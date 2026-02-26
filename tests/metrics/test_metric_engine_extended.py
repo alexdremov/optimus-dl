@@ -1,28 +1,23 @@
 from dataclasses import (
     dataclass,
-    field,
 )
 from unittest.mock import MagicMock
-
-import pytest
 
 from optimus_dl.modules.metrics.base import (
     _active_meter_groups,
     _meter_groups,
 )
-from optimus_dl.modules.metrics.definitions import (
+from optimus_dl.modules.metrics.engine import MetricEngine
+from optimus_dl.modules.metrics.metrics import (
     Metric,
     MetricConfig,
     register_metric,
 )
-from optimus_dl.modules.metrics.engine import MetricEngine
 from optimus_dl.modules.metrics.source import (
     MetricSource,
     MetricSourceConfig,
-    register_source,
+    register_metric_source,
 )
-
-pytest.skip("experimental", allow_module_level=True)
 
 
 @dataclass
@@ -31,13 +26,14 @@ class ValueSourceConfig(MetricSourceConfig):
     val: int = 1
 
 
-@register_source("value_source", ValueSourceConfig)
+@register_metric_source("value_source", ValueSourceConfig)
 class ValueSource(MetricSource):
     @property
     def provides(self) -> set[str]:
         return {"value_proto"}
 
-    def __call__(self, model, batch, dependencies):
+    def __call__(self, dependencies, **kwargs):
+        model = kwargs["model"]
         # We mock a property to count calls
         model.source_called += 1
         return {"value_proto": self.cfg.val}
@@ -48,13 +44,13 @@ class MultiProtocolSourceConfig(MetricSourceConfig):
     _name: str = "multi_proto_source"
 
 
-@register_source("multi_proto_source", MultiProtocolSourceConfig)
+@register_metric_source("multi_proto_source", MultiProtocolSourceConfig)
 class MultiProtocolSource(MetricSource):
     @property
     def provides(self) -> set[str]:
         return {"proto_a", "proto_b"}
 
-    def __call__(self, model, batch, dependencies):
+    def __call__(self, dependencies, **kwargs):
         return {"proto_a": 10, "proto_b": 20}
 
 
@@ -62,21 +58,20 @@ class MultiProtocolSource(MetricSource):
 class SimpleMetricConfig(MetricConfig):
     _name: str = "simple_metric"
     required_proto: str = "value_proto"
-    accumulators: dict = field(default_factory=dict)
-
-    def __post_init__(self):
-        if not self.accumulators:
-            self.accumulators = {self.required_proto: {"_name": "mean"}}
 
 
 @register_metric("simple_metric", SimpleMetricConfig)
 class SimpleMetric(Metric):
     @property
-    def requires(self) -> dict[str, set[str]]:
-        return {"input": {self.cfg.required_proto}}
+    def requires(self) -> set[str]:
+        return {self.cfg.required_proto}
 
-    def __call__(self, batch, sources_data):
-        val = sources_data["input"][self.cfg.required_proto]
+    @property
+    def accumulators(self) -> dict[str, str]:
+        return {self.cfg.required_proto: "average"}
+
+    def __call__(self, sources_data):
+        val = sources_data[self.cfg.required_proto][self.cfg.required_proto]
         return {self.cfg.required_proto: {"value": val, "weight": 1.0}}
 
 
@@ -96,22 +91,14 @@ class TestMetricEngineExtended:
                 },
                 "metrics": [
                     {
-                        "_name": "metric_1",
-                        "type": {
-                            "_name": "simple_metric",
-                            "required_proto": "value_proto",
-                        },
-                        "role_mapping": {"input": "shared_source"},
-                        "accumulators": {"value_proto": "average"},
+                        "_name": "simple_metric",
+                        "required_proto": "value_proto",
+                        "nested_name": "m1",
                     },
                     {
-                        "_name": "metric_2",
-                        "type": {
-                            "_name": "simple_metric",
-                            "required_proto": "value_proto",
-                        },
-                        "role_mapping": {"input": "shared_source"},
-                        "accumulators": {"value_proto": "average"},
+                        "_name": "simple_metric",
+                        "required_proto": "value_proto",
+                        "nested_name": "m2",
                     },
                 ],
             }
@@ -122,7 +109,7 @@ class TestMetricEngineExtended:
         model.source_called = 0
         batch = {}
 
-        engine.update(model, batch)
+        engine.update({"model": model, "batch": batch})
 
         # Source should only be called once, despite being used by two metrics
         assert model.source_called == 1
@@ -132,7 +119,10 @@ class TestMetricEngineExtended:
         raw_results = compute_metrics("test_group", aggregate=False)
         results = engine.compute(raw_results)
 
-        assert results["test/simple_metric/value_proto"] == 42.0
+        # Descriptive naming with nested_name: prefix / nested_name / sub_name
+        # Since nested_name is provided, it is used as is.
+        assert results["test/m1/value_proto"] == 42.0
+        assert results["test/m2/value_proto"] == 42.0
 
     def test_multi_protocol_source(self):
         """Ensure a source can provide multiple protocols and metrics can consume them selectively."""
@@ -145,16 +135,14 @@ class TestMetricEngineExtended:
                 },
                 "metrics": [
                     {
-                        "_name": "metric_a",
-                        "type": {"_name": "simple_metric", "required_proto": "proto_a"},
-                        "role_mapping": {"input": "provider"},
-                        "accumulators": {"proto_a": "average"},
+                        "_name": "simple_metric",
+                        "required_proto": "proto_a",
+                        "nested_name": "ma",
                     },
                     {
-                        "_name": "metric_b",
-                        "type": {"_name": "simple_metric", "required_proto": "proto_b"},
-                        "role_mapping": {"input": "provider"},
-                        "accumulators": {"proto_b": "average"},
+                        "_name": "simple_metric",
+                        "required_proto": "proto_b",
+                        "nested_name": "mb",
                     },
                 ],
             }
@@ -164,18 +152,18 @@ class TestMetricEngineExtended:
         model = MagicMock()
         batch = {}
 
-        engine.update(model, batch)
+        engine.update({"model": model, "batch": batch})
 
         from optimus_dl.modules.metrics import compute_metrics
 
         raw_results = compute_metrics("multi_group", aggregate=False)
         results = engine.compute(raw_results)
 
-        assert results["multi/simple_metric/proto_a"] == 10.0
-        assert results["multi/simple_metric/proto_b"] == 20.0
+        assert results["multi/ma/proto_a"] == 10.0
+        assert results["multi/mb/proto_b"] == 20.0
 
     def test_handshake_missing_protocol(self):
-        """Ensure handshake fails if a source does not provide the explicitly required protocol."""
+        """Ensure missing protocols are identified via required_external_protocols."""
         configs = [
             {
                 "_name": "source_group",
@@ -185,19 +173,13 @@ class TestMetricEngineExtended:
                 },
                 "metrics": [
                     {
-                        "_name": "metric_fail",
-                        "type": {
-                            "_name": "simple_metric",
-                            "required_proto": "non_existent_proto",
-                        },
-                        "role_mapping": {"input": "provider"},
+                        "_name": "simple_metric",
+                        "required_proto": "non_existent_proto",
                     }
                 ],
             }
         ]
 
-        with pytest.raises(
-            ValueError,
-            match="does not provide required protocols {'non_existent_proto'}",
-        ):
-            MetricEngine("fail_group", configs)
+        # Init no longer raises ValueError, but identifies external requirements
+        engine = MetricEngine("fail_group", configs)
+        assert "non_existent_proto" in engine.required_external_protocols

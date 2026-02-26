@@ -117,7 +117,7 @@ def _run_tp_correctness_test(
                 ), "Expected DTensor with loss_parallel=False"
 
         # Compute loss
-        tp_loss = criterion(tp_model, batch)
+        tp_loss, _ = criterion(tp_model, batch)
 
         # Backward
         tp_loss.backward()

@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 class ForwardPassResult(NamedTuple):
     loss: torch.Tensor
+    exposed_protocols: dict[str, Any]
     elapsed_time: float
 
 
@@ -67,7 +68,12 @@ class TrainingIterationMixin:
             log_summed("gpu_gb_used", torch.cuda.max_memory_allocated() / (1024**3))
 
     def execute_forward_pass(
-        self, model: BaseModel, criterion: BaseCriterion, batch: Any, amp_ctx: Any
+        self,
+        model: BaseModel,
+        criterion: BaseCriterion,
+        batch: Any,
+        amp_ctx: Any,
+        requested_protocols: set[str] | None = None,
     ) -> ForwardPassResult:
         """Run the forward pass inside an AMP context.
 
@@ -76,13 +82,18 @@ class TrainingIterationMixin:
             criterion: The loss function.
             batch: The input data.
             amp_ctx: The autocast context manager.
+            requested_protocols: Protocols requested by the metrics system.
 
         Returns:
-            ForwardPassResult with the computed loss and execution time.
+            ForwardPassResult with the computed loss, exposed protocols, and execution time.
         """
         with amp_ctx:
-            elapsed_forward, loss = measured_lambda(lambda: criterion(model, batch))
-        return ForwardPassResult(loss=loss, elapsed_time=elapsed_forward)
+            elapsed_forward, (loss, exposed) = measured_lambda(
+                lambda: criterion(model, batch, requested_protocols=requested_protocols)
+            )
+        return ForwardPassResult(
+            loss=loss, exposed_protocols=exposed, elapsed_time=elapsed_forward
+        )
 
     def execute_backward_pass(self, loss: torch.Tensor, scaler: Any) -> float:
         """Run the backward pass with gradient scaling.
@@ -204,6 +215,7 @@ class TrainingIterationMixin:
         train_data_iter: Iterator,
         training_context: dict[str, Any],
         lr_scheduler: Any | None = None,
+        metric_engine: Any | None = None,
     ) -> None:
         """Execute one full training iteration, including gradient accumulation.
 
@@ -217,10 +229,15 @@ class TrainingIterationMixin:
             train_data_iter: Iterator yielding training batches.
             training_context: Dict with scaler, amp_ctx, etc.
             lr_scheduler: Optional learning rate scheduler.
+            metric_engine: Optional MetricEngine for training metrics.
         """
-        with metrics_group("train", log_freq=self.log_freq):
+        with metrics_group("train", log_freq=self.log_freq) as should_log:
             optimizer.zero_grad()
             model.train()
+
+            requested_protocols = None
+            if metric_engine and should_log:
+                requested_protocols = metric_engine.required_external_protocols
 
             # Gradient accumulation loop
             for microbatch_idx in range(self.optimization_config.acc_steps):
@@ -239,9 +256,22 @@ class TrainingIterationMixin:
 
                 with self.accumulation_context(model, is_last_microbatch):
                     forward_result = self.execute_forward_pass(
-                        model, criterion, batch, training_context["amp_ctx"]
+                        model,
+                        criterion,
+                        batch,
+                        training_context["amp_ctx"],
+                        requested_protocols=requested_protocols,
                     )
                     loss = forward_result.loss / self.optimization_config.acc_steps
+
+                    if metric_engine and should_log:
+                        # Pass computed data (loss, logits, etc.) to avoid redundant work in engine
+                        computed_data = forward_result.exposed_protocols.copy()
+                        computed_data["loss"] = forward_result.loss
+                        metric_engine.update(
+                            data=dict(model=model, batch=batch),
+                            computed_data=computed_data,
+                        )
 
                     elapsed_backward = self.execute_backward_pass(
                         loss, training_context["scaler"]

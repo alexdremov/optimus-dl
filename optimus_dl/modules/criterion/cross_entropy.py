@@ -1,3 +1,4 @@
+import copy
 import logging
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ from optimus_dl.modules.metrics import (
     log_averaged_exponent,
     log_summed,
 )
+from optimus_dl.modules.metrics.source import StandardProtocols
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +73,7 @@ class CrossEntropyCriterion(BaseCriterion):
                         "use_liger_kernel=True but liger-kernel is not installed. Falling back to PyTorch."
                     )
 
-    def __call__(self, model, batch):
+    def __call__(self, model, batch, requested_protocols: set[str] | None = None):
         """Compute the cross entropy loss.
 
         Automatically handles target shifting (labels = inputs[1:]) and manages
@@ -80,10 +82,13 @@ class CrossEntropyCriterion(BaseCriterion):
         Args:
             model: The language model.
             batch: Dictionary containing 'input_ids'.
+            requested_protocols: Optional set of requested protocols.
 
         Returns:
-            Computed loss tensor.
+            Tuple of (loss tensor, exposed_protocols dictionary).
         """
+        requested_protocols = requested_protocols or set()
+        batch = copy.copy(batch)
         input_ids = batch.pop("input_ids")
 
         batch["input_ids"] = input_ids[:, :-1]
@@ -111,10 +116,11 @@ class CrossEntropyCriterion(BaseCriterion):
             lambda: ((targets >= 0) & (targets != self.padding_token_id)).sum().item()
             / self.collective.tp_world_size
         )
+        predictions = cached_lambda(lambda: self.gather_predictions(logits))
 
         log_averaged(
             "accuracy",
-            lambda: self.accuracy_metric(logits, targets),
+            lambda: self.accuracy_metric(predictions(), targets),
             weight=valid_tokens,
             round=2,
         )
@@ -128,38 +134,46 @@ class CrossEntropyCriterion(BaseCriterion):
             reset=False,
         )
 
-        targets = targets.reshape(-1)
+        targets_flat = targets.reshape(-1)
         enable_loss_parallel = False
         if is_dtensor:
             from torch.distributed.tensor.placement_types import Replicate
 
-            if not isinstance(targets, DTensor):
-                targets = DTensor.from_local(
-                    targets, logits.device_mesh, (Replicate(),)
+            if not isinstance(targets_flat, DTensor):
+                targets_parallel = DTensor.from_local(
+                    targets_flat, logits.device_mesh, (Replicate(),)
                 )
+            else:
+                targets_parallel = targets_flat
 
             # Only enable loss_parallel if logits are actually sharded
             for placement in logits.placements:
                 if isinstance(placement, Shard):
                     enable_loss_parallel = True
                     break
+        else:
+            targets_parallel = targets_flat
 
-        if self._liger_available and targets.device.type != "cpu" and not is_dtensor:
+        if (
+            self._liger_available
+            and targets_parallel.device.type != "cpu"
+            and not is_dtensor
+        ):
             # Liger kernel handles mixed precision internally, no need to cast to float
             loss = self._liger_cross_entropy(
                 input=logits.view(-1, logits.size(-1)),
-                target=targets,
+                target=targets_parallel,
                 label_smoothing=self.cfg.label_smoothing,
                 ignore_index=self.padding_token_id,
             )
         else:
             with (
-                torch.autocast(targets.device.type, enabled=False),
+                torch.autocast(targets_parallel.device.type, enabled=False),
                 loss_parallel() if enable_loss_parallel else nullcontext(),
             ):
                 loss = torch.nn.functional.cross_entropy(
                     input=logits.view(-1, logits.size(-1)).float(),
-                    target=targets,
+                    target=targets_parallel,
                     label_smoothing=self.cfg.label_smoothing,
                     ignore_index=self.padding_token_id,
                 )
@@ -175,14 +189,31 @@ class CrossEntropyCriterion(BaseCriterion):
             weight=valid_tokens,
         )
 
-        return loss
+        exposed = {}
+        if StandardProtocols.LOGITS in requested_protocols:
+            exposed[StandardProtocols.LOGITS] = logits
+
+        if StandardProtocols.CLASSIFICATION in requested_protocols:
+            # Build classification protocol data for reuse
+            mask = targets != self.padding_token_id
+            if seq_lens is not None:
+                mask = mask & (
+                    torch.arange(mask.shape[1], device=mask.device) < seq_lens[:, None]
+                )
+
+            classification = dict(
+                predictions=predictions(),
+                targets=targets,
+                mask=mask,
+            )
+            exposed[StandardProtocols.CLASSIFICATION] = classification
+
+        return loss, exposed
 
     @torch.no_grad()
-    def accuracy_metric(self, logits, targets):
-        """Compute top-1 accuracy.
-
-        Handles both standard Tensors and distributed DTensors. For DTensors, it
-        performs a distributed max across tensor-parallel ranks.
+    def gather_predictions(self, logits):
+        """
+        Get predictions from logits.
         """
         is_dtensor = isinstance(logits, DTensor)
         if is_dtensor:
@@ -210,6 +241,16 @@ class CrossEntropyCriterion(BaseCriterion):
             )
         else:
             predictions = torch.argmax(logits, dim=-1)
+        return predictions
+
+    @torch.no_grad()
+    def accuracy_metric(self, predictions, targets):
+        """Compute top-1 accuracy.
+
+        Handles both standard Tensors and distributed DTensors. For DTensors, it
+        performs a distributed max across tensor-parallel ranks.
+        """
+
         correct = predictions == targets
         valid = (targets >= 0) & (targets != self.padding_token_id)
         correct = (correct & valid).float()

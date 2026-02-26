@@ -78,6 +78,7 @@ jobs:
 
     permissions:
       contents: read  # Only read access needed for tests
+      pull-requests: write # Needed to post coverage comments
 
     steps:
     - uses: actions/checkout@v6
@@ -145,4 +146,20 @@ jobs:
 
     - name: Test with pytest
       run: |
-        uv run pytest -n 2 --durations=0
+        uv run pytest -n 4 \
+          --durations=0 \
+          --cov=optimus_dl \
+          --junitxml=pytest-coverage.xml \
+          --cov-report=xml \
+          --cov-report=term-missing:skip-covered \
+        | tee pytest-coverage.txt
+
+    - name: Pytest coverage comment
+      uses: MishaKav/pytest-coverage-comment@v1.4.0
+      with:
+        pytest-coverage-path: ./pytest-coverage.txt
+        junitxml-path: ./pytest-coverage.xml
+        xml-skip-covered: true
+        remove-links-to-files: true
+        remove-links-to-lines: true
+

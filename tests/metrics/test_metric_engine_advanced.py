@@ -2,27 +2,41 @@ from dataclasses import dataclass
 from unittest.mock import MagicMock
 
 import torch
-import pytest
 
 from optimus_dl.modules.metrics.base import (
     _active_meter_groups,
     _meter_groups,
 )
-from optimus_dl.modules.metrics.definitions import (
+from optimus_dl.modules.metrics.engine import MetricEngine
+from optimus_dl.modules.metrics.metrics import (
     Metric,
     MetricConfig,
     register_metric,
 )
-from optimus_dl.modules.metrics.engine import MetricEngine
 from optimus_dl.modules.metrics.source import (
-    CausalLMSourceConfig,
-    ForwardSourceConfig,
     MetricSource,
     MetricSourceConfig,
-    register_source,
+    register_metric_source,
+)
+from optimus_dl.modules.metrics.sources import (
+    CausalLMSource,
+    CausalLMSourceConfig,
 )
 
-pytest.skip("experimental", allow_module_level=True)
+
+@dataclass
+class ForwardSourceConfig(MetricSourceConfig):
+    _name: str = "forward"
+
+
+@register_metric_source("forward")
+class ForwardSource(MetricSource):
+    @property
+    def provides(self) -> set[str]:
+        return {"logits"}
+
+    def __call__(self, dependencies, **kwargs):
+        return {"logits": torch.tensor([1.0])}
 
 
 @dataclass
@@ -31,13 +45,13 @@ class DummySourceConfig(MetricSourceConfig):
     val: int = 1
 
 
-@register_source("dummy_source", DummySourceConfig)
+@register_metric_source("dummy_source", DummySourceConfig)
 class DummySource(MetricSource):
     @property
     def provides(self) -> set[str]:
         return {"dummy_proto"}
 
-    def __call__(self, model, batch, dependencies):
+    def __call__(self, dependencies, **kwargs):
         return {"dummy_proto": self.cfg.val}
 
 
@@ -47,18 +61,18 @@ class DependentSourceConfig(MetricSourceConfig):
     multiplier: int = 2
 
 
-@register_source("dependent_source", DependentSourceConfig)
+@register_metric_source("dependent_source", DependentSourceConfig)
 class DependentSource(MetricSource):
     @property
     def provides(self) -> set[str]:
         return {"dep_proto"}
 
     @property
-    def requires(self) -> dict[str, set[str]]:
-        return {"base": {"dummy_proto"}}
+    def requires(self) -> set[str]:
+        return {"dummy_proto"}
 
-    def __call__(self, model, batch, dependencies):
-        base_val = dependencies["base"]["dummy_proto"]
+    def __call__(self, dependencies, **kwargs):
+        base_val = dependencies["dummy_proto"]["dummy_proto"]
         return {"dep_proto": base_val * self.cfg.multiplier}
 
 
@@ -70,11 +84,11 @@ class DummyMetricConfig(MetricConfig):
 @register_metric("dummy_metric", DummyMetricConfig)
 class DummyMetric(Metric):
     @property
-    def requires(self) -> dict[str, set[str]]:
-        return {"input": {"dep_proto"}}
+    def requires(self) -> set[str]:
+        return {"dep_proto"}
 
-    def __call__(self, batch, sources_data):
-        val = sources_data["input"]["dep_proto"]
+    def __call__(self, sources_data):
+        val = sources_data["dep_proto"]["dep_proto"]
         return {"dummy_metric": {"value": val, "weight": 1.0}}
 
 
@@ -87,11 +101,6 @@ class TestMetricEngineAdvanced:
         cfg1 = ForwardSourceConfig()
         cfg2 = ForwardSourceConfig()
         cfg3 = CausalLMSourceConfig()
-
-        from optimus_dl.modules.metrics.source import (
-            CausalLMSource,
-            ForwardSource,
-        )
 
         src1 = ForwardSource(cfg1)
         src2 = ForwardSource(cfg2)
@@ -110,16 +119,9 @@ class TestMetricEngineAdvanced:
                     "consumer": {
                         "_name": "dependent_source",
                         "multiplier": 3,
-                        "dependencies": {"base": "provider"},
                     },
                 },
-                "metrics": [
-                    {
-                        "_name": "dummy_metric",
-                        "type": {"_name": "dummy_metric"},
-                        "role_mapping": {"input": "consumer"},
-                    }
-                ],
+                "metrics": [{"_name": "dummy_metric"}],
             }
         ]
 
@@ -128,7 +130,7 @@ class TestMetricEngineAdvanced:
         batch = {}
 
         # Run update
-        engine.update(model, batch)
+        engine.update({"model": model, "batch": batch})
 
         # Compute results
         from optimus_dl.modules.metrics import compute_metrics
@@ -137,8 +139,11 @@ class TestMetricEngineAdvanced:
         results = engine.compute(raw_results)
 
         # 5 * 3 = 15
-        assert "test/dummy_metric" in results
-        assert results["test/dummy_metric"] == 15.0
+        # Descriptive naming: 'test/dummy_metric_metric/dummy_metric'
+        # Since metric_name = dummy_metric + _metric = dummy_metric_metric
+        # and sub_name = dummy_metric
+        assert "test/dummy_metric_metric/dummy_metric" in results
+        assert results["test/dummy_metric_metric/dummy_metric"] == 15.0
 
     def test_cross_group_caching(self):
         # We will use a mock model to count forward passes
@@ -152,71 +157,85 @@ class TestMetricEngineAdvanced:
                 "_name": "source_group",
                 "prefix": "group1",
                 "sources": {"default": {"_name": "causal_lm"}},
-                "metrics": [{"_name": "accuracy", "type": {"_name": "accuracy"}}],
+                "metrics": [{"_name": "accuracy"}],
             },
             {
                 "_name": "source_group",
                 "prefix": "group2",
                 "sources": {"default": {"_name": "causal_lm"}},
-                "metrics": [{"_name": "accuracy", "type": {"_name": "accuracy"}}],
+                "metrics": [{"_name": "accuracy"}],
             },
         ]
 
         engine = MetricEngine("test_group", configs)
 
-        batch = {"input_ids": torch.tensor([[1, 2, 3]])}
-        engine.update(model, batch)
+        # Provide labels to avoid None comparison in AccuracyMetric
+        batch = {
+            "input_ids": torch.tensor([[1, 2, 3]]),
+            "labels": torch.tensor([[1, 2, 3]]),
+        }
+        engine.update({"model": model, "batch": batch})
 
         # Even though there are two groups, they use the exact same source config.
         # The model should only be called once per batch.
         assert model.call_count == 1
 
     def test_accuracy_metric_causal_lm(self):
-        configs = [{"_name": "accuracy", "type": {"_name": "accuracy"}}]
+        configs = [
+            {
+                "_name": "source_group",
+                "prefix": "",
+                "sources": {"default": {"_name": "causal_lm"}},
+                "metrics": [{"_name": "accuracy"}],
+            }
+        ]
 
         engine = MetricEngine("test_group", configs)
 
-        # Batch: 1 sequence, length 3
-        batch = {"input_ids": torch.tensor([[1, 2, 3]])}
+        # Batch: 1 sequence, length 3. CausalLMSource will derive labels [2, 3]
+        # by shifting input_ids, so we don't need an explicit 'labels' field here.
+        batch = {
+            "input_ids": torch.tensor([[1, 2, 3]]),
+        }
 
         # Model predicts 2 for the first token (correct), 4 for the second (incorrect)
-        # Logits shape: [1, 3, vocab_size]
-        logits = torch.zeros(1, 3, 10)
-        logits[0, 0, 2] = 10.0  # Predicts 2
-        logits[0, 1, 4] = 10.0  # Predicts 4
-        logits[0, 2, 5] = 10.0  # Ignored (shifted)
+        # CausalLMSource returns logits for length-1 sequence if we shift labels.
+        # Let's mock model to return logits already matching labels length.
+        logits = torch.zeros(1, 2, 10)
+        logits[0, 0, 2] = 10.0  # Pos 0 -> Target 2
+        logits[0, 1, 4] = 10.0  # Pos 1 -> Target 3 (so incorrect)
 
         model = MagicMock()
         model.return_value = {"logits": logits}
 
-        engine.update(model, batch)
+        engine.update({"model": model, "batch": batch})
 
         from optimus_dl.modules.metrics import compute_metrics
 
         raw_results = compute_metrics("test_group", aggregate=False)
         results = engine.compute(raw_results)
 
-        # Targets are [2, 3]
-        # Predictions are [2, 4]
-        # Accuracy = 1 / 2 = 0.5
-        assert results["accuracy"] == 0.5
+        # Accuracy should be 0.5 (1/2)
+        # Descriptive naming: 'accuracy_metric/accuracy'
+        assert "accuracy_metric/accuracy" in results
+        assert results["accuracy_metric/accuracy"] == 0.5
 
     def test_cyclic_dependency_detection(self, caplog):
         @dataclass
         class CycleSourceConfig(MetricSourceConfig):
             _name: str = "cycle_source"
 
-        @register_source("cycle_source", CycleSourceConfig)
+        @register_metric_source("cycle_source", CycleSourceConfig)
         class CycleSource(MetricSource):
             @property
             def provides(self) -> set[str]:
                 return {"cycle_proto"}
 
             @property
-            def requires(self) -> dict[str, set[str]]:
-                return {"base": {"cycle_proto"}}
+            def requires(self) -> set[str]:
+                return {"cycle_proto"}
 
-            def __call__(self, model, batch, dependencies):
+            def __call__(self, dependencies, **kwargs):
                 return {"cycle_proto": 1}
 
         configs_cycle = [
@@ -224,22 +243,9 @@ class TestMetricEngineAdvanced:
                 "_name": "source_group",
                 "prefix": "test_cycle",
                 "sources": {
-                    "source_a": {
-                        "_name": "cycle_source",
-                        "dependencies": {"base": "source_b"},
-                    },
-                    "source_b": {
-                        "_name": "cycle_source",
-                        "dependencies": {"base": "source_a"},
-                    },
+                    "source_a": {"_name": "cycle_source"},
                 },
-                "metrics": [
-                    {
-                        "_name": "cycle_metric",
-                        "type": {"_name": "cycle_metric"},
-                        "role_mapping": {"input": "source_a"},
-                    }
-                ],
+                "metrics": [{"_name": "cycle_metric"}],
             }
         ]
 
@@ -250,10 +256,10 @@ class TestMetricEngineAdvanced:
         @register_metric("cycle_metric", CycleMetricConfig)
         class CycleMetric(Metric):
             @property
-            def requires(self) -> dict[str, set[str]]:
-                return {"input": {"cycle_proto"}}
+            def requires(self) -> set[str]:
+                return {"cycle_proto"}
 
-            def __call__(self, batch, sources_data):
+            def __call__(self, sources_data):
                 return {"cycle_metric": {"value": 1.0, "weight": 1.0}}
 
         engine = MetricEngine("test_group", configs_cycle)
@@ -262,53 +268,11 @@ class TestMetricEngineAdvanced:
         batch = {}
 
         # update should log the cyclic error and skip metric computation
-        engine.update(model, batch)
+        engine.update({"model": model, "batch": batch})
 
         assert "Cyclic dependency detected for source" in caplog.text
 
-    def test_slice_filter(self):
-        configs = [
-            {
-                "_name": "source_group",
-                "prefix": "filtered",
-                "sources": {
-                    "provider": {"_name": "dummy_source", "val": 10},
-                    "consumer": {
-                        "_name": "dependent_source",
-                        "multiplier": 1,
-                        "dependencies": {"base": "provider"},
-                    },
-                },
-                "metrics": [
-                    {
-                        "_name": "dummy_metric",
-                        "type": {"_name": "dummy_metric"},
-                        "role_mapping": {"input": "consumer"},
-                        "slice_filter": "batch.get('is_valid', False)",
-                    }
-                ],
-            }
-        ]
-
-        engine = MetricEngine("test_group", configs)
-        model = MagicMock()
-
-        # Batch 1 is not valid
-        engine.update(model, {"is_valid": False})
-
-        # Batch 2 is valid
-        engine.update(model, {"is_valid": True})
-
-        from optimus_dl.modules.metrics import compute_metrics
-
-        raw_results = compute_metrics("test_group", aggregate=False)
-        results = engine.compute(raw_results)
-
-        # Only the second batch should be logged, so the value is 10 (since dummy_metric just returns val)
-        assert "filtered/dummy_metric" in results
-        assert results["filtered/dummy_metric"] == 10.0
-
-    def test_missing_role_mapping(self):
+    def test_missing_protocol(self):
         configs = [
             {
                 "_name": "source_group",
@@ -316,15 +280,144 @@ class TestMetricEngineAdvanced:
                 "sources": {
                     "provider": {"_name": "dummy_source", "val": 5},
                 },
-                "metrics": [
-                    {
-                        "_name": "dummy_metric",
-                        "type": {"_name": "dummy_metric"},
-                        # Intentionally missing role_mapping for 'input'
-                    }
-                ],
+                "metrics": [{"_name": "dummy_metric"}],  # Requires dep_proto
             }
         ]
 
-        with pytest.raises(ValueError, match="requires role 'input' mapped to 'input'"):
-            MetricEngine("test_group", configs)
+        # Use required_external_protocols check instead of just raises ValueError on init
+        # because we changed init to only debug log missing protocols.
+        engine = MetricEngine("test_group", configs)
+        assert "dep_proto" in engine.required_external_protocols
+
+    def test_metric_finalize(self):
+        """Test metrics that use the finalize method for post-aggregation logic."""
+
+        @dataclass
+        class DataValueSourceConfig(MetricSourceConfig):
+            _name: str = "data_value_source"
+
+        @register_metric_source("data_value_source", DataValueSourceConfig)
+        class DataValueSource(MetricSource):
+            @property
+            def provides(self) -> set[str]:
+                return {"val_proto"}
+
+            def __call__(self, dependencies, **kwargs):
+                # Return value from batch if present, else 1
+                batch = kwargs.get("batch", {})
+                return {"val_proto": batch.get("val", 1.0)}
+
+        @dataclass
+        class FinalizeMetricConfig(MetricConfig):
+            _name: str = "finalize"
+
+        @register_metric("finalize", FinalizeMetricConfig)
+        class FinalizeMetric(Metric):
+            @property
+            def requires(self) -> set[str]:
+                return {"val_proto"}
+
+            @property
+            def accumulators(self) -> dict[str, str]:
+                return {"sum_a": "sum", "sum_b": "sum"}
+
+            def __call__(self, sources_data):
+                val = sources_data["val_proto"]["val_proto"]
+                return {"sum_a": {"value": val}, "sum_b": {"value": 1.0}}
+
+            def finalize(self, aggregated_data):
+                a = aggregated_data["sum_a"]
+                b = aggregated_data["sum_b"]
+                return {"ratio": a / b if b != 0 else 0.0}
+
+        configs = [
+            {
+                "_name": "source_group",
+                "prefix": "test",
+                "sources": {"provider": {"_name": "data_value_source"}},
+                "metrics": [{"_name": "finalize"}],
+            }
+        ]
+
+        engine = MetricEngine("finalize_group", configs)
+        model = MagicMock()
+
+        # Batch 1: val=10 -> sum_a=10, sum_b=1
+        engine.update({"model": model, "batch": {"val": 10.0}})
+        # Batch 2: val=20 -> sum_a=30, sum_b=2
+        engine.update({"model": model, "batch": {"val": 20.0}})
+
+        from optimus_dl.modules.metrics import compute_metrics
+
+        raw_results = compute_metrics("finalize_group", aggregate=False)
+
+        # Verify raw results contain the sums. Descriptive naming: 'test/finalize_metric/sum_a'
+        assert "test/finalize_metric/sum_a" in raw_results
+        assert raw_results["test/finalize_metric/sum_a"] == 30.0
+        assert "test/finalize_metric/sum_b" in raw_results
+        assert raw_results["test/finalize_metric/sum_b"] == 2.0
+
+        # Run engine compute
+        final_results = engine.compute(raw_results)
+
+        # Verify finalized ratio: 30 / 2 = 15
+        assert "test/finalize_metric/ratio" in final_results
+        assert final_results["test/finalize_metric/ratio"] == 15.0
+        # sum_a and sum_b should be gone as they were consumed by compute
+        assert "test/finalize_metric/sum_a" not in final_results
+
+    def test_internal_metrics(self):
+        """Test that metrics starting with _ are handled as internal."""
+
+        @dataclass
+        class InternalMetricConfig(MetricConfig):
+            _name: str = "internal"
+
+        @register_metric("internal", InternalMetricConfig)
+        class InternalMetric(Metric):
+            @property
+            def requires(self) -> set[str]:
+                return {"dummy_proto"}
+
+            @property
+            def accumulators(self) -> dict[str, str]:
+                return {"public": "average", "_internal": "average"}
+
+            def __call__(self, sources_data):
+                val = sources_data["dummy_proto"]["dummy_proto"]
+                return {
+                    "public": {"value": val, "weight": 1.0},
+                    "_internal": {"value": val * 2, "weight": 1.0},
+                }
+
+        configs = [
+            {
+                "_name": "source_group",
+                "prefix": "test",
+                "sources": {"provider": {"_name": "dummy_source", "val": 5}},
+                "metrics": [{"_name": "internal"}],
+            }
+        ]
+
+        engine = MetricEngine("internal_group", configs)
+        model = MagicMock()
+        engine.update({"model": model, "batch": {}})
+
+        from optimus_dl.modules.metrics import compute_metrics
+
+        # Internal metrics are stored under _internal/ prefix in the MeterGroup
+        raw_results = compute_metrics("internal_group", aggregate=False)
+
+        assert "test/internal_metric/public" in raw_results
+        assert "_internal/test/internal_metric/_internal" in raw_results
+        assert raw_results["test/internal_metric/public"] == 5.0
+        assert raw_results["_internal/test/internal_metric/_internal"] == 10.0
+
+        # Compute should keep public and filter out internal if finalize filters them
+        # (Default Metric.finalize filters k.startswith('_'))
+        final_results = engine.compute(raw_results)
+
+        assert "test/internal_metric/public" in final_results
+        assert "test/internal_metric/_internal" not in final_results
+        # The raw _internal/ key should be gone as it was consumed by compute
+        assert "_internal/test/internal_metric/_internal" not in raw_results

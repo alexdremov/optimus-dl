@@ -393,6 +393,37 @@ class AveragedExponentMeter(BaseMeter):  # Ensures it inherits from BaseMeter
         }
 
 
+class GatherMeter(BaseMeter):
+    """Accumulator that gathers all raw values across the entire dataset.
+
+    Use this for meters that require full dataset context (e.g., BLEU, ROC-AUC).
+    """
+
+    def __init__(self):
+        """Initializes the GatherMeter with an empty list to store values."""
+        self.values: list[Any] = []
+
+    def log(self, value: Any):
+        """Logs a single value to be gathered."""
+        self.values.append(value)
+
+    def compute(self) -> list[Any]:
+        """Returns the list of all gathered values."""
+        return list(self.values)
+
+    def merge(self, other_state: dict[str, Any]):
+        """Merges the state from another GatherMeter instance."""
+        self.values.extend(other_state["values"])
+
+    def state_dict(self) -> dict[str, Any]:
+        """Returns the state of the GatherMeter for checkpointing."""
+        return {"values": self.values}
+
+    def load_state_dict(self, state_dict: dict[str, Any]):
+        """Restores the state of the GatherMeter from a state dictionary."""
+        self.values = state_dict["values"]
+
+
 DelayedValue = Any | Callable[[], Any]
 
 

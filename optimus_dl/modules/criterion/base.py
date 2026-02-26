@@ -4,6 +4,8 @@ This module defines the BaseCriterion class that all loss functions must inherit
 Criteria compute the loss given a model and a batch of data.
 """
 
+from typing import Any
+
 import torch
 
 from optimus_dl.modules.model.base import BaseModel
@@ -33,7 +35,9 @@ class BaseCriterion:
 
         ```"""
 
-    def __call__(self, model: BaseModel, batch: dict) -> torch.Tensor:
+    def __call__(
+        self, model: BaseModel, batch: dict, requested_protocols: set[str] | None = None
+    ) -> tuple[torch.Tensor, dict[str, Any]]:
         """Compute the loss for a given model and batch.
 
         Args:
@@ -43,9 +47,15 @@ class BaseCriterion:
                 - "input_ids": Token IDs for the input sequence
                 - "labels": Target token IDs for computing loss
                 - Other model-specific fields
+            requested_protocols: Optional set of protocol strings (e.g., {'logits', 'classification'})
+                that are requested by the metrics system. Subclasses can use this to avoid
+                computing data that won't be used.
 
         Returns:
-            Scalar tensor containing the loss value.
+            A tuple of (loss, exposed_protocols), where:
+                - loss: Scalar tensor containing the loss value.
+                - exposed_protocols: Dictionary mapping protocol names (e.g., 'logits')
+                  to their computed values for reuse in metrics.
 
         Raises:
             NotImplementedError: Must be implemented by subclasses.
@@ -53,8 +63,7 @@ class BaseCriterion:
         Example:
             ```python
             criterion = CrossEntropyCriterion(cfg)
-            loss = criterion(model, batch)
+            loss, exposed = criterion(model, batch, requested_protocols={'logits'})
             loss.backward()
-
             ```"""
         raise NotImplementedError

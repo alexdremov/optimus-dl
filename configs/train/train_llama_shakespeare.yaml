@@ -49,6 +49,16 @@ optimization:
     betas: [0.9, 0.99]  # Adam beta parameters
     eps: 1e-8           # Adam epsilon
 
+metrics:
+  train:
+    - _name: accuracy
+    - _name: perplexity
+    - _name: loss
+  tinyshakespeare:
+    - _name: accuracy
+    - _name: perplexity
+    - _name: loss
+
 # Data configuration
 data:
   scratch:
@@ -72,7 +82,6 @@ data:
       _name: loop
       inner:
         _name: preset_tinyshakespeare
-        split: train
     transform: ${data.scratch.base_transforms}
 
   # Evaluation datasets (optional)
@@ -80,5 +89,4 @@ data:
     tinyshakespeare:
       source:
         _name: preset_tinyshakespeare
-        split: train
       transform: ${data.scratch.base_transforms}

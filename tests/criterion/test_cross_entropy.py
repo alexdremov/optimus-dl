@@ -11,6 +11,7 @@ from optimus_dl.modules.criterion.cross_entropy import (
     CrossEntropyCriterionConfig,
 )
 from optimus_dl.modules.distributed.fake import FakeCollective
+from optimus_dl.modules.metrics.source import StandardProtocols
 
 
 class TestCrossEntropyCriterionConfig:
@@ -63,8 +64,10 @@ class TestCrossEntropyCriterion:
         input_ids = torch.randint(0, vocab_size, (batch_size, seq_len))
         batch = {"input_ids": input_ids.clone()}
 
-        # Call criterion
-        loss = criterion(mock_model, batch)
+        # Call criterion requesting logits
+        loss, exposed = criterion(
+            mock_model, batch, requested_protocols={StandardProtocols.LOGITS}
+        )
 
         # Check that model was called with shifted input_ids
         mock_model.assert_called_once()
@@ -74,6 +77,10 @@ class TestCrossEntropyCriterion:
         # Check that loss is a scalar tensor
         assert isinstance(loss, torch.Tensor)
         assert loss.dim() == 0
+
+        # Check exposed data
+        assert StandardProtocols.LOGITS in exposed
+        assert torch.equal(exposed[StandardProtocols.LOGITS], logits)
 
         # Check that metrics were logged
         assert mock_log_averaged.call_count >= 2  # accuracy, loss, perplexity
@@ -131,7 +138,7 @@ class TestCrossEntropyCriterion:
             patch("optimus_dl.modules.criterion.cross_entropy.log_summed"),
         ):
 
-            loss = criterion(mock_model, batch)
+            loss, exposed = criterion(mock_model, batch)
 
             # Loss should be low since predictions match targets
             assert loss.item() < 1.0
@@ -164,8 +171,8 @@ class TestCrossEntropyCriterion:
             patch("optimus_dl.modules.criterion.cross_entropy.log_summed"),
         ):
 
-            loss_no_smooth = criterion_no_smooth(mock_model, batch_no_smooth)
-            loss_smooth = criterion_smooth(mock_model, batch_smooth)
+            loss_no_smooth, _ = criterion_no_smooth(mock_model, batch_no_smooth)
+            loss_smooth, _ = criterion_smooth(mock_model, batch_smooth)
 
             # Losses should be different due to label smoothing
             assert not torch.allclose(loss_no_smooth, loss_smooth)
@@ -185,12 +192,14 @@ class TestCrossEntropyCriterion:
             for t in range(seq_len):
                 logits[b, t, targets[b, t]] = 10.0
 
-        accuracy = criterion.accuracy_metric(logits, targets)
+        predictions = criterion.gather_predictions(logits)
+        accuracy = criterion.accuracy_metric(predictions, targets)
         assert accuracy == 1.0  # Perfect accuracy
 
         # Random predictions
         random_logits = torch.randn(batch_size, seq_len, vocab_size)
-        accuracy_random = criterion.accuracy_metric(random_logits, targets)
+        random_predictions = criterion.gather_predictions(random_logits)
+        accuracy_random = criterion.accuracy_metric(random_predictions, targets)
         assert 0.0 <= accuracy_random <= 1.0
 
     def test_accuracy_metric_partial_correct(self):
@@ -208,7 +217,8 @@ class TestCrossEntropyCriterion:
         logits[0, 2, 0] = 10.0  # Incorrect: predict 0, target is 2
         logits[0, 3, 0] = 10.0  # Incorrect: predict 0, target is 1
 
-        accuracy = criterion.accuracy_metric(logits, targets)
+        predictions = criterion.gather_predictions(logits)
+        accuracy = criterion.accuracy_metric(predictions, targets)
         assert accuracy == 0.5  # 2/4 = 0.5
 
     @patch("optimus_dl.modules.criterion.cross_entropy.log_averaged_exponent")
@@ -317,7 +327,7 @@ class TestCrossEntropyCriterion:
         input_ids = torch.tensor([[0, 5, 7]])  # Input IDs where targets are [5, 7]
         batch = {"input_ids": input_ids.clone()}
 
-        loss = criterion(mock_model, batch)
+        loss, _ = criterion(mock_model, batch)
 
         # Find perplexity logging call
         perplexity_call = None
@@ -386,11 +396,14 @@ class TestCrossEntropyCriterion:
                 patch("optimus_dl.modules.criterion.cross_entropy.log_summed"),
             ):
 
-                loss = criterion(mock_model, batch)
+                loss, exposed = criterion(
+                    mock_model, batch, requested_protocols={StandardProtocols.LOGITS}
+                )
 
                 assert isinstance(loss, torch.Tensor)
                 assert loss.dim() == 0  # Scalar loss
                 assert torch.isfinite(loss)
+                assert StandardProtocols.LOGITS in exposed
 
     def test_gradient_flow(self):
         """Test that gradients flow through the loss"""
@@ -421,7 +434,7 @@ class TestCrossEntropyCriterion:
             patch("optimus_dl.modules.criterion.cross_entropy.log_summed"),
         ):
 
-            loss = criterion(model, batch)
+            loss, _ = criterion(model, batch)
             loss.backward()
 
             # Check that gradients exist
@@ -439,7 +452,8 @@ class TestCrossEntropyCriterion:
         targets = torch.randint(0, 10, (2, 5))
 
         # This should not raise an error despite logits requiring grad
-        accuracy = criterion.accuracy_metric(logits, targets)
+        predictions = criterion.gather_predictions(logits)
+        accuracy = criterion.accuracy_metric(predictions, targets)
 
         assert isinstance(accuracy, float)
         assert 0.0 <= accuracy <= 1.0
@@ -462,8 +476,11 @@ class TestCrossEntropyCriterion:
             patch("optimus_dl.modules.criterion.cross_entropy.log_summed"),
         ):
 
-            loss = criterion(mock_model, batch)
+            loss, exposed = criterion(
+                mock_model, batch, requested_protocols={StandardProtocols.LOGITS}
+            )
 
             assert isinstance(loss, torch.Tensor)
             assert loss.dim() == 0
             assert torch.isfinite(loss)
+            assert StandardProtocols.LOGITS in exposed
