@@ -310,10 +310,7 @@ class Qwen3(GPT):
         """Forward pass with rotary frequency selection."""
         idx = input_ids
         device = idx.device
-        b, t = idx.size()
-        assert (
-            t <= self.config.sequence_length
-        ), f"Cannot forward sequence of length {t}, block size is only {self.config.sequence_length}"
+        _, t = idx.size()
 
         # forward the GPT model itself
         tok_emb = self.transformer.wte(idx)  # token embeddings of shape (b, t, n_embd)

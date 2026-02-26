@@ -322,10 +322,7 @@ class Llama(GPT):
         """
         idx = input_ids
         device = idx.device
-        b, t = idx.size()
-        assert (
-            t <= self.config.sequence_length
-        ), f"Cannot forward sequence of length {t}, block size is only {self.config.sequence_length}"
+        _, t = idx.size()
 
         if position_ids is None:
             pos = torch.arange(0, t, dtype=torch.long, device=device)
