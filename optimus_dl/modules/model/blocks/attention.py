@@ -251,24 +251,30 @@ class RotarySelfAttention(nn.Module):
         k_padded = k_padded.transpose(1, 2)
         v_padded = v_padded.transpose(1, 2)
 
-        # 3. Create padding mask
+        # 3. Create mask
         # We need a mask of shape (B, 1, T, T)
-        # causal mask is handled by is_causal=True in SDPA
-        # padding mask: doc attends only to valid tokens
         q_idx = torch.arange(max_seqlen, device=device).view(1, 1, -1, 1)
         kv_idx = torch.arange(max_seqlen, device=device).view(1, 1, 1, -1)
 
         doc_lens = (cu_seqlens[1:] - cu_seqlens[:-1]).view(-1, 1, 1, 1)
-        padding_mask = (q_idx < doc_lens) & (kv_idx < doc_lens)
+        # Padding mask: doc attends only to valid tokens
+        mask = (q_idx < doc_lens) & (kv_idx < doc_lens)
+
+        # Causal mask
+        mask &= q_idx >= kv_idx
+
+        # Sliding window mask
+        if self.sliding_window is not None:
+            mask &= q_idx - kv_idx < self.sliding_window
 
         # 4. Compute attention
         y = torch.nn.functional.scaled_dot_product_attention(
             q_padded,
             k_padded,
             v_padded,
-            attn_mask=padding_mask,
+            attn_mask=mask,
             dropout_p=self.dropout if self.training else 0.0,
-            is_causal=True,
+            is_causal=False,  # Already handled in mask
             enable_gqa=(self.n_rep > 1),
         )
 
