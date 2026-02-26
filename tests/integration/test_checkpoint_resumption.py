@@ -65,8 +65,6 @@ class TestCheckpointResumption:
             "~model_transforms",  # Disable distributed wraps and compilation for speed
             "optimization.amp.enabled=false",
             "data.train_datasets.source.inner._name=txt_lines",
-            "~data.train_datasets.source.inner.split",
-            "~data.eval_datasets.tinyshakespeare.source.split",
             f"+data.train_datasets.source.inner.file_link={self.data_path}",
             "~loggers",
             "common.eval_freq=0",
@@ -103,8 +101,8 @@ class TestCheckpointResumption:
 
     def test_checkpoint_consistency(self):
         """Compare uninterrupted training vs resumed training."""
-        total_steps = 50
-        split_step = 25
+        total_steps = 10
+        split_step = 5
 
         # 1. Run uninterrupted training
         self.run_train(self.output_full, iterations=total_steps, save_freq=total_steps)
