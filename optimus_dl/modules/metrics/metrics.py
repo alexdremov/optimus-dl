@@ -154,7 +154,7 @@ class PerplexityMetric(Metric):
         self, sources_data: dict[str, dict[str, Any]]
     ) -> dict[str, dict[str, Any]]:
         loss = sources_data.get(StandardProtocols.LOSS)
-        if not loss:
+        if loss is None:
             return {}
 
         weight = 1.0
@@ -193,7 +193,7 @@ class LossMetric(Metric):
         self, sources_data: dict[str, dict[str, Any]]
     ) -> dict[str, dict[str, Any]]:
         loss = sources_data.get(StandardProtocols.LOSS)
-        if not loss:
+        if loss is None:
             return {}
 
         weight = 1.0
