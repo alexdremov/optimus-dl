@@ -21,7 +21,7 @@ from optimus_dl.core.profile import (
 from optimus_dl.modules.criterion import BaseCriterion
 from optimus_dl.modules.metrics import (
     log_averaged,
-    metrics_group,
+    meters_group,
 )
 from optimus_dl.modules.metrics.common import log_summed
 from optimus_dl.modules.model.base import BaseModel
@@ -231,7 +231,7 @@ class TrainingIterationMixin:
             lr_scheduler: Optional learning rate scheduler.
             metric_engine: Optional MetricEngine for training metrics.
         """
-        with metrics_group("train", log_freq=self.log_freq) as should_log:
+        with meters_group("train", log_freq=self.log_freq) as should_log:
             optimizer.zero_grad()
             model.train()
 

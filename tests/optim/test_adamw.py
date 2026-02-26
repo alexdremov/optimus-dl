@@ -169,7 +169,7 @@ class TestMakeAdamW:
         for _step in range(5):
             optimizer.zero_grad()
             output = model(x)
-            loss, _ = criterion(output, target)
+            loss = criterion(output, target)
             if initial_loss is None:
                 initial_loss = loss.item()
             loss.backward()
@@ -278,13 +278,13 @@ class TestMakeAdamW:
         for _ in range(3):
             # Model 1
             opt1.zero_grad()
-            loss1, _ = criterion(model1(x), target)
+            loss1 = criterion(model1(x), target)
             loss1.backward()
             opt1.step()
 
             # Model 2
             opt2.zero_grad()
-            loss2, _ = criterion(model2(x), target)
+            loss2 = criterion(model2(x), target)
             loss2.backward()
             opt2.step()
 

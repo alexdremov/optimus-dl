@@ -13,12 +13,12 @@ from optimus_dl.core.seed import set_seed
 from optimus_dl.modules.checkpoint import CheckpointManager
 from optimus_dl.modules.criterion import BaseCriterion
 from optimus_dl.modules.metrics import (
-    compute_metrics,
+    compute_meters,
     log_event_end,
     log_event_start,
-    metrics_group,
-    reset_metrics,
-    step_metrics,
+    meters_group,
+    reset_meters,
+    step_meters,
 )
 from optimus_dl.modules.model.base import BaseModel
 from optimus_dl.recipe.train.builders import (
@@ -277,7 +277,7 @@ class TrainRecipe(
         self.setup_context()
         is_restart = self.checkpoint_manager.is_restart(self.cfg.common.output_path)
 
-        with metrics_group("init"):
+        with meters_group("init"):
             log_event_start("perf/init")
             logger.info(f"Using output path : {self.cfg.common.output_path}")
             logger.info(self.cfg)
@@ -370,7 +370,7 @@ class TrainRecipe(
                 self.build_loggers()
                 self.setup_loggers(self.cfg.common.exp_name)
 
-        init_metrics = compute_metrics(
+        init_metrics = compute_meters(
             group_name="init",
             aggregate=True,
             collective=collective,
@@ -423,10 +423,10 @@ class TrainRecipe(
                     metric_engine=train_metric_engine,
                 )
 
-                with metrics_group("train") as should_log:
+                with meters_group("train") as should_log:
                     if should_log:
                         # Get aggregated metrics for progress bar
-                        current_metrics = compute_metrics(
+                        current_metrics = compute_meters(
                             "train",
                             aggregate=True,
                             collective=collective,
@@ -445,8 +445,8 @@ class TrainRecipe(
                                 current_metrics, iteration, "train"
                             )
 
-                step_metrics("train")  # Step the metrics logging iteration counter
-                reset_metrics(
+                step_meters("train")  # Step the metrics logging iteration counter
+                reset_meters(
                     "train"
                 )  # Reset metrics after logging (keep metrics with reset=False)
                 with training_context["amp_ctx"]:

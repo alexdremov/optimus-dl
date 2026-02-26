@@ -1,12 +1,14 @@
 """Evaluation mixin for evaluation functionality."""
 
 import logging
+import time
 from dataclasses import (
     dataclass,
 )
 from typing import Any
 
 import torch
+from tqdm.auto import tqdm
 
 from optimus_dl.core.profile import measured_next
 from optimus_dl.core.registry import (
@@ -15,14 +17,14 @@ from optimus_dl.core.registry import (
 )
 from optimus_dl.modules.criterion import BaseCriterion
 from optimus_dl.modules.metrics import (
-    compute_metrics,
+    compute_meters,
     log_averaged,
     log_event_end,
     log_event_occurence,
     log_event_start,
     log_summed,
-    metrics_group,
-    step_metrics,
+    meters_group,
+    step_meters,
 )
 from optimus_dl.modules.model.base import BaseModel
 
@@ -106,6 +108,8 @@ class Evaluator:
         max_iterations: int | None = None,
         collective: Any = None,
         all_metrics_configs: dict[str, list[dict]] | None = None,
+        metrics_prefix: str = "eval",
+        show_progress: bool = False,
     ):
         """Execute the evaluation loop for all provided datasets.
 
@@ -115,10 +119,12 @@ class Evaluator:
         Args:
             model: Model to evaluate.
             criterion: Loss function.
-            eval_data_dict: Dictionary of {name: dataloader}.
+            eval_data_dict: Dictionary of {name: dataloader/DataPipeline}.
             max_iterations: Limit on number of batches.
             collective: Distributed collective.
             all_metrics_configs: Root metrics configuration mapping dataset names to configs.
+            metrics_prefix: Prefix for metric groups (e.g., "eval" or "metrics").
+            show_progress: Whether to show a progress bar.
 
         Returns:
             Nested dictionary of results: {dataset_name: {metric_name: value}}.
@@ -130,23 +136,40 @@ class Evaluator:
         for eval_name, eval_data in eval_data_dict.items():
             logger.info(f"Running evaluation {eval_name}")
 
+            # Handle both raw dataloader and DataPipeline object
+            dataloader = getattr(eval_data, "dataloader", eval_data)
+
             engine = None
             requested_protocols = None
             dataset_metrics = all_metrics_configs.get(eval_name)
             if dataset_metrics:
                 from optimus_dl.modules.metrics.engine import MetricEngine
 
-                engine = MetricEngine(f"eval/{eval_name}", dataset_metrics)
+                engine = MetricEngine(f"{metrics_prefix}/{eval_name}", dataset_metrics)
                 requested_protocols = engine.required_external_protocols
 
             with (
                 torch.no_grad(),
-                metrics_group(f"eval/{eval_name}", log_freq=1, force_recreate=True),
+                meters_group(
+                    f"{metrics_prefix}/{eval_name}", log_freq=1, force_recreate=True
+                ),
             ):
                 log_event_start("perf/total_run")
+                start_time = time.perf_counter()
 
-                eval_iter = iter(eval_data)
+                eval_iter = iter(dataloader)
                 iterations = 0
+
+                pbar = None
+                if show_progress:
+                    pbar = tqdm(
+                        desc=f"Eval {eval_name}",
+                        disable=collective is not None
+                        and not collective.is_local_master,
+                        unit="batch",
+                        total=max_iterations,
+                    )
+
                 try:
                     while max_iterations is None or iterations < max_iterations:
                         log_event_occurence("perf/full_iteration")
@@ -157,8 +180,6 @@ class Evaluator:
                         )
 
                         if engine:
-                            # Efficiency: Pass precomputed results (logits, classification, loss)
-                            # to avoid redundant forward pass in engine sources.
                             computed_data = exposed.copy()
                             computed_data["loss"] = loss
                             engine.update(
@@ -173,17 +194,23 @@ class Evaluator:
                         )
 
                         iterations += 1
+                        if pbar:
+                            pbar.update(1)
 
                         # Step metrics for each evaluation iteration
-                        step_metrics(f"eval/{eval_name}")
+                        step_meters(f"{metrics_prefix}/{eval_name}")
 
                 except StopIteration:
                     pass
+                finally:
+                    if pbar:
+                        pbar.close()
 
+                total_time = time.perf_counter() - start_time
                 log_event_end("perf/total_run")
 
-            eval_metrics = compute_metrics(
-                f"eval/{eval_name}",
+            eval_metrics = compute_meters(
+                f"{metrics_prefix}/{eval_name}",
                 aggregate=True,
                 collective=collective,
             )
@@ -191,8 +218,13 @@ class Evaluator:
             if engine:
                 eval_metrics = engine.compute(eval_metrics)
 
+            # Add basic performance stats
+            eval_metrics["perf/total_run_ms"] = total_time * 1000
+            if iterations > 0:
+                eval_metrics["perf/ms_per_batch"] = (total_time / iterations) * 1000
+
             logger.info(f"Finished eval {eval_name}: {eval_metrics}")
-            total_metrics[f"eval/{eval_name}"] = eval_metrics
+            total_metrics[f"{metrics_prefix}/{eval_name}"] = eval_metrics
         return total_metrics
 
 
