@@ -217,8 +217,10 @@ def test_flat_memory_efficiency(device):
     # Mem ratio should be very close to token ratio
     # Allow small tolerance for fixed activations if any
     assert (
-        (mem_ratio - token_ratio) / token_ratio < 0.05
-    ), f"Memory ratio {mem_ratio:.4f} exceeds expected token ratio {token_ratio:.4f}"
+        mem_ratio - token_ratio
+    ) / token_ratio < 0.05, (
+        f"Memory ratio {mem_ratio:.4f} exceeds expected token ratio {token_ratio:.4f}"
+    )
     assert (
         mem_ratio < 0.4
     ), "Flat memory should be significantly less than padded memory in this scenario"
