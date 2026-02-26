@@ -5,7 +5,6 @@ from typing import (
     Any,
 )
 
-
 from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.metrics.base import (
     compute_metrics,
