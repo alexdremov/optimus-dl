@@ -232,7 +232,9 @@ class MetricEngine:
             computed_data: Optional dictionary mapping protocol names to already computed data.
                 This allows reusing results (like logits) to avoid redundant forward passes.
         """
-        with metrics_group(self.group_name, force_recreate=False):
+        with metrics_group(self.group_name, force_recreate=False) as should_log:
+            if not should_log:
+                return
             # Global cache for the entire batch. Keys are source config hashes.
             global_source_cache: dict[str, Any] = {}
 

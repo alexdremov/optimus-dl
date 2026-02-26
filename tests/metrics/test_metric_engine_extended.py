@@ -3,7 +3,6 @@ from dataclasses import (
 )
 from unittest.mock import MagicMock
 
-import pytest
 
 from optimus_dl.modules.metrics.base import (
     _active_meter_groups,
@@ -95,10 +94,12 @@ class TestMetricEngineExtended:
                     {
                         "_name": "simple_metric",
                         "required_proto": "value_proto",
+                        "nested_name": "m1",
                     },
                     {
                         "_name": "simple_metric",
                         "required_proto": "value_proto",
+                        "nested_name": "m2",
                     },
                 ],
             }
@@ -119,8 +120,9 @@ class TestMetricEngineExtended:
         raw_results = compute_metrics("test_group", aggregate=False)
         results = engine.compute(raw_results)
 
-        assert results["test/metric_0/value_proto"] == 42.0
-        assert results["test/metric_1/value_proto"] == 42.0
+        # Descriptive naming: prefix / nested_name / sub_name
+        assert results["test/m1/value_proto"] == 42.0
+        assert results["test/m2/value_proto"] == 42.0
 
     def test_multi_protocol_source(self):
         """Ensure a source can provide multiple protocols and metrics can consume them selectively."""
@@ -135,10 +137,12 @@ class TestMetricEngineExtended:
                     {
                         "_name": "simple_metric",
                         "required_proto": "proto_a",
+                        "nested_name": "ma",
                     },
                     {
                         "_name": "simple_metric",
                         "required_proto": "proto_b",
+                        "nested_name": "mb",
                     },
                 ],
             }
@@ -155,11 +159,11 @@ class TestMetricEngineExtended:
         raw_results = compute_metrics("multi_group", aggregate=False)
         results = engine.compute(raw_results)
 
-        assert results["multi/metric_0/proto_a"] == 10.0
-        assert results["multi/metric_1/proto_b"] == 20.0
+        assert results["multi/ma/proto_a"] == 10.0
+        assert results["multi/mb/proto_b"] == 20.0
 
     def test_handshake_missing_protocol(self):
-        """Ensure handshake fails if a source does not provide the explicitly required protocol."""
+        """Ensure missing protocols are identified via required_external_protocols."""
         configs = [
             {
                 "_name": "source_group",
@@ -176,8 +180,6 @@ class TestMetricEngineExtended:
             }
         ]
 
-        with pytest.raises(
-            ValueError,
-            match="Handshake failed",
-        ):
-            MetricEngine("fail_group", configs)
+        # Init no longer raises ValueError, but identifies external requirements
+        engine = MetricEngine("fail_group", configs)
+        assert "non_existent_proto" in engine.required_external_protocols
