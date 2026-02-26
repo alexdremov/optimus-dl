@@ -316,26 +316,10 @@ class MetricEngine:
 
                         factory = self._get_accumulator_factory(acc_type)
 
-                        # Filter log_kwargs to only include arguments accepted by the meter's log method
-                        import inspect
-
-                        # We need an instance to inspect its log method
-                        temp_meter = factory()
-                        sig = inspect.signature(temp_meter.log)
-                        filtered_kwargs = {
-                            k: v
-                            for k, v in log_kwargs.items()
-                            if k in sig.parameters
-                            or any(
-                                p.kind == inspect.Parameter.VAR_KEYWORD
-                                for p in sig.parameters.values()
-                            )
-                        }
-
                         log_metric(
                             name=full_name,
                             meter_factory=factory,
-                            **filtered_kwargs,
+                            **log_kwargs,
                         )
 
     def _get_accumulator_factory(self, acc_type: str) -> Callable[[], BaseMeter]:
