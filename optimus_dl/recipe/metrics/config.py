@@ -13,7 +13,6 @@ from omegaconf import MISSING
 from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.checkpoint import (
     CheckpointManagerConfig,
-    LoadStrategy,
 )
 from optimus_dl.modules.criterion import CriterionConfig
 from optimus_dl.modules.data import DataConfig
@@ -24,6 +23,9 @@ from optimus_dl.modules.model_transforms import ModelTransformConfig
 from optimus_dl.recipe.mixins.model_builder import ModelBuilderConfig
 from optimus_dl.recipe.train.builders.criterion_builder import CriterionBuilderConfig
 from optimus_dl.recipe.train.builders.data_builder import DataBuilderConfig
+from optimus_dl.recipe.train.mixins.managers.evaluation_manager import (
+    EvaluatorConfig,
+)
 from optimus_dl.recipe.train.mixins.managers.logger_manager import LoggerManagerConfig
 
 
@@ -51,10 +53,6 @@ class MetricsRecipeConfig:
     checkpoint_path: str | None = field(
         default=None,
         metadata={"description": "Path to checkpoint to load from"},
-    )
-    load_strategy: LoadStrategy = field(
-        default_factory=LoadStrategy,
-        metadata={"description": "Strategy what to load from the checkpoint"},
     )
 
     # Distributed
@@ -111,3 +109,4 @@ class MetricsConfig(RegistryConfigStrict):
     logger_manager: Any = field(
         default_factory=lambda: LoggerManagerConfig(_name="base")
     )
+    evaluator: Any = field(default_factory=lambda: EvaluatorConfig(_name="base"))

@@ -5,30 +5,21 @@ from typing import (
     Any,
 )
 
-import torch
 from omegaconf import OmegaConf
-from tqdm.auto import tqdm
 
 from optimus_dl.core.device import setup_device_and_collective
-from optimus_dl.core.profile import measured_next
 from optimus_dl.core.registry import build as build_component
 from optimus_dl.core.seed import set_seed
 from optimus_dl.modules.checkpoint import CheckpointManager
 from optimus_dl.modules.criterion import BaseCriterion
-from optimus_dl.modules.metrics import (
-    compute_metrics,
-    log_averaged,
-    log_event_end,
-    log_event_occurence,
-    log_event_start,
-    log_summed,
-    metrics_group,
-    step_metrics,
-)
 from optimus_dl.recipe.train.builders import (
     CriterionBuilder,
     DataBuilder,
     ModelBuilder,
+)
+from optimus_dl.recipe.train.mixins.managers.evaluation_manager import (
+    Evaluator,
+    build_evaluator,
 )
 from optimus_dl.recipe.train.mixins.managers.logger_manager import (
     LoggerManager,
@@ -79,6 +70,10 @@ class MetricsRecipe:
         self.logger_manager: LoggerManager = build_logger_manager(
             cfg.logger_manager, loggers_config=cfg.loggers
         )
+        self.evaluator: Evaluator = build_evaluator(
+            cfg.evaluator,
+            eval_iterations=cfg.common.max_iterations,
+        )
         self.tokenizer = None
 
     def run(self) -> dict[str, dict[str, Any]]:
@@ -91,11 +86,6 @@ class MetricsRecipe:
         )
 
         logger.info(f"Starting Metrics Evaluation on {device}")
-
-        # 0. Build Tokenizer
-        from optimus_dl.modules.tokenizer import build_tokenizer
-
-        self.tokenizer = build_tokenizer(self.cfg.common.tokenizer)
 
         # 1. Build Model
         # Try loading from checkpoint if provided, else build from model config
@@ -129,98 +119,36 @@ class MetricsRecipe:
         )
 
         # 4. Setup Loggers
-        self.logger_manager.build_loggers()
-        self.logger_manager.setup_loggers(
-            self.cfg.common.name, OmegaConf.to_container(self.cfg, resolve=True)
-        )
+        if collective.is_master:
+            self.logger_manager.build_loggers()
+            self.logger_manager.setup_loggers(
+                self.cfg.common.name, OmegaConf.to_container(self.cfg, resolve=True)
+            )
 
         all_results = {}
 
         try:
-            # 5. Evaluation Loop
-            for eval_name, eval_data in eval_datapipeline.items():
-                logger.info(f"Evaluating dataset: {eval_name}")
+            # 5. Run evaluation using Evaluator component
+            all_results = self.evaluator.run_evaluation(
+                model=model,
+                criterion=criterion,
+                eval_data_dict=eval_datapipeline,
+                max_iterations=self.cfg.common.max_iterations,
+                collective=collective,
+                all_metrics_configs=self.cfg.metrics,
+                metrics_prefix="metrics",
+                show_progress=True,
+            )
 
-                # Setup MetricEngine for this dataset
-                engine = None
-                requested_protocols = None
-                dataset_metrics = self.cfg.metrics.get(eval_name)
-                if dataset_metrics:
-                    from optimus_dl.modules.metrics.engine import MetricEngine
-
-                    engine = MetricEngine(f"metrics/{eval_name}", dataset_metrics)
-                    requested_protocols = engine.required_external_protocols
-
-                with (
-                    torch.no_grad(),
-                    metrics_group(
-                        f"metrics/{eval_name}", log_freq=1, force_recreate=True
-                    ),
-                ):
-                    log_event_start("perf/total_run")
-
-                    eval_iter = iter(eval_data.dataloader)
-                    iterations = 0
-                    max_iterations = self.cfg.common.max_iterations
-
-                    pbar = tqdm(
-                        desc=f"Eval {eval_name}",
-                        disable=not collective.is_local_master,
-                        unit="batch",
+            # 6. Log results to loggers
+            if collective.is_master:
+                for eval_name, eval_metrics in all_results.items():
+                    self.logger_manager.log_metrics_to_loggers(
+                        eval_metrics, step=0, group=f"eval/{eval_name}"
                     )
 
-                    try:
-                        while max_iterations is None or iterations < max_iterations:
-                            log_event_occurence("perf/full_iteration")
-
-                            elapsed_batch_get, batch = measured_next(eval_iter)
-
-                            # Forward through criterion
-                            loss, exposed = criterion(
-                                model, batch, requested_protocols=requested_protocols
-                            )
-
-                            if engine:
-                                computed_data = exposed.copy()
-                                computed_data["loss"] = loss
-                                engine.update(
-                                    data=dict(model=model, batch=batch),
-                                    computed_data=computed_data,
-                                )
-
-                            log_summed("num_batches", lambda: 1)
-                            log_averaged("perf/batch_get", elapsed_batch_get)
-
-                            iterations += 1
-                            pbar.update(1)
-                            step_metrics(f"metrics/{eval_name}")
-
-                    except StopIteration:
-                        pass
-                    finally:
-                        pbar.close()
-
-                    log_event_end("perf/total_run")
-
-                # Finalize and Aggregate
-                eval_metrics = compute_metrics(
-                    f"metrics/{eval_name}",
-                    aggregate=True,
-                    collective=collective,
-                )
-
-                if engine:
-                    eval_metrics = engine.compute(eval_metrics)
-
-                logger.info(f"Results for {eval_name}: {eval_metrics}")
-                all_results[eval_name] = eval_metrics
-
-                # Log to loggers
-                self.logger_manager.log_metrics_to_loggers(
-                    eval_metrics, step=0, group=f"eval/{eval_name}"
-                )
-
         finally:
-            self.logger_manager.close_loggers()
+            if collective.is_master:
+                self.logger_manager.close_loggers()
 
         return all_results
