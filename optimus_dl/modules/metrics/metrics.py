@@ -182,7 +182,7 @@ class LossMetric(Metric):
         self, sources_data: dict[str, dict[str, Any]]
     ) -> dict[str, dict[str, Any]]:
         loss = sources_data.get(StandardProtocols.LOSS)
-        if not loss_dict:
+        if not loss:
             return {}
 
         weight = 1.0

@@ -71,7 +71,7 @@ class SimpleMetric(Metric):
         return {self.cfg.required_proto: "average"}
 
     def __call__(self, sources_data):
-        val = sources_data[self.cfg.required_proto][self.cfg.required_proto]
+        val = sources_data[self.cfg.required_proto]
         return {self.cfg.required_proto: {"value": val, "weight": 1.0}}
 
 
