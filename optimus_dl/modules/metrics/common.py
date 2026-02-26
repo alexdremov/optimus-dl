@@ -16,7 +16,7 @@ import torch
 
 from .base import (
     BaseMeter,
-    log_metric,
+    log_meter,
 )
 
 
@@ -464,7 +464,7 @@ def log_averaged(
         log_averaged("train/accuracy", 0.95, round=4)
 
         ```"""
-    log_metric(
+    log_meter(
         name=name,
         meter_factory=lambda: AverageMeter(round=round),
         reset=reset,
@@ -495,7 +495,7 @@ def log_averaged_exponent(
         reset: If True, the meter is reset after logging.
         priority: Priority for meter ordering.
     """
-    log_metric(
+    log_meter(
         name=name,
         meter_factory=lambda: AveragedExponentMeter(round=round),
         reset=reset,
@@ -536,7 +536,7 @@ def log_summed(
         log_summed("train/tokens", lambda: get_token_count())
 
         ```"""
-    log_metric(
+    log_meter(
         name=name,
         meter_factory=lambda: SummedMeter(round=round),
         reset=reset,
@@ -571,7 +571,7 @@ def log_event_start(
         # Meter will show average duration in milliseconds
 
         ```"""
-    log_metric(
+    log_meter(
         name=name,
         meter_factory=lambda: StopwatchMeter(round=round),
         reset=reset,
@@ -609,7 +609,7 @@ def log_event_end(
         log_event_end("perf/backward_pass")
 
         ```"""
-    log_metric(
+    log_meter(
         name=name,
         meter_factory=lambda: StopwatchMeter(round=round),
         reset=reset,
@@ -637,7 +637,7 @@ def log_event_occurence(
         reset: If True, the meter is reset after logging.
         priority: Priority for meter ordering when logging.
     """
-    log_metric(
+    log_meter(
         name=name,
         meter_factory=lambda: FrequencyMeter(round=round),
         reset=reset,

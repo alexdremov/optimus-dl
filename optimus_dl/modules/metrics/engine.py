@@ -7,8 +7,8 @@ from typing import Any
 
 from optimus_dl.modules.metrics.base import (
     BaseMeter,
-    log_metric,
-    metrics_group,
+    log_meter,
+    meters_group,
 )
 from optimus_dl.modules.metrics.common import (
     AveragedExponentMeter,
@@ -232,7 +232,7 @@ class MetricEngine:
             computed_data: Optional dictionary mapping protocol names to already computed data.
                 This allows reusing results (like logits) to avoid redundant forward passes.
         """
-        with metrics_group(self.group_name, force_recreate=False) as should_log:
+        with meters_group(self.group_name, force_recreate=False) as should_log:
             if not should_log:
                 return
             # Global cache for the entire batch. Keys are source config hashes.
@@ -316,7 +316,7 @@ class MetricEngine:
 
                         factory = self._get_accumulator_factory(acc_type)
 
-                        log_metric(
+                        log_meter(
                             name=full_name,
                             meter_factory=factory,
                             **log_kwargs,

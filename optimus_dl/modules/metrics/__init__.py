@@ -10,11 +10,11 @@ from .base import (
     MeterGroup,
     compute_metrics,
     load_state_dict,
-    log_metric,
-    metrics_group,
-    reset_metrics,
+    log_meter,
+    meters_group,
+    reset_meters,
     state_dict,
-    step_metrics,
+    step_meters,
 )
 from .common import (
     AveragedExponentMeter,
@@ -29,6 +29,12 @@ from .common import (
     log_event_occurence,
     log_event_start,
     log_summed,
+)
+from .metrics import (
+    Metric,
+    MetricConfig,
+    build_metric,
+    register_metric,
 )
 from .source import (
     MetricSource,

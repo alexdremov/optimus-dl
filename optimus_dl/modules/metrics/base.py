@@ -408,10 +408,10 @@ class BaseMeter(ABC):
 
 
 @contextlib.contextmanager
-def metrics_group(name: str, log_freq: int | None = None, force_recreate: bool = False):
+def meters_group(name: str, log_freq: int | None = None, force_recreate: bool = False):
     """Context manager for activating a metrics group.
 
-    While inside this context, any calls to `log_metric` will be directed to
+    While inside this context, any calls to `log_meter` will be directed to
     the `MeterGroup` identified by `name`. This allows for grouping related
     meters (e.g., "train" or "eval" metrics).
 
@@ -530,7 +530,7 @@ def compute_metrics(
     return aggregated_metrics
 
 
-def step_metrics(name: str) -> None:
+def step_meters(name: str) -> None:
     """Explicitly step the iteration counter for a named `MeterGroup`.
 
     This function allows external components to manually advance the iteration
@@ -546,7 +546,7 @@ def step_metrics(name: str) -> None:
         logger.debug(f"Attempted to step non-existent MeterGroup '{name}'.")
 
 
-def reset_metrics(name: str) -> None:
+def reset_meters(name: str) -> None:
     """Reset all resettable meters within a named `MeterGroup`.
 
     This function triggers the `reset()` method on the specified `MeterGroup`,
@@ -621,7 +621,7 @@ def _evaluate_value(value_or_callable: Any) -> Any:
     return value_or_callable
 
 
-def log_metric(
+def log_meter(
     name: str,
     meter_factory: Callable[[], BaseMeter],
     reset: bool = True,

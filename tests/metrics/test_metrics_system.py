@@ -16,11 +16,11 @@ from optimus_dl.modules.metrics.base import (
     _meter_groups,
     compute_metrics,
     load_state_dict,
-    log_metric,
-    metrics_group,
-    reset_metrics,
+    log_meter,
+    meters_group,
+    reset_meters,
     state_dict,
-    step_metrics,
+    step_meters,
 )
 from optimus_dl.modules.metrics.common import (
     AverageMeter,
@@ -657,58 +657,58 @@ class TestMeterGroup:
 
 
 class TestMetricsGroupContext:
-    """Tests for metrics_group context manager"""
+    """Tests for meters_group context manager"""
 
     def setUp(self):
         # Clear global state before each test
         _meter_groups.clear()
         _active_meter_groups.clear()
 
-    def test_metrics_group_context_creation(self):
+    def test_meters_group_context_creation(self):
         self.setUp()
 
-        with metrics_group("test_group") as should_log:
+        with meters_group("test_group") as should_log:
             assert "test_group" in _meter_groups
             assert _active_meter_groups["test_group"] == 1
             assert should_log is True  # Default log_freq=1
 
-    def test_metrics_group_context_with_log_freq(self):
+    def test_meters_group_context_with_log_freq(self):
         self.setUp()
 
-        with metrics_group("test_group", log_freq=5) as should_log:
+        with meters_group("test_group", log_freq=5) as should_log:
             assert _meter_groups["test_group"].log_freq == 5
             assert should_log is True  # First iteration: 0 % 5 == 0
 
-    def test_metrics_group_context_cleanup(self):
+    def test_meters_group_context_cleanup(self):
         self.setUp()
 
-        with metrics_group("test_group"):
+        with meters_group("test_group"):
             assert "test_group" in _active_meter_groups
 
         assert "test_group" not in _active_meter_groups
 
-    def test_metrics_group_context_nested(self):
+    def test_meters_group_context_nested(self):
         self.setUp()
 
-        with metrics_group("test_group"):
+        with meters_group("test_group"):
             assert _active_meter_groups["test_group"] == 1
 
-            with metrics_group("test_group"):
+            with meters_group("test_group"):
                 assert _active_meter_groups["test_group"] == 2
 
             assert _active_meter_groups["test_group"] == 1
 
         assert "test_group" not in _active_meter_groups
 
-    def test_metrics_group_force_recreate(self):
+    def test_meters_group_force_recreate(self):
         self.setUp()
 
-        with metrics_group("test_group", log_freq=5):
+        with meters_group("test_group", log_freq=5):
             pass
 
         assert _meter_groups["test_group"].log_freq == 5
 
-        with metrics_group("test_group", log_freq=10, force_recreate=True):
+        with meters_group("test_group", log_freq=10, force_recreate=True):
             pass
 
         assert _meter_groups["test_group"].log_freq == 10
@@ -725,7 +725,7 @@ class TestLogMeterFunctions:
     def test_log_averaged(self):
         self.setUp()
 
-        with metrics_group("test_group"):
+        with meters_group("test_group"):
             log_averaged("test_meter", value=10.0, weight=2.0, round=2)
 
         group = _meter_groups["test_group"]
@@ -740,7 +740,7 @@ class TestLogMeterFunctions:
     def test_log_summed(self):
         self.setUp()
 
-        with metrics_group("test_group"):
+        with meters_group("test_group"):
             log_summed("test_meter", value=15.0, round=1)
 
         group = _meter_groups["test_group"]
@@ -752,7 +752,7 @@ class TestLogMeterFunctions:
     def test_log_event_start(self):
         self.setUp()
 
-        with metrics_group("test_group"):
+        with meters_group("test_group"):
             with patch("time.perf_counter_ns", return_value=1000000):
                 log_event_start("test_event")
 
@@ -764,7 +764,7 @@ class TestLogMeterFunctions:
     def test_log_event_end(self):
         self.setUp()
 
-        with metrics_group("test_group"):
+        with meters_group("test_group"):
             with patch("time.perf_counter_ns", side_effect=[1000000, 2000000]):
                 log_event_start("test_event")
                 log_event_end("test_event")
@@ -777,7 +777,7 @@ class TestLogMeterFunctions:
     def test_log_event_occurence(self):
         self.setUp()
 
-        with metrics_group("test_group"):
+        with meters_group("test_group"):
             # Need 3 values: 1 for first log_event_occurence(), 2 for second log_event_occurence()
             with patch(
                 "optimus_dl.modules.metrics.common.time.perf_counter_ns",
@@ -806,7 +806,7 @@ class TestLogMeterFunctions:
     ):
         self.setUp()
 
-        with metrics_group("test_group"):
+        with meters_group("test_group"):
             log_averaged(
                 "test_meter",
                 value=10.0,
@@ -838,7 +838,7 @@ class TestMeterUtilityFunctions:
     def test_compute_metrics_local(self):
         self.setUp()
 
-        with metrics_group("test_group"):
+        with meters_group("test_group"):
             log_averaged("test_meter", value=10.0, weight=1.0)
 
         result = compute_metrics("test_group", aggregate=False)
@@ -856,7 +856,7 @@ class TestMeterUtilityFunctions:
             {"loss": {"sum": 15.0, "count": 1.0, "round": None}},  # rank 2
         ]
 
-        with metrics_group("test_group"):
+        with meters_group("test_group"):
             log_averaged("loss", value=2.5, weight=2.0)  # Local: sum=5, count=2
 
         # Compute aggregated metrics
@@ -867,31 +867,31 @@ class TestMeterUtilityFunctions:
         # Should aggregate across all ranks: (5+10+15) / (2+3+1) = 30/6 = 5.0
         assert aggregated["loss"] == 5.0
 
-    def test_step_metrics(self):
+    def test_step_meters(self):
         self.setUp()
 
-        with metrics_group("test_group", log_freq=3):
+        with meters_group("test_group", log_freq=3):
             pass
 
         group = _meter_groups["test_group"]
         assert group._iteration_counter == 0
 
-        step_metrics("test_group")
+        step_meters("test_group")
         assert group._iteration_counter == 1
 
-        step_metrics("nonexistent_group")  # Should not error
+        step_meters("nonexistent_group")  # Should not error
 
-    def test_reset_metrics(self):
+    def test_reset_meters(self):
         self.setUp()
 
-        with metrics_group("test_group"):
+        with meters_group("test_group"):
             log_averaged("reset_meter", value=10.0, weight=1.0, reset=True)
             log_averaged("keep_meter", value=20.0, weight=1.0, reset=False)
 
         group = _meter_groups["test_group"]
         assert len(group._meters) == 2
 
-        reset_metrics("test_group")
+        reset_meters("test_group")
         assert len(group._meters) == 1
         assert "keep_meter" in group._meters
         assert "reset_meter" not in group._meters
@@ -899,7 +899,7 @@ class TestMeterUtilityFunctions:
     def test_state_dict_and_load_state_dict(self):
         self.setUp()
 
-        with metrics_group("test_group"):
+        with meters_group("test_group"):
             log_averaged("test_meter", value=10.0, weight=1.0)
 
         # Get state dict
@@ -944,7 +944,7 @@ class TestMetersIntegration:
         steps_per_epoch = 5
 
         for _epoch in range(num_epochs):
-            with metrics_group("train", log_freq=2) as should_log:
+            with meters_group("train", log_freq=2) as should_log:
                 for step in range(steps_per_epoch):
                     # Log some training meters
                     loss = 1.0 / (step + 1)  # Decreasing loss
@@ -957,7 +957,7 @@ class TestMetersIntegration:
                         log_event_end("forward_pass")
 
                     # Step the meters
-                    step_metrics("train")
+                    step_meters("train")
 
                 # Compute meters at end of epoch
                 if should_log:
@@ -979,7 +979,7 @@ class TestMetersIntegration:
         eval_datasets = ["dataset1", "dataset2"]
 
         for dataset in eval_datasets:
-            with metrics_group(f"eval/{dataset}") as should_log:
+            with meters_group(f"eval/{dataset}") as should_log:
                 # Log evaluation meters
                 log_averaged("accuracy", value=0.95, weight=100)
                 log_averaged("f1_score", value=0.92, weight=100)
@@ -994,7 +994,7 @@ class TestMetersIntegration:
         self.setUp()
 
         # Create some meters
-        with metrics_group("test_group"):
+        with meters_group("test_group"):
             log_averaged("meter1", value=10.0, weight=1.0)
             log_summed("meter2", value=20.0)
 
@@ -1028,7 +1028,7 @@ class TestMetersIntegration:
             {"loss": {"sum": 15.0, "count": 1.0, "round": None}},  # rank 2
         ]
 
-        with metrics_group("train"):
+        with meters_group("train"):
             log_averaged("loss", value=2.5, weight=2.0)  # Local: sum=5, count=2
 
         # Compute aggregated meters
@@ -1054,8 +1054,8 @@ class TestMetersIntegration:
             def merge(self, other_state):
                 pass
 
-        with metrics_group("test_group"):
-            log_metric("failing_meter", lambda: FailingMeter())
+        with meters_group("test_group"):
+            log_meter("failing_meter", lambda: FailingMeter())
 
         # Should crash the compute_metrics function when accessing directly
         # We test that it indeed raises the exception

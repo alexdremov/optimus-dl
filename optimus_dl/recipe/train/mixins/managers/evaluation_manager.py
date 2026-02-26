@@ -23,8 +23,8 @@ from optimus_dl.modules.metrics import (
     log_event_occurence,
     log_event_start,
     log_summed,
-    metrics_group,
-    step_metrics,
+    meters_group,
+    step_meters,
 )
 from optimus_dl.modules.model.base import BaseModel
 
@@ -150,7 +150,7 @@ class Evaluator:
 
             with (
                 torch.no_grad(),
-                metrics_group(
+                meters_group(
                     f"{metrics_prefix}/{eval_name}", log_freq=1, force_recreate=True
                 ),
             ):
@@ -198,7 +198,7 @@ class Evaluator:
                             pbar.update(1)
 
                         # Step metrics for each evaluation iteration
-                        step_metrics(f"{metrics_prefix}/{eval_name}")
+                        step_meters(f"{metrics_prefix}/{eval_name}")
 
                 except StopIteration:
                     pass

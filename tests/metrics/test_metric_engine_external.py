@@ -8,7 +8,7 @@ from typing import (
 from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.metrics.base import (
     compute_metrics,
-    metrics_group,
+    meters_group,
 )
 from optimus_dl.modules.metrics.engine import MetricEngine
 from optimus_dl.modules.metrics.metrics import (
@@ -115,7 +115,7 @@ def test_engine_update_with_external_data_injection():
 
     engine = MetricEngine("test_engine_injection", configs)
 
-    with metrics_group("test_engine_injection", force_recreate=True):
+    with meters_group("test_engine_injection", force_recreate=True):
         # Inject 'ext_data' which is required by 'ext_data_source'
         engine.update(data={}, computed_data={"ext_data": 42.0})
 
