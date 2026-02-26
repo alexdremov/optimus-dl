@@ -28,14 +28,37 @@ except ImportError:
     flex_attention = None
     create_block_mask = None
 
+# Try to import varlen_attn
+try:
+    from torch.nn.attention.varlen import varlen_attn
 
-def attention_mask_fn(b, _, q_idx, kv_idx, window_size=None, seq_lens=None):
-    """Mask function for flex_attention supporting causal, sliding window, and padding."""
+    VARLEN_ATTENTION_AVAILABLE = True
+except ImportError:
+    VARLEN_ATTENTION_AVAILABLE = False
+    varlen_attn = None
+
+
+def attention_mask_fn(
+    b, _, q_idx, kv_idx, window_size=None, seq_lens=None, document_ids=None
+):
+    """Mask function for flex_attention supporting causal, sliding window, padding, and flat batching.
+
+    Args:
+        b: Batch index.
+        _: Head index (unused).
+        q_idx: Query index.
+        kv_idx: Key/Value index.
+        window_size: Optional sliding window size.
+        seq_lens: Optional 1D tensor of sequence lengths (for padding).
+        document_ids: Optional 2D tensor of document IDs (for flat/packed batching).
+    """
     mask = q_idx >= kv_idx  # causal
     if window_size is not None:
         mask = mask & (q_idx - kv_idx < window_size)
     if seq_lens is not None:
         mask = mask & (q_idx < seq_lens[b]) & (kv_idx < seq_lens[b])
+    if document_ids is not None:
+        mask = mask & (document_ids[b, q_idx] == document_ids[b, kv_idx])
     return mask
 
 
@@ -119,6 +142,7 @@ class RotarySelfAttention(nn.Module):
     - **Q/K Normalization**: Optional RMSNorm on Query/Key for training stability.
     - **Sliding Window Attention**: Optional sliding window masking.
     - **Dynamic Sequence Padding**: Support for `seq_lens` masking via flex_attention.
+    - **Variable-length Attention**: Support for optimized Flash Attention on packed batches via `cu_seqlens`.
 
     Attributes:
         wq: Linear projection for Query.
@@ -178,11 +202,97 @@ class RotarySelfAttention(nn.Module):
         # Flex attention block mask
         self._block_mask = None
 
+    def _varlen_attn_fallback(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        cu_seqlens: torch.Tensor,
+        max_seqlen: int,
+    ) -> torch.Tensor:
+        """CPU fallback for varlen attention, used for testing and non-CUDA environments.
+
+        Args:
+            q: Flattened query (1, total_tokens, n_head, head_dim)
+            k: Flattened key (1, total_tokens, n_kv_head, head_dim)
+            v: Flattened value (1, total_tokens, n_kv_head, head_dim)
+            cu_seqlens: Cumulative sequence lengths
+            max_seqlen: Maximum sequence length
+
+        Returns:
+            Flattened attention output (1, total_tokens, n_head, head_dim)
+        """
+        device = q.device
+        num_docs = len(cu_seqlens) - 1
+        n_head = q.shape[2]
+        n_kv_head = k.shape[2]
+        head_dim = q.shape[3]
+
+        # 1. Un-flatten into padded batch
+        q_padded = torch.zeros(
+            num_docs, max_seqlen, n_head, head_dim, device=device, dtype=q.dtype
+        )
+        k_padded = torch.zeros(
+            num_docs, max_seqlen, n_kv_head, head_dim, device=device, dtype=k.dtype
+        )
+        v_padded = torch.zeros(
+            num_docs, max_seqlen, n_kv_head, head_dim, device=device, dtype=v.dtype
+        )
+
+        for i in range(num_docs):
+            start, end = cu_seqlens[i], cu_seqlens[i + 1]
+            length = end - start
+            q_padded[i, :length] = q[0, start:end]
+            k_padded[i, :length] = k[0, start:end]
+            v_padded[i, :length] = v[0, start:end]
+
+        # 2. Transpose for SDPA: (B, H, T, D)
+        q_padded = q_padded.transpose(1, 2)
+        k_padded = k_padded.transpose(1, 2)
+        v_padded = v_padded.transpose(1, 2)
+
+        # 3. Create padding mask
+        # We need a mask of shape (B, 1, T, T)
+        # causal mask is handled by is_causal=True in SDPA
+        # padding mask: doc attends only to valid tokens
+        q_idx = torch.arange(max_seqlen, device=device).view(1, 1, -1, 1)
+        kv_idx = torch.arange(max_seqlen, device=device).view(1, 1, 1, -1)
+
+        doc_lens = (cu_seqlens[1:] - cu_seqlens[:-1]).view(-1, 1, 1, 1)
+        padding_mask = (q_idx < doc_lens) & (kv_idx < doc_lens)
+
+        # 4. Compute attention
+        y = torch.nn.functional.scaled_dot_product_attention(
+            q_padded,
+            k_padded,
+            v_padded,
+            attn_mask=padding_mask,
+            dropout_p=self.dropout if self.training else 0.0,
+            is_causal=True,
+            enable_gqa=(self.n_rep > 1),
+        )
+
+        # 5. Transpose back: (B, T, H, D)
+        y = y.transpose(1, 2)
+
+        # 6. Flatten back
+        y_flat = torch.zeros_like(q)
+        for i in range(num_docs):
+            start, end = cu_seqlens[i], cu_seqlens[i + 1]
+            length = end - start
+            y_flat[0, start:end] = y[i, :length]
+
+        return y_flat
+
     def forward(
         self,
         x: torch.Tensor,
         freqs_cis: torch.Tensor,
         seq_lens: torch.Tensor | None = None,
+        document_ids: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        cu_seqlens: torch.Tensor | None = None,
+        max_seqlen: int | None = None,
     ) -> torch.Tensor:
         """Perform the forward pass with RoPE and GQA.
 
@@ -190,11 +300,47 @@ class RotarySelfAttention(nn.Module):
             x: Input tensor of shape (B, T, C).
             freqs_cis: Precomputed frequencies for RoPE.
             seq_lens: Optional 1D tensor of sequence lengths to mask out padding.
+            document_ids: Optional 2D tensor of document IDs for packed/flat batching.
+            position_ids: Optional 2D tensor of position IDs for RoPE.
+            cu_seqlens: Optional 1D tensor of cumulative sequence lengths for Flash Attention varlen.
+            max_seqlen: Optional maximum sequence length in the packed batch.
 
         Returns:
             Output tensor after attention and projection.
         """
         B, T, C = x.size()
+
+        # Input validation
+        if cu_seqlens is not None:
+            assert (
+                B == 1
+            ), f"cu_seqlens is only supported for flat batches (B=1), but got B={B}"
+            assert (
+                cu_seqlens.ndim == 1
+            ), f"cu_seqlens must be a 1D tensor, got ndim={cu_seqlens.ndim}"
+            assert (
+                cu_seqlens[0] == 0
+            ), f"cu_seqlens must start with 0, got {cu_seqlens[0]}"
+            assert (
+                cu_seqlens[-1] == T
+            ), f"cu_seqlens[-1] ({cu_seqlens[-1]}) must match sequence length T ({T})"
+
+        if document_ids is not None:
+            assert document_ids.shape == (
+                B,
+                T,
+            ), f"document_ids shape must be (B, T) = ({B}, {T}), got {document_ids.shape}"
+
+        if position_ids is not None:
+            assert position_ids.shape == (
+                B,
+                T,
+            ), f"position_ids shape must be (B, T) = ({B}, {T}), got {position_ids.shape}"
+
+        if seq_lens is not None:
+            assert seq_lens.shape == (
+                B,
+            ), f"seq_lens shape must be (B,) = ({B},), got {seq_lens.shape}"
 
         # Infer if we are in SP mode. It is expected for input to be correct sequence-sharded DTensor
         is_sp = isinstance(x, DTensor) and any(
@@ -225,11 +371,7 @@ class RotarySelfAttention(nn.Module):
             xq = self.q_norm(xq)
             xk = self.k_norm(xk)
 
-        xq, xk = apply_rotary_emb(xq, xk, freqs_cis)
-
-        xq = xq.transpose(1, 2)
-        xk = xk.transpose(1, 2)
-        xv = xv.transpose(1, 2)
+        xq, xk = apply_rotary_emb(xq, xk, freqs_cis, position_ids=position_ids)
 
         is_dtensor = isinstance(xq, DTensor)
         if is_dtensor:
@@ -242,72 +384,141 @@ class RotarySelfAttention(nn.Module):
 
         enable_gqa = self.n_rep > 1
 
-        # Decide if we can use flex_attention masks
-        use_flex = (
-            FLEX_ATTENTION_AVAILABLE
-            and (self.sliding_window is not None or seq_lens is not None)
-            and (x.device.type in {"cuda", "cpu", "xpu", "hpu"})
-        )
+        if cu_seqlens is not None:
+            if VARLEN_ATTENTION_AVAILABLE and xq.is_cuda:
+                # Flash Attention Varlen path
+                # Reshape to (total_tokens, n_heads, head_dim)
+                xq_varlen = xq.reshape(-1, self.n_head, self.head_dim)
+                xk_varlen = xk.reshape(-1, self.n_kv_head, self.head_dim)
+                xv_varlen = xv.reshape(-1, self.n_kv_head, self.head_dim)
 
-        if use_flex:
-            mask_fn = partial(
-                attention_mask_fn, window_size=self.sliding_window, seq_lens=seq_lens
-            )
-
-            # Since seq_lens relies on dynamic per-batch lengths, it needs the true batch dimension `B`
-            if seq_lens is not None:
-                block_mask = create_block_mask(mask_fn, B, None, T, T, device=x.device)
-            else:
-                if self._block_mask is None or self._block_mask.shape[-1] != T:
-                    self._block_mask = create_block_mask(
-                        mask_fn, None, None, T, T, device=x.device
-                    )
-                block_mask = self._block_mask
-
-            _flex_attention = flex_attention
-            if xq.device.type == "cuda":
-                _flex_attention = torch.compile(flex_attention)
-
-            if self.dropout > 1e-5:
-                warn_once(
-                    logger=logger,
-                    message="Dropout is not supported in flex attention. Ignoring dropout.",
+                # Use provided max_seqlen or compute if missing (fallback)
+                max_q = (
+                    max_seqlen
+                    if max_seqlen is not None
+                    else int((cu_seqlens[1:] - cu_seqlens[:-1]).max().item())
                 )
 
-            y = _flex_attention(
-                xq, xk, xv, block_mask=block_mask, enable_gqa=enable_gqa
-            )
+                y = varlen_attn(
+                    xq_varlen,
+                    xk_varlen,
+                    xv_varlen,
+                    cu_seq_q=cu_seqlens,
+                    cu_seq_k=cu_seqlens,
+                    max_q=max_q,
+                    max_k=max_q,
+                    is_causal=True,
+                )
+                # Reshape back to (B, T, n_heads, head_dim)
+                y = y.view(B, T, self.n_head, self.head_dim)
+            else:
+                # CPU fallback path for testing and non-CUDA devices
+                # We need max_seqlen
+                max_q = (
+                    max_seqlen
+                    if max_seqlen is not None
+                    else int((cu_seqlens[1:] - cu_seqlens[:-1]).max().item())
+                )
+                y = self._varlen_attn_fallback(
+                    xq, xk, xv, cu_seqlens=cu_seqlens, max_seqlen=max_q
+                )
         else:
-            mask = None
-            if self.sliding_window is not None or seq_lens is not None:
-                q_idx = torch.arange(T, device=x.device).view(1, 1, -1, 1)
-                kv_idx = torch.arange(T, device=x.device).view(1, 1, 1, -1)
-                mask = q_idx >= kv_idx
+            # SDPA or Flex Attention path
+            xq = xq.transpose(1, 2)
+            xk = xk.transpose(1, 2)
+            xv = xv.transpose(1, 2)
 
-                if self.sliding_window is not None:
-                    mask &= q_idx - kv_idx < self.sliding_window
-
-                if seq_lens is not None:
-                    seq_lens_view = seq_lens.view(-1, 1, 1, 1)
-                    seq_lens_mask = (q_idx < seq_lens_view) & (kv_idx < seq_lens_view)
-                    mask = torch.broadcast_to(mask, seq_lens_mask.shape)
-                    mask = mask & seq_lens_mask
-
-            y = torch.nn.functional.scaled_dot_product_attention(
-                xq,
-                xk,
-                xv,
-                attn_mask=mask,
-                dropout_p=self.dropout if self.training else 0.0,
-                is_causal=(mask is None),
-                enable_gqa=enable_gqa,
+            # Decide if we can use flex_attention masks
+            use_flex = (
+                FLEX_ATTENTION_AVAILABLE
+                and (
+                    self.sliding_window is not None
+                    or seq_lens is not None
+                    or document_ids is not None
+                )
+                and (x.device.type in {"cuda", "cpu", "xpu", "hpu"})
             )
+
+            if use_flex:
+                mask_fn = partial(
+                    attention_mask_fn,
+                    window_size=self.sliding_window,
+                    seq_lens=seq_lens,
+                    document_ids=document_ids,
+                )
+
+                # Since seq_lens or document_ids relies on dynamic per-batch metadata, it needs the true batch dimension `B`
+                if seq_lens is not None or document_ids is not None:
+                    block_mask = create_block_mask(
+                        mask_fn, B, None, T, T, device=x.device
+                    )
+                else:
+                    if self._block_mask is None or self._block_mask.shape[-1] != T:
+                        self._block_mask = create_block_mask(
+                            mask_fn, None, None, T, T, device=x.device
+                        )
+                    block_mask = self._block_mask
+
+                _flex_attention = flex_attention
+                if xq.device.type == "cuda":
+                    _flex_attention = torch.compile(flex_attention)
+
+                if self.dropout > 1e-5:
+                    warn_once(
+                        logger=logger,
+                        message="Dropout is not supported in flex attention. Ignoring dropout.",
+                    )
+
+                y = _flex_attention(
+                    xq, xk, xv, block_mask=block_mask, enable_gqa=enable_gqa
+                )
+            else:
+                mask = None
+                if (
+                    self.sliding_window is not None
+                    or seq_lens is not None
+                    or document_ids is not None
+                ):
+                    q_idx = torch.arange(T, device=x.device).view(1, 1, -1, 1)
+                    kv_idx = torch.arange(T, device=x.device).view(1, 1, 1, -1)
+                    mask = q_idx >= kv_idx
+
+                    if self.sliding_window is not None:
+                        mask &= q_idx - kv_idx < self.sliding_window
+
+                    if seq_lens is not None:
+                        seq_lens_view = seq_lens.view(-1, 1, 1, 1)
+                        seq_lens_mask = (q_idx < seq_lens_view) & (
+                            kv_idx < seq_lens_view
+                        )
+                        mask = torch.broadcast_to(mask, seq_lens_mask.shape)
+                        mask = mask & seq_lens_mask
+
+                    if document_ids is not None:
+                        doc_ids_q = document_ids.view(B, 1, T, 1)
+                        doc_ids_kv = document_ids.view(B, 1, 1, T)
+                        doc_mask = doc_ids_q == doc_ids_kv
+                        if mask is None:
+                            mask = doc_mask
+                        else:
+                            mask = mask & doc_mask
+
+                y = torch.nn.functional.scaled_dot_product_attention(
+                    xq,
+                    xk,
+                    xv,
+                    attn_mask=mask,
+                    dropout_p=self.dropout if self.training else 0.0,
+                    is_causal=(mask is None),
+                    enable_gqa=enable_gqa,
+                )
+            y = y.transpose(1, 2)
 
         if is_dtensor:
             # if it was dtensor, then attention output has the same sharding scheme as input (head-sharded)
             y = DTensor.from_local(y, input_mesh, input_placements)
 
-        y = y.transpose(1, 2).contiguous().view(B, -1, self.n_head * self.head_dim)
+        y = y.contiguous().view(B, -1, self.n_head * self.head_dim)
         y = self.resid_dropout(self.wo(y))
 
         # if it was SP, keep it SP

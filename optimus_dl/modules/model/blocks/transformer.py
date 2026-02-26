@@ -57,10 +57,22 @@ class RotaryTransformerBlock(nn.Module):
         x: torch.Tensor,
         freqs_cis: torch.Tensor,
         seq_lens: torch.Tensor | None = None,
+        document_ids: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        cu_seqlens: torch.Tensor | None = None,
+        max_seqlen: int | None = None,
     ) -> torch.Tensor:
         """Compute the forward pass for the transformer block (pre-norm residual)."""
         ln_1 = self.ln_1(x)
-        attn_out = self.attn(ln_1, freqs_cis=freqs_cis, seq_lens=seq_lens)
+        attn_out = self.attn(
+            ln_1,
+            freqs_cis=freqs_cis,
+            seq_lens=seq_lens,
+            document_ids=document_ids,
+            position_ids=position_ids,
+            cu_seqlens=cu_seqlens,
+            max_seqlen=max_seqlen,
+        )
 
         x = x + attn_out
         x = x + self.mlp(self.ln_2(x))

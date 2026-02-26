@@ -20,7 +20,7 @@ class TestOlmo3Integration:
             "dralex/olmo3-0.2b-random-ci",
         ],
     )
-    def test_hf_olmo3_logits_match(self, model_name):
+    def test_hf_olmo3_logits_match(self, model_name, device):
         """
         Test that Olmo3 loaded via optimus_dl produces identical logits to
         the Hugging Face Olmo3 implementation.
@@ -31,18 +31,16 @@ class TestOlmo3Integration:
         hf_config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
         hf_model = AutoModelForCausalLM.from_pretrained(
             model_name, trust_remote_code=True, dtype=torch.float32
-        )
+        ).to(device)
         hf_model.eval()
-        hf_model.float()
 
         optimus_model = build_model(
             {
                 "_name": "preset_hfolmo3",
                 "hf_model_name": model_name,
             }
-        )
+        ).to(device)
         optimus_model.eval()
-        optimus_model.float()
 
         # Compare outputs
         hf_outputs = {}
@@ -135,7 +133,7 @@ class TestOlmo3Integration:
         torch.manual_seed(42)
         # Use smaller sequence length for easier debugging
         seq_len = 164
-        input_ids = torch.randint(0, hf_config.vocab_size, (1, seq_len))
+        input_ids = torch.randint(0, hf_config.vocab_size, (1, seq_len)).to(device)
 
         # Debug: Print HF keys
         # print("HF Model Keys:", list(hf_model.state_dict().keys()))
@@ -155,8 +153,8 @@ class TestOlmo3Integration:
 
                 # Create our mask for comparison
                 T = seq_len
-                q_idx = torch.arange(T).view(-1, 1)
-                kv_idx = torch.arange(T).view(1, -1)
+                q_idx = torch.arange(T).view(-1, 1).to(device)
+                kv_idx = torch.arange(T).view(1, -1).to(device)
 
                 # Extract layer index from name like 'h.1.mask'
                 import re

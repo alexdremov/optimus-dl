@@ -16,9 +16,6 @@ class TestSlidingWindowConsistency:
     @pytest.mark.parametrize("window_size", [16, 32, 64])
     @pytest.mark.parametrize("n_head", [4])
     @pytest.mark.parametrize("head_dim", [32])
-    @pytest.mark.parametrize(
-        "device", ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
-    )
     def test_flex_vs_manual_mask(self, seq_len, window_size, n_head, head_dim, device):
         """Verify that flex_attention produces same results as manual masking."""
         batch_size = 1

@@ -22,7 +22,7 @@ class TestQwen3Integration:
             "Qwen/Qwen3-0.6B",
         ],
     )
-    def test_hf_qwen3_logits_match(self, model_name):
+    def test_hf_qwen3_logits_match(self, model_name, device):
         """
         Test that Qwen3 loaded via optimus_dl produces identical logits to
         the Hugging Face Qwen3 implementation.
@@ -30,18 +30,16 @@ class TestQwen3Integration:
         hf_config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
         hf_model = AutoModelForCausalLM.from_pretrained(
             model_name, trust_remote_code=True, dtype=torch.float32
-        )
+        ).to(device)
         hf_model.eval()
-        hf_model.float()
 
         optimus_model = build_model(
             {
                 "_name": "preset_hfqwen3",
                 "hf_model_name": model_name,
             }
-        )
+        ).to(device)
         optimus_model.eval()
-        optimus_model.float()
 
         print(optimus_model)
         print("=======")
@@ -107,7 +105,7 @@ class TestQwen3Integration:
 
         # 5. Run Inference
         torch.manual_seed(42)
-        input_ids = torch.randint(0, hf_config.vocab_size, (1, 10))
+        input_ids = torch.randint(0, hf_config.vocab_size, (1, 10)).to(device)
 
         with torch.no_grad():
             hf_out = hf_model(input_ids).logits

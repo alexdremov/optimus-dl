@@ -166,10 +166,27 @@ class Olmo3Block(nn.Module):
             config.n_embd, eps=config.rmsnorm_eps, use_liger=config.use_liger_rmsnorm
         )
 
-    def forward(self, x, freqs_cis, seq_lens: torch.Tensor | None = None):
+    def forward(
+        self,
+        x,
+        freqs_cis,
+        seq_lens: torch.Tensor | None = None,
+        document_ids: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        cu_seqlens: torch.Tensor | None = None,
+        max_seqlen: int | None = None,
+    ):
         # x = x + Norm(attn(x))
         x = x + self.post_attention_layernorm(
-            self.attn(x, freqs_cis=freqs_cis, seq_lens=seq_lens)
+            self.attn(
+                x,
+                freqs_cis=freqs_cis,
+                seq_lens=seq_lens,
+                document_ids=document_ids,
+                position_ids=position_ids,
+                cu_seqlens=cu_seqlens,
+                max_seqlen=max_seqlen,
+            )
         )
         # x = x + Norm(mlp(x))
         x = x + self.post_feedforward_layernorm(self.mlp(x))
@@ -235,22 +252,42 @@ class Olmo3(GPT):
         if config.tie_word_embeddings:
             self.transformer.wte.weight = self.lm_head.weight
 
-    def forward(self, input_ids, seq_lens: torch.Tensor | None = None, **kwargs):
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        seq_lens: torch.Tensor | None = None,
+        document_ids: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        cu_seqlens: torch.Tensor | None = None,
+        max_seqlen: int | None = None,
+        **kwargs,
+    ):
         idx = input_ids
         device = idx.device
         b, t = idx.size()
-        pos = torch.arange(0, t, dtype=torch.long, device=device)
 
         tok_emb = self.transformer.wte(idx)
         x = self.transformer.drop(tok_emb)
 
         self.freqs_cis = self.freqs_cis.to(x.device)
-        freqs_cis = self.freqs_cis[pos]
+        if position_ids is None:
+            pos = torch.arange(0, t, dtype=torch.long, device=device)
+            freqs_cis = self.freqs_cis[pos]
+        else:
+            freqs_cis = self.freqs_cis
 
         for block in self.transformer.h:
-            block_kwargs = dict(x=x, freqs_cis=freqs_cis)
-            if seq_lens is not None:
-                block_kwargs["seq_lens"] = seq_lens
+            block_kwargs = {
+                "x": x,
+                "freqs_cis": freqs_cis,
+                "seq_lens": seq_lens,
+                "document_ids": document_ids,
+                "position_ids": position_ids,
+                "cu_seqlens": cu_seqlens,
+                "max_seqlen": max_seqlen,
+            }
+            # Filter out None values to avoid triggering TP input preparation on None inputs
+            block_kwargs = {k: v for k, v in block_kwargs.items() if v is not None}
             x = block(**block_kwargs)
         x = self.transformer.ln_f(x)
         logits = self.lm_head(x)
@@ -308,11 +345,17 @@ class Olmo3(GPT):
                             x=Shard(1),
                             freqs_cis=Replicate(),
                             seq_lens=Replicate(),
+                            document_ids=Replicate(),
+                            position_ids=Replicate(),
+                            cu_seqlens=Replicate(),
                         ),
                         desired_input_kwarg_layouts=dict(
                             x=Shard(1),
                             freqs_cis=Replicate(),
                             seq_lens=Replicate(),
+                            document_ids=Replicate(),
+                            position_ids=Replicate(),
+                            cu_seqlens=Replicate(),
                         ),
                         use_local_output=False,
                     ),

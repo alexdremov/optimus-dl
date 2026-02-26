@@ -1,4 +1,3 @@
-import unittest
 from unittest.mock import (
     MagicMock,
     patch,
@@ -12,8 +11,9 @@ from optimus_dl.core.registry import build
 from optimus_dl.modules.model.presets.hf_llama import HFLlamaConfig
 
 
-class TestHFLlamaLoading(unittest.TestCase):
-    def setUp(self):
+class TestHFLlamaLoading:
+    @pytest.fixture(autouse=True)
+    def setup(self):
         # Mock config
         self.mock_config = MagicMock()
         self.mock_config.num_hidden_layers = 2
@@ -25,10 +25,6 @@ class TestHFLlamaLoading(unittest.TestCase):
         self.mock_config.rope_theta = 10000.0
 
         # Calculate expected hidden dim for MLP
-        # Llama logic:
-        # hidden_dim = 4 * n_embd
-        # hidden_dim = int(2 * hidden_dim / 3)
-        # hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
         n_embd = 32
         multiple_of = 32
         hidden_dim = 4 * n_embd
@@ -83,7 +79,7 @@ class TestHFLlamaLoading(unittest.TestCase):
 
     @patch("optimus_dl.modules.model.presets.hf_llama.AutoConfig")
     @patch("optimus_dl.modules.model.presets.hf_llama.AutoModelForCausalLM")
-    def test_make_hf_llama_model(self, mock_automodel, mock_autoconfig):
+    def test_make_hf_llama_model(self, mock_automodel, mock_autoconfig, device):
         mock_autoconfig.from_pretrained.return_value = self.mock_config
 
         mock_model_instance = MagicMock()
@@ -98,20 +94,17 @@ class TestHFLlamaLoading(unittest.TestCase):
         )
         cfg = OmegaConf.structured(cfg)
 
-        model = build("model", cfg)
+        model = build("model", cfg).to(device)
 
-        self.assertIsNotNone(model)
-        self.assertEqual(model.config.n_layer, 2)
-        self.assertEqual(model.config.n_head, 4)
-        self.assertEqual(model.config.n_embd, 32)
-
-        # Check if weights are copied
-        # We can check values roughly or just shape
+        assert model is not None
+        assert model.config.n_layer == 2
+        assert model.config.n_head == 4
+        assert model.config.n_embd == 32
 
         # Check Q
         q_weight = model.transformer.h[0].attn.wq.weight
         expected_shape_q = (4 * (32 // 4), 32)  # (n_head * head_dim, n_embd) = (32, 32)
-        self.assertEqual(q_weight.shape, expected_shape_q)
+        assert q_weight.shape == expected_shape_q
 
         # Check K
         k_weight = model.transformer.h[0].attn.wk.weight
@@ -119,10 +112,10 @@ class TestHFLlamaLoading(unittest.TestCase):
             4 * (32 // 4),
             32,
         )  # (n_kv_head * head_dim, n_embd) = (32, 32)
-        self.assertEqual(k_weight.shape, expected_shape_k)
+        assert k_weight.shape == expected_shape_k
 
     @patch("optimus_dl.modules.model.presets.hf_llama.AutoConfig")
-    def test_make_hf_llama_model_no_weights(self, mock_autoconfig):
+    def test_make_hf_llama_model_no_weights(self, mock_autoconfig, device):
         mock_autoconfig.from_pretrained.return_value = self.mock_config
 
         cfg = HFLlamaConfig(
@@ -130,12 +123,11 @@ class TestHFLlamaLoading(unittest.TestCase):
         )
         cfg = OmegaConf.structured(cfg)
 
-        model = build("model", cfg)
-        self.assertIsNotNone(model)
-        # Should be initialized but random weights (not checked here)
+        model = build("model", cfg).to(device)
+        assert model is not None
 
     @patch("optimus_dl.modules.model.presets.hf_llama.AutoConfig")
-    def test_gqa_config(self, mock_autoconfig):
+    def test_gqa_config(self, mock_autoconfig, device):
         # Mock GQA config
         self.mock_config.num_attention_heads = 4
         self.mock_config.num_key_value_heads = 2
@@ -146,44 +138,39 @@ class TestHFLlamaLoading(unittest.TestCase):
         )
         cfg = OmegaConf.structured(cfg)
 
-        model = build("model", cfg)
-        self.assertIsNotNone(model)
-        self.assertEqual(model.config.n_kv_head, 2)
-        self.assertEqual(model.config.n_head, 4)
+        model = build("model", cfg).to(device)
+        assert model is not None
+        assert model.config.n_kv_head == 2
+        assert model.config.n_head == 4
 
     @pytest.mark.slow
-    def test_real_llama_config_loading(self):
+    def test_real_llama_config_loading(self, device):
         """Test loading a real model config (no weights) to ensure mapping logic works with real HF artifacts."""
         try:
             from transformers import AutoConfig
 
-            # Attempt to fetch config - this might fail if no internet or auth,
-            # so we'll catch potential connection errors or auth errors
+            # TinyLlama 1.1B uses GQA (32 attn heads, 4 kv heads)
+            model_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
             try:
-                # TinyLlama 1.1B uses GQA (32 attn heads, 4 kv heads)
-                model_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
                 AutoConfig.from_pretrained(model_name)
             except Exception as e:
-                print(f"Skipping real config test due to access/connection issue: {e}")
-                return
+                pytest.skip(
+                    f"Skipping real config test due to access/connection issue: {e}"
+                )
 
             cfg = HFLlamaConfig(
                 _name="preset_hfllama2", hf_model_name=model_name, load_weights=False
             )
             cfg = OmegaConf.structured(cfg)
 
-            model = build("model", cfg)
-            self.assertIsNotNone(model)
+            model = build("model", cfg).to(device)
+            assert model is not None
 
             # TinyLlama specific checks
-            self.assertEqual(model.config.n_embd, 2048)
-            self.assertEqual(model.config.n_head, 32)
-            self.assertEqual(model.config.n_kv_head, 4)  # Verified from HF config
-            self.assertEqual(model.config.n_layer, 22)
+            assert model.config.n_embd == 2048
+            assert model.config.n_head == 32
+            assert model.config.n_kv_head == 4
+            assert model.config.n_layer == 22
 
         except Exception as e:
-            self.fail(f"Failed to load real Llama config: {e}")
-
-
-if __name__ == "__main__":
-    unittest.main()
+            pytest.fail(f"Failed to load real Llama config: {e}")

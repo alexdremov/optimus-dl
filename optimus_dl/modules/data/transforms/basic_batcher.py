@@ -22,11 +22,13 @@ class BasicBatcherConfig(RegistryConfigStrict):
         batch_size: Number of sequences per batch.
         pad_token_id: The token ID used to pad sequences to the maximum length.
         field: The dictionary key containing the tokens (defaults to input_ids).
+        flatten: If True, yields a single flat sequence of shape (1, sum(lengths)) instead of (B, max_len).
     """
 
     batch_size: int = MISSING
     pad_token_id: int = MISSING
     field: str = "input_ids"
+    flatten: bool = False
 
 
 class BasicBatcherNode(BaseNode):
@@ -77,37 +79,72 @@ class BasicBatcherNode(BaseNode):
         # Record original lengths before padding
         lengths = [len(seq) for seq in seqs]
 
+        if self.cfg.flatten:
+            # Pack all sequences into one flat 1D sequence
+            input_ids = np.concatenate(seqs)
+            position_ids = np.concatenate([np.arange(length) for length in lengths])
+            document_ids = np.concatenate(
+                [np.full(length, i) for i, length in enumerate(lengths)]
+            )
+
+            return {
+                self.cfg.field: input_ids[None, :].astype(np.int64),
+                "position_ids": position_ids[None, :].astype(np.int64),
+                "document_ids": document_ids[None, :].astype(np.int64),
+                "seq_lens": np.array([len(input_ids)], dtype=np.int64),
+                "cu_seqlens": np.cumsum([0] + lengths).astype(np.int32),
+                "max_seqlen": int(max(lengths)),
+            }
+
         # Determine the maximum sequence length in this specific batch
         max_len = max(lengths)
 
-        # Pad sequences
+        # Pad sequences and generate position_ids/document_ids
         padded_seqs = []
-        for seq, seq_len in zip(seqs, lengths, strict=True):
-            pad_len = max_len - seq_len
-            if pad_len > 0:
-                if isinstance(seq, torch.Tensor):
-                    # F.pad takes padding sizes starting from the last dimension: (pad_left, pad_right)
-                    padded_seq = F.pad(seq, (0, pad_len), value=self.cfg.pad_token_id)
-                elif isinstance(seq, np.ndarray):
-                    padded_seq = np.pad(
-                        seq, (0, pad_len), constant_values=self.cfg.pad_token_id
-                    )
-                else:
-                    padded_seq = list(seq) + [self.cfg.pad_token_id] * pad_len
-            else:
-                padded_seq = seq
+        position_ids = []
+        document_ids = []
 
+        for i, (seq, seq_len) in enumerate(zip(seqs, lengths, strict=True)):
+            pad_len = max_len - seq_len
+
+            # Pad tokens
+            if isinstance(seq, torch.Tensor):
+                padded_seq = F.pad(seq, (0, pad_len), value=self.cfg.pad_token_id)
+            elif isinstance(seq, np.ndarray):
+                padded_seq = np.pad(
+                    seq, (0, pad_len), constant_values=self.cfg.pad_token_id
+                )
+            else:
+                padded_seq = list(seq) + [self.cfg.pad_token_id] * pad_len
             padded_seqs.append(padded_seq)
+
+            # Generate position IDs (0..seq_len-1 then padded with 0 or -1, using 0 for safety with RoPE)
+            pos_ids = np.zeros(max_len, dtype=np.int64)
+            pos_ids[:seq_len] = np.arange(seq_len)
+            position_ids.append(pos_ids)
+
+            # Generate document IDs (each row is its own document)
+            doc_ids = np.full(max_len, i, dtype=np.int64)
+            document_ids.append(doc_ids)
 
         # Build final batched outputs depending on the input type
         if isinstance(padded_seqs[0], torch.Tensor):
             batched_seqs = torch.stack(padded_seqs)
             batched_lens = torch.tensor(lengths, dtype=torch.long)
+            batched_pos = torch.from_numpy(np.stack(position_ids))
+            batched_docs = torch.from_numpy(np.stack(document_ids))
         else:
             batched_seqs = np.array(padded_seqs, dtype=np.int64)
             batched_lens = np.array(lengths, dtype=np.int64)
+            batched_pos = np.stack(position_ids)
+            batched_docs = np.stack(document_ids)
 
-        return {self.cfg.field: batched_seqs, "seq_lens": batched_lens}
+        return {
+            self.cfg.field: batched_seqs,
+            "seq_lens": batched_lens,
+            "position_ids": batched_pos,
+            "document_ids": batched_docs,
+        }
 
 
 @register_transform("basic_batcher", BasicBatcherConfig)

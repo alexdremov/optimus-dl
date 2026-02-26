@@ -247,11 +247,17 @@ class Llama(GPT):
                             x=Shard(1),
                             freqs_cis=Replicate(),
                             seq_lens=Replicate(),
+                            document_ids=Replicate(),
+                            position_ids=Replicate(),
+                            cu_seqlens=Replicate(),
                         ),
                         desired_input_kwarg_layouts=dict(
                             x=Shard(1),
                             freqs_cis=Replicate(),
                             seq_lens=Replicate(),
+                            document_ids=Replicate(),
+                            position_ids=Replicate(),
+                            cu_seqlens=Replicate(),
                         ),
                         use_local_output=False,
                     ),
@@ -290,24 +296,66 @@ class Llama(GPT):
                 ),
             )
 
-    def forward(self, input_ids, seq_lens: torch.Tensor | None = None, **kwargs):
-        """Perform the forward pass, handling rotary frequency lookup."""
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        seq_lens: torch.Tensor | None = None,
+        document_ids: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+        cu_seqlens: torch.Tensor | None = None,
+        max_seqlen: int | None = None,
+        **kwargs,
+    ):
+        """Perform the forward pass, handling rotary frequency lookup and optional masking.
+
+        Args:
+            input_ids: Tensor of shape (B, T).
+            seq_lens: Optional 1D tensor of sequence lengths (for padding).
+            document_ids: Optional 2D tensor of document IDs (for packed/flat batching).
+            position_ids: Optional 2D tensor of position IDs (for RoPE).
+            cu_seqlens: Optional 1D tensor of cumulative sequence lengths (for varlen attention).
+            max_seqlen: Optional maximum sequence length in the packed batch.
+            **kwargs: Extra arguments.
+
+        Returns:
+            Dictionary containing model logits.
+        """
         idx = input_ids
         device = idx.device
         b, t = idx.size()
         assert (
             t <= self.config.sequence_length
         ), f"Cannot forward sequence of length {t}, block size is only {self.config.sequence_length}"
-        pos = torch.arange(0, t, dtype=torch.long, device=device)
+
+        if position_ids is None:
+            pos = torch.arange(0, t, dtype=torch.long, device=device)
+            # (T, hs/2, 2)
+            freqs_cis = self.freqs_cis.to(device)[pos]
+        else:
+            # position_ids: (B, T)
+            # self.freqs_cis: (max_T, hs/2, 2)
+            # Result: (B, T, hs/2, 2)
+            # However, RotaryTransformerBlock expects freqs_cis to be (T, hs/2, 2)
+            # OR (B, T, hs/2, 2) if it supports it.
+            # My updated apply_rotary_emb supports passing position_ids separately.
+            # So I will pass the FULL freqs_cis and the position_ids.
+            freqs_cis = self.freqs_cis.to(device)
 
         tok_emb = self.transformer.wte(idx)
         x = self.transformer.drop(tok_emb)
-        freqs_cis = self.freqs_cis.to(x.device)[pos]
 
         for block in self.transformer.h:
-            block_kwargs = dict(x=x, freqs_cis=freqs_cis)
-            if seq_lens is not None:
-                block_kwargs["seq_lens"] = seq_lens
+            block_kwargs = {
+                "x": x,
+                "freqs_cis": freqs_cis,
+                "seq_lens": seq_lens,
+                "document_ids": document_ids,
+                "position_ids": position_ids,
+                "cu_seqlens": cu_seqlens,
+                "max_seqlen": max_seqlen,
+            }
+            # Filter out None values to avoid triggering TP input preparation on None inputs
+            block_kwargs = {k: v for k, v in block_kwargs.items() if v is not None}
             x = block(**block_kwargs)
         x = self.transformer.ln_f(x)
 

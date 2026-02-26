@@ -62,7 +62,7 @@ class TestOlmo3Attention:
         assert isinstance(attn.wv, nn.Linear)
         assert isinstance(attn.wo, nn.Linear)
 
-    def test_forward_sliding_window(self):
+    def test_forward_sliding_window(self, device):
         config = Olmo3Config(
             n_embd=256,
             n_head=4,
@@ -71,26 +71,26 @@ class TestOlmo3Attention:
             n_layer=1,
             layer_types=["sliding_attention"],
         )
-        attn = Olmo3Attention(config, layer_idx=0)
+        attn = Olmo3Attention(config, layer_idx=0).to(device)
 
         B, T, C = 2, 20, 256
-        x = torch.randn(B, T, C)
+        x = torch.randn(B, T, C).to(device)
         head_dim = C // 4
-        freqs_cis = precompute_freqs_cis(head_dim, T)
+        freqs_cis = precompute_freqs_cis(head_dim, T).to(device)
 
         out = attn(x, freqs_cis)
         assert out.shape == (B, T, C)
 
-    def test_forward_full_attention(self):
+    def test_forward_full_attention(self, device):
         config = Olmo3Config(
             n_embd=256, n_head=4, n_kv_head=4, layer_types=["full_attention"]
         )
-        attn = Olmo3Attention(config, layer_idx=0)
+        attn = Olmo3Attention(config, layer_idx=0).to(device)
 
         B, T, C = 2, 20, 256
-        x = torch.randn(B, T, C)
+        x = torch.randn(B, T, C).to(device)
         head_dim = C // 4
-        freqs_cis = precompute_freqs_cis(head_dim, T)
+        freqs_cis = precompute_freqs_cis(head_dim, T).to(device)
 
         out = attn(x, freqs_cis)
         assert out.shape == (B, T, C)
@@ -108,13 +108,13 @@ class TestOlmo3Block:
         assert isinstance(block.attn, Olmo3Attention)
         assert isinstance(block.mlp, SwiGLUMLP)
 
-    def test_forward(self):
+    def test_forward(self, device):
         config = Olmo3Config(n_embd=256, n_head=4, n_kv_head=4)
-        block = Olmo3Block(config, layer_idx=0)
+        block = Olmo3Block(config, layer_idx=0).to(device)
 
         B, T, C = 2, 10, 256
-        x = torch.randn(B, T, C)
-        freqs_cis = precompute_freqs_cis(C // 4, T)
+        x = torch.randn(B, T, C).to(device)
+        freqs_cis = precompute_freqs_cis(C // 4, T).to(device)
 
         out = block(x=x, freqs_cis=freqs_cis)
         assert out.shape == (B, T, C)
@@ -139,7 +139,7 @@ class TestOlmo3:
         assert model.transformer.h[0].attn.layer_type == "sliding_attention"
         assert model.transformer.h[1].attn.layer_type == "full_attention"
 
-    def test_forward(self):
+    def test_forward(self, device):
         config = Olmo3Config(
             vocab_size=1000,
             n_layer=2,
@@ -148,9 +148,9 @@ class TestOlmo3:
             n_embd=256,
             layer_types=["sliding_attention", "full_attention"],
         )
-        model = Olmo3(config)
+        model = Olmo3(config).to(device)
 
-        input_ids = torch.randint(0, 1000, (1, 10))
+        input_ids = torch.randint(0, 1000, (1, 10)).to(device)
         out = model(input_ids)
 
         assert "logits" in out
@@ -169,7 +169,7 @@ class TestOlmo3:
         model = Olmo3(config)
         assert model.transformer.wte.weight is model.lm_head.weight
 
-    def test_gradient_flow(self):
+    def test_gradient_flow(self, device):
         config = Olmo3Config(
             vocab_size=100,
             n_layer=2,
@@ -178,9 +178,9 @@ class TestOlmo3:
             n_embd=64,
             layer_types=["sliding_attention", "full_attention"],
         )
-        model = Olmo3(config)
+        model = Olmo3(config).to(device)
 
-        input_ids = torch.randint(0, 100, (1, 10))
+        input_ids = torch.randint(0, 100, (1, 10)).to(device)
         out = model(input_ids)
         loss = out["logits"].sum()
         loss.backward()

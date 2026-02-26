@@ -122,18 +122,39 @@ def _reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor) -> torch.Te
     """Reshape freqs_cis for broadcasting with x.
 
     Args:
-        freqs_cis: Frequency tensor of shape (seq_len, head_dim // 2, 2).
-        x: Input tensor to apply RoPE to, shape (..., seq_len, ..., head_dim // 2, 2).
+        freqs_cis: Frequency tensor of shape (seq_len, head_dim // 2, 2) or (B, seq_len, head_dim // 2, 2).
+        x: Input tensor to apply RoPE to, shape (B, T, nh, head_dim // 2, 2).
 
     Returns:
         Reshaped frequency tensor compatible with x.
     """
     ndim = x.ndim
     assert ndim >= 2
-    # freqs_cis shape: (T, hs/2, 2)
     # x shape: (B, T, nh, hs/2, 2)
 
-    # Original assertions for robustness
+    # Check if freqs_cis already has a batch dimension (e.g. from position_ids indexing)
+    if freqs_cis.ndim == ndim - 1:
+        # Expected freqs_cis: (B, T, head_dim // 2, 2)
+        # Expected x:         (B, T, nh, head_dim // 2, 2)
+
+        # Validation
+        assert (
+            freqs_cis.shape[1] == x.shape[1]
+        ), f"Sequence length mismatch: {freqs_cis.shape[1]} vs {x.shape[1]}"
+        if freqs_cis.dtype == torch.complex64 or freqs_cis.dtype == torch.complex128:
+            assert (
+                freqs_cis.shape[-1] == x.shape[-1]
+            ), f"Head dim mismatch: {freqs_cis.shape[-1]} vs {x.shape[-1]}"
+        else:
+            assert (
+                freqs_cis.shape[-2] == x.shape[-2]
+            ), f"Head dim mismatch: {freqs_cis.shape[-2]} vs {x.shape[-2]}"
+
+        # We need to insert the head dimension at ndim-3 to become (B, T, 1, head_dim // 2, 2)
+        return freqs_cis.unsqueeze(ndim - 3)
+
+    # Standard case: freqs_cis is (T, head_dim // 2, 2) or (T, head_dim // 2) if complex
+    # Robustness assertions
     if freqs_cis.dtype == torch.complex64 or freqs_cis.dtype == torch.complex128:
         assert freqs_cis.shape == (
             x.shape[1],
@@ -158,24 +179,24 @@ def _reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor) -> torch.Te
 
 
 def apply_rotary_emb(
-    q: torch.Tensor, k: torch.Tensor, freqs_cis: torch.Tensor
+    q: torch.Tensor,
+    k: torch.Tensor,
+    freqs_cis: torch.Tensor,
+    position_ids: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Apply Rotary Positional Embeddings to Query and Key tensors.
 
     Handles both standard Tensors and distributed DTensors.
 
     Args:
-        q: Query tensor.
-        k: Key tensor.
-        freqs_cis: Precomputed frequency tensor.
+        q: Query tensor of shape (B, T, nh, hs).
+        k: Key tensor of shape (B, T, n_kv_h, hs).
+        freqs_cis: Precomputed frequency tensor of shape (max_T, hs // 2, 2).
+        position_ids: Optional tensor of shape (B, T) specifying the positions for each token.
 
     Returns:
         Tuple of (q, k) with rotary embeddings applied.
     """
-    # q, k: (B, T, nh, hs)
-    # freq_cis: (T, hs/2, 2)
-    # return: (B, T, nh, hs), (B, T, nh, hs)
-
     is_q_dtensor = isinstance(q, DTensor)
     is_k_dtensor = isinstance(k, DTensor)
     is_freqs_cis_dtensor = isinstance(freqs_cis, DTensor)
@@ -186,6 +207,17 @@ def apply_rotary_emb(
 
     # Input dtype for restoration
     input_dtype = q_in.dtype
+
+    _, T = q_in.shape[0], q_in.shape[1]
+
+    if position_ids is not None:
+        # freqs_cis_in: (max_T, hs//2, 2)
+        # position_ids: (B, T)
+        # Result: (B, T, hs//2, 2)
+        freqs_cis_in = freqs_cis_in[position_ids]
+    else:
+        # Assume positions 0..T-1
+        freqs_cis_in = freqs_cis_in[:T]
 
     q_in = q_in.float().reshape(*q_in.shape[:-1], -1, 2)
     k_in = k_in.float().reshape(*k_in.shape[:-1], -1, 2)

@@ -26,6 +26,8 @@ class FlatTokensBatcherConfig(RegistryConfigStrict):
         worker_cfg: Configuration for map workers (not used directly by batcher).
         field: The dictionary key containing the tokens (defaults to input_ids).
         add_one_for_shift: If True, yields seq_len + 1 tokens per sample.
+        mask_documents: If True, tracks document boundaries and emits document_ids/position_ids.
+        flatten: If True, yields a single flat sequence of shape (1, B*T) instead of (B, T).
     """
 
     batch_size: int = MISSING
@@ -35,6 +37,8 @@ class FlatTokensBatcherConfig(RegistryConfigStrict):
     )
     field: str = "input_ids"
     add_one_for_shift: bool = True
+    mask_documents: bool = False
+    flatten: bool = False
 
 
 class FlatTokensBatcherNode(BaseNode):
@@ -49,6 +53,9 @@ class FlatTokensBatcherNode(BaseNode):
         self.cfg = cfg
         self.node = node
         self.buffer = []
+        self.position_ids_buffer = []
+        self.document_ids_buffer = []
+        self._current_doc_id = 0
 
     @property
     def target_size(self):
@@ -61,8 +68,14 @@ class FlatTokensBatcherNode(BaseNode):
         """Restore batcher buffer and source node state."""
         super().reset(initial_state)
         self.buffer = []
+        self.position_ids_buffer = []
+        self.document_ids_buffer = []
+        self._current_doc_id = 0
         if initial_state:
             self.buffer = initial_state["buffer"]
+            self.position_ids_buffer = initial_state.get("position_ids_buffer", [])
+            self.document_ids_buffer = initial_state.get("document_ids_buffer", [])
+            self._current_doc_id = initial_state.get("_current_doc_id", 0)
             self.cfg = initial_state["cfg"]
             self.node.reset(initial_state["source_state"])
         else:
@@ -72,6 +85,9 @@ class FlatTokensBatcherNode(BaseNode):
         """Collect current buffer and source state for checkpointing."""
         return {
             "buffer": self.buffer,
+            "position_ids_buffer": self.position_ids_buffer,
+            "document_ids_buffer": self.document_ids_buffer,
+            "_current_doc_id": self._current_doc_id,
             "cfg": self.cfg,
             "source_state": self.node.state_dict(),
         }
@@ -79,15 +95,54 @@ class FlatTokensBatcherNode(BaseNode):
     def next(self) -> Any:
         """Yield the next complete batch of tokens, filling from source as needed."""
         while len(self.buffer) < self.target_size:
-            self.buffer.extend(next(self.node)[self.cfg.field])
+            item = next(self.node)
+            tokens = item[self.cfg.field]
+            self.buffer.extend(tokens)
+            if self.cfg.mask_documents:
+                self.position_ids_buffer.extend(range(len(tokens)))
+                self.document_ids_buffer.extend([self._current_doc_id] * len(tokens))
+                self._current_doc_id += 1
 
         return_buff = self.buffer[: self.target_size]
         self.buffer = self.buffer[self.target_size :]
-        return {
-            "input_ids": np.array(return_buff, dtype=np.int64).reshape(
-                self.cfg.batch_size, -1
-            )
+
+        if self.cfg.flatten:
+            reshape_args = (1, -1)
+        else:
+            reshape_args = (self.cfg.batch_size, -1)
+
+        output = {
+            "input_ids": np.array(return_buff, dtype=np.int64).reshape(*reshape_args)
         }
+
+        if self.cfg.mask_documents:
+            pos_buff = self.position_ids_buffer[: self.target_size]
+            doc_buff = self.document_ids_buffer[: self.target_size]
+            self.position_ids_buffer = self.position_ids_buffer[self.target_size :]
+            self.document_ids_buffer = self.document_ids_buffer[self.target_size :]
+
+            # Re-base document IDs to avoid huge numbers and overflow
+            doc_ids = np.array(doc_buff, dtype=np.int64)
+            _, doc_ids = np.unique(doc_ids, return_inverse=True)
+
+            output["position_ids"] = np.array(pos_buff, dtype=np.int64).reshape(
+                *reshape_args
+            )
+            output["document_ids"] = doc_ids.reshape(*reshape_args)
+
+            if self.cfg.flatten:
+                # Compute cumulative sequence lengths for the flat batch
+                # Find indices where document ID changes
+                flat_doc_ids = doc_ids.reshape(-1)
+                diff = np.diff(flat_doc_ids, prepend=-1)
+                change_indices = np.where(diff != 0)[0]
+                cu_seqlens = np.append(change_indices, len(flat_doc_ids)).astype(
+                    np.int32
+                )
+                output["cu_seqlens"] = cu_seqlens
+                output["max_seqlen"] = int(np.max(np.diff(cu_seqlens)))
+
+        return output
 
 
 @register_transform("flat_batcher", FlatTokensBatcherConfig)

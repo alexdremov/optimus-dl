@@ -45,7 +45,7 @@ class TestRoPEFunctions:
         assert freqs_cis.dtype == torch.float32
 
     def test_reshape_for_broadcast_assertions(self):
-        # Test dimension assertion
+        # Test dimension assertion (x must have at least 2 dims)
         freqs_cis = torch.randn(10, 32, dtype=torch.complex64)
         x_1d = torch.randn(32, dtype=torch.complex64)  # Only 1 dimension
 
@@ -55,10 +55,20 @@ class TestRoPEFunctions:
         # Test shape mismatch assertion
         x_wrong_shape = torch.randn(
             2, 5, 16, dtype=torch.complex64
-        )  # Wrong seq_len and head_dim
+        )  # Wrong seq_len and head_dim (freqs_cis seq_len=10, head_dim=32)
 
         with pytest.raises(AssertionError):
             _reshape_for_broadcast(freqs_cis, x_wrong_shape)
+
+        # Test successful batch-dimensioned freqs_cis broadcast
+        # x: (B, T, nh, hs/2, 2) -> ndim=5
+        # freqs_cis: (B, T, hs/2, 2) -> ndim=4
+        # Should result in (B, T, 1, hs/2, 2)
+        B, T, nh, hs_half = 2, 10, 8, 32
+        x = torch.randn(B, T, nh, hs_half, 2)
+        f_cis = torch.randn(B, T, hs_half, 2)
+        reshaped = _reshape_for_broadcast(f_cis, x)
+        assert reshaped.shape == (B, T, 1, hs_half, 2)
 
     def test_apply_rotary_emb(self):
         """Test application of rotary embeddings to query and key tensors."""
