@@ -121,47 +121,60 @@ class BasicBatcherNode(BaseNode):
         lengths = [len(seq) for seq in seqs]
 
         if self.cfg.flatten:
-            # Pack all sequences into one flat 1D sequence
-            # Handle both torch.Tensor and np.ndarray/list
+            # Pack all sequences into one flat 1D sequence with causal shifting
+            # Each document s produces:
+            # - Input segment: s[:-1]
+            # - Target segment: s[1:]
+
             if isinstance(seqs[0], torch.Tensor):
                 device = seqs[0].device
-                input_ids = torch.cat(seqs)
+                input_ids = torch.cat([s[:-1] for s in seqs])
+                labels = torch.cat([s[1:] for s in seqs])
+
+                # Align metadata with input_ids
                 position_ids = torch.cat(
-                    [torch.arange(length, device=device) for length in lengths]
+                    [torch.arange(len(s) - 1, device=device) for s in seqs]
                 )
                 document_ids = torch.cat(
                     [
-                        torch.full((length,), i, device=device, dtype=torch.long)
-                        for i, length in enumerate(lengths)
+                        torch.full((len(s) - 1,), i, device=device, dtype=torch.long)
+                        for i, s in enumerate(seqs)
                     ]
                 )
-                # Convert to numpy for consistent return type if necessary,
-                # but keep as tensor if they are on GPU/special device
-                # The rest of the batcher returns tensors if input was tensors.
+
+                # Adjusted lengths for cu_seqlens
+                shifted_lengths = [len(s) - 1 for s in seqs]
+
                 return {
                     self.cfg.field: input_ids[None, :],
+                    "labels": labels[None, :],
                     "position_ids": position_ids[None, :],
                     "document_ids": document_ids[None, :],
                     "seq_lens": torch.tensor([len(input_ids)], device=device),
                     "cu_seqlens": torch.cumsum(
-                        torch.tensor([0] + lengths, device=device), dim=0
+                        torch.tensor([0] + shifted_lengths, device=device), dim=0
                     ).to(torch.int32),
-                    "max_seqlen": int(max(lengths)),
+                    "max_seqlen": int(max(shifted_lengths)),
                 }
             else:
-                input_ids = np.concatenate(seqs)
-                position_ids = np.concatenate([np.arange(length) for length in lengths])
+                input_ids = np.concatenate([s[:-1] for s in seqs])
+                labels = np.concatenate([s[1:] for s in seqs])
+
+                position_ids = np.concatenate([np.arange(len(s) - 1) for s in seqs])
                 document_ids = np.concatenate(
-                    [np.full(length, i) for i, length in enumerate(lengths)]
+                    [np.full(len(s) - 1, i) for i, s in enumerate(seqs)]
                 )
+
+                shifted_lengths = [len(s) - 1 for s in seqs]
 
                 return {
                     self.cfg.field: input_ids[None, :].astype(np.int64),
+                    "labels": labels[None, :].astype(np.int64),
                     "position_ids": position_ids[None, :].astype(np.int64),
                     "document_ids": document_ids[None, :].astype(np.int64),
                     "seq_lens": np.array([len(input_ids)], dtype=np.int64),
-                    "cu_seqlens": np.cumsum([0] + lengths).astype(np.int32),
-                    "max_seqlen": int(max(lengths)),
+                    "cu_seqlens": np.cumsum([0] + shifted_lengths).astype(np.int32),
+                    "max_seqlen": int(max(shifted_lengths)),
                 }
 
         # Determine the maximum sequence length in this specific batch

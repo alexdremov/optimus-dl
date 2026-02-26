@@ -81,7 +81,7 @@ class CrossEntropyCriterion(BaseCriterion):
 
         Args:
             model: The language model.
-            batch: Dictionary containing 'input_ids'.
+            batch: Dictionary containing 'input_ids' and optional 'labels'.
             requested_protocols: Optional set of requested protocols.
 
         Returns:
@@ -90,24 +90,52 @@ class CrossEntropyCriterion(BaseCriterion):
         requested_protocols = requested_protocols or set()
         batch = copy.copy(batch)
         input_ids = batch.pop("input_ids")
+        labels = batch.pop("labels", None)
 
-        batch["input_ids"] = input_ids[:, :-1]
+        B, T = input_ids.shape
 
-        log_averaged(
-            "input_max_seq_len",
-            input_ids.shape[1],
-            round=2,
-        )
-        seq_lens = batch.get("seq_lens")
-        if seq_lens is not None:
+        if labels is not None:
+            # Batcher already performed causal shifting (input_ids and labels are aligned)
+            targets = labels
+            batch["input_ids"] = input_ids
+        else:
+            assert (
+                "cu_seqlens" not in batch
+            ), "If input is flat, we cannot generate labels and inputs efficiently"
+            # Perform standard causal shifting: targets = inputs[1:], inputs = inputs[:-1]
+            targets = input_ids[:, 1:]
+            batch["input_ids"] = input_ids[:, :-1]
+
+            # Metadata tensors that match the sequence length must also be sliced
+            for k in list(batch.keys()):
+                v = batch[k]
+                if isinstance(v, torch.Tensor) and v.ndim >= 2 and v.shape[1] == T:
+                    batch[k] = v[:, :-1]
+
+        if not (B == 1 and "cu_seqlens" in batch):
             log_averaged(
-                "input_mean_seq_len",
-                lambda: seq_lens.float().mean().item(),
-                weight=seq_lens.shape[0],
+                "input_max_seq_len",
+                batch["input_ids"].shape[1],
                 round=2,
             )
+        seq_lens = batch.get("seq_lens")
+        # For flat batches (B=1), mean seq len is just the total length, which is logged above
+        if seq_lens is not None:
+            if B == 1 and "cu_seqlens" in batch:
+                log_averaged(
+                    "input_mean_seq_len",
+                    batch["input_ids"].shape[1],
+                    weight=len(batch["cu_seqlens"]),
+                    round=2,
+                )
+            else:
+                log_averaged(
+                    "input_mean_seq_len",
+                    lambda: seq_lens.float().mean().item(),
+                    weight=seq_lens.shape[0],
+                    round=2,
+                )
 
-        targets = input_ids[:, 1:]
         model_out = model(**batch)
         logits = model_out["logits"]
         is_dtensor = isinstance(logits, DTensor)
@@ -190,25 +218,73 @@ class CrossEntropyCriterion(BaseCriterion):
         )
 
         exposed = {}
-        if StandardProtocols.LOGITS in requested_protocols:
-            exposed[StandardProtocols.LOGITS] = logits
+        if (
+            StandardProtocols.LOGITS in requested_protocols
+            or StandardProtocols.CLASSIFICATION in requested_protocols
+        ):
+            with torch.no_grad():
+                is_flat = B == 1 and "cu_seqlens" in batch
 
-        if StandardProtocols.CLASSIFICATION in requested_protocols:
-            # Build classification protocol data for reuse
-            mask = targets != self.padding_token_id
-            if seq_lens is not None:
-                mask = mask & (
-                    torch.arange(mask.shape[1], device=mask.device) < seq_lens[:, None]
-                )
+                if StandardProtocols.LOGITS in requested_protocols:
+                    res_logits = logits
+                    if isinstance(res_logits, DTensor):
+                        res_logits = res_logits.full_tensor()
 
-            classification = dict(
-                predictions=predictions(),
-                targets=targets,
-                mask=mask,
-            )
-            exposed[StandardProtocols.CLASSIFICATION] = classification
+                    if is_flat:
+                        res_logits = self._unflatten_flat(
+                            res_logits, batch["cu_seqlens"], batch["max_seqlen"]
+                        )
+                    exposed[StandardProtocols.LOGITS] = res_logits
+
+                if StandardProtocols.CLASSIFICATION in requested_protocols:
+                    res_preds = predictions()  # Already gathered by cached_lambda
+                    res_targets = targets
+
+                    # Base mask for valid tokens
+                    res_mask = res_targets != self.padding_token_id
+                    # Refine mask for padded batches if seq_lens is available
+                    if not is_flat and seq_lens is not None:
+                        res_mask = res_mask & (
+                            torch.arange(res_mask.shape[1], device=res_mask.device)
+                            < seq_lens[:, None]
+                        )
+
+                    if is_flat:
+                        cu = batch["cu_seqlens"]
+                        ms = batch["max_seqlen"]
+                        res_preds = self._unflatten_flat(res_preds, cu, ms)
+                        res_targets = self._unflatten_flat(
+                            res_targets, cu, ms, pad_val=self.padding_token_id
+                        )
+                        res_mask = self._unflatten_flat(res_mask, cu, ms, pad_val=False)
+
+                    exposed[StandardProtocols.CLASSIFICATION] = dict(
+                        predictions=res_preds,
+                        targets=res_targets,
+                        mask=res_mask,
+                    )
 
         return loss, exposed
+
+    @staticmethod
+    def _unflatten_flat(t, cu_seqlens, max_seqlen, pad_val=0):
+        """Helper to reconstruct (batch, time) layout from a flat (1, sum_T) batch."""
+        # t is (1, T_sum, ...)
+        device = t.device
+        dtype = t.dtype
+        num_docs = len(cu_seqlens) - 1
+
+        # Prepare output buffer (batch, max_time, ...)
+        out = torch.full(
+            (num_docs, max_seqlen, *t.shape[2:]), pad_val, device=device, dtype=dtype
+        )
+
+        for i in range(num_docs):
+            start, end = cu_seqlens[i].item(), cu_seqlens[i + 1].item()
+            length = end - start
+            out[i, :length] = t[0, start:end]
+
+        return out
 
     @torch.no_grad()
     def gather_predictions(self, logits):

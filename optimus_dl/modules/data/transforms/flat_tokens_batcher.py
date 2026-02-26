@@ -25,7 +25,6 @@ class FlatTokensBatcherConfig(RegistryConfigStrict):
         max_tokens: Total number of tokens per batch. If provided, overrides batch_size * seq_len.
         worker_cfg: Configuration for map workers (not used directly by batcher).
         field: The dictionary key containing the tokens (defaults to input_ids).
-        add_one_for_shift: If True, yields seq_len + 1 tokens per sample (only if max_tokens is None).
         mask_documents: If True, tracks document boundaries and emits document_ids/position_ids.
         flatten: If True, yields a single flat sequence of shape (1, B*T) instead of (B, T).
     """
@@ -37,7 +36,6 @@ class FlatTokensBatcherConfig(RegistryConfigStrict):
         default_factory=MapperConfig,
     )
     field: str = "input_ids"
-    add_one_for_shift: bool = True
     mask_documents: bool = False
     flatten: bool = False
 
@@ -67,13 +65,11 @@ class FlatTokensBatcherNode(BaseNode):
 
     @property
     def target_size(self):
-        """Calculate total number of tokens needed for one batch."""
+        """Calculate total number of tokens needed for one batch (including +1 for shift)."""
         if self.cfg.max_tokens is not None:
-            return self.cfg.max_tokens
+            return self.cfg.max_tokens + 1
 
-        return self.cfg.batch_size * (
-            self.cfg.seq_len + (1 if self.cfg.add_one_for_shift else 0)
-        )
+        return self.cfg.batch_size * (self.cfg.seq_len + 1)
 
     def reset(self, initial_state: dict | None = None):
         """Restore batcher buffer and source node state."""
@@ -105,6 +101,7 @@ class FlatTokensBatcherNode(BaseNode):
 
     def next(self) -> Any:
         """Yield the next complete batch of tokens, filling from source as needed."""
+        # We need T+1 tokens to produce T inputs and T labels
         while len(self.buffer) < self.target_size:
             item = next(self.node)
             tokens = item[self.cfg.field]
@@ -114,36 +111,56 @@ class FlatTokensBatcherNode(BaseNode):
                 self.document_ids_buffer.extend([self._current_doc_id] * len(tokens))
                 self._current_doc_id += 1
 
-        return_buff = self.buffer[: self.target_size]
-        self.buffer = self.buffer[self.target_size :]
+        # Extract segments
+        full_segment = self.buffer[: self.target_size]
+        self.buffer = self.buffer[
+            self.target_size - 1 :
+        ]  # Keep last token for next shift
+
+        input_tokens = full_segment[:-1]
+        target_tokens = list(full_segment[1:])  # Convert to list for modification
 
         if self.cfg.flatten:
             reshape_args = (1, -1)
         else:
             reshape_args = (self.cfg.batch_size, -1)
 
-        output = {
-            "input_ids": np.array(return_buff, dtype=np.int64).reshape(*reshape_args)
-        }
-
         if self.cfg.mask_documents:
-            pos_buff = self.position_ids_buffer[: self.target_size]
-            doc_buff = self.document_ids_buffer[: self.target_size]
-            self.position_ids_buffer = self.position_ids_buffer[self.target_size :]
-            self.document_ids_buffer = self.document_ids_buffer[self.target_size :]
+            # We need metadata for the inputs
+            pos_full = self.position_ids_buffer[: self.target_size]
+            doc_full = self.document_ids_buffer[: self.target_size]
+            self.position_ids_buffer = self.position_ids_buffer[self.target_size - 1 :]
+            self.document_ids_buffer = self.document_ids_buffer[self.target_size - 1 :]
 
-            # Re-base document IDs to avoid huge numbers and overflow
-            doc_ids = np.array(doc_buff, dtype=np.int64)
+            # Mask cross-document labels
+            # target_tokens[i] corresponds to full_segment[i+1]
+            # input_tokens[i] corresponds to full_segment[i]
+            # Prediction is invalid if doc[i] != doc[i+1]
+            for i in range(len(input_tokens)):
+                if doc_full[i] != doc_full[i + 1]:
+                    target_tokens[i] = -100  # Standard ignore index
+
+            # Sliced to inputs
+            pos_in = pos_full[:-1]
+            doc_in = doc_full[:-1]
+
+            # Re-base document IDs
+            doc_ids = np.array(doc_in, dtype=np.int64)
             _, doc_ids = np.unique(doc_ids, return_inverse=True)
 
-            output["position_ids"] = np.array(pos_buff, dtype=np.int64).reshape(
-                *reshape_args
-            )
-            output["document_ids"] = doc_ids.reshape(*reshape_args)
+            output = {
+                "input_ids": np.array(input_tokens, dtype=np.int64).reshape(
+                    *reshape_args
+                ),
+                "labels": np.array(target_tokens, dtype=np.int64).reshape(
+                    *reshape_args
+                ),
+                "position_ids": np.array(pos_in, dtype=np.int64).reshape(*reshape_args),
+                "document_ids": doc_ids.reshape(*reshape_args),
+            }
 
             if self.cfg.flatten:
-                # Compute cumulative sequence lengths for the flat batch
-                # Find indices where document ID changes
+                # Compute cu_seqlens for the flat batch
                 flat_doc_ids = doc_ids.reshape(-1)
                 diff = np.diff(flat_doc_ids, prepend=-1)
                 change_indices = np.where(diff != 0)[0]
@@ -152,6 +169,15 @@ class FlatTokensBatcherNode(BaseNode):
                 )
                 output["cu_seqlens"] = cu_seqlens
                 output["max_seqlen"] = int(np.max(np.diff(cu_seqlens)))
+        else:
+            output = {
+                "input_ids": np.array(input_tokens, dtype=np.int64).reshape(
+                    *reshape_args
+                ),
+                "labels": np.array(target_tokens, dtype=np.int64).reshape(
+                    *reshape_args
+                ),
+            }
 
         return output
 
