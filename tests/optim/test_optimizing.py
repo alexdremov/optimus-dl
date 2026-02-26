@@ -36,7 +36,7 @@ def test_default_optimizers_decrease_loss(optimizer_config):
     for _ in range(100):
         optimizer.zero_grad()
         output = model(x)
-        loss, _ = criterion(output, target)
+        loss = criterion(output, target)
         if initial_loss is None:
             initial_loss = loss.item()
         loss.backward()
