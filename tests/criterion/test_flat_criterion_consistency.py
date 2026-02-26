@@ -42,6 +42,8 @@ def test_loss_consistency_padded_vs_flat(device):
     """
     config = LlamaConfig(vocab_size=100, n_layer=2, n_head=4, n_embd=64)
     model = Llama(config).to(device).eval()
+    if device.type == "cuda":
+        model = model.half()
 
     pad_token_id = 0
     criterion_cfg = CrossEntropyCriterionConfig(padding_token_id=pad_token_id)
@@ -164,6 +166,8 @@ def test_exposed_protocols_consistency(device):
 
     config = LlamaConfig(vocab_size=100, n_layer=1, n_head=2, n_embd=32)
     model = Llama(config).to(device).eval()
+    if device.type == "cuda":
+        model = model.half()
 
     pad_token_id = 0
     criterion = CrossEntropyCriterion(
