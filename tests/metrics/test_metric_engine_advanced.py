@@ -133,9 +133,9 @@ class TestMetricEngineAdvanced:
         engine.update({"model": model, "batch": batch})
 
         # Compute results
-        from optimus_dl.modules.metrics import compute_metrics
+        from optimus_dl.modules.metrics import compute_meters
 
-        raw_results = compute_metrics("test_group", aggregate=False)
+        raw_results = compute_meters("test_group", aggregate=False)
         results = engine.compute(raw_results)
 
         # 5 * 3 = 15
@@ -210,9 +210,9 @@ class TestMetricEngineAdvanced:
 
         engine.update({"model": model, "batch": batch})
 
-        from optimus_dl.modules.metrics import compute_metrics
+        from optimus_dl.modules.metrics import compute_meters
 
-        raw_results = compute_metrics("test_group", aggregate=False)
+        raw_results = compute_meters("test_group", aggregate=False)
         results = engine.compute(raw_results)
 
         # Accuracy should be 0.5 (1/2)
@@ -347,9 +347,9 @@ class TestMetricEngineAdvanced:
         # Batch 2: val=20 -> sum_a=30, sum_b=2
         engine.update({"model": model, "batch": {"val": 20.0}})
 
-        from optimus_dl.modules.metrics import compute_metrics
+        from optimus_dl.modules.metrics import compute_meters
 
-        raw_results = compute_metrics("finalize_group", aggregate=False)
+        raw_results = compute_meters("finalize_group", aggregate=False)
 
         # Verify raw results contain the sums. Descriptive naming: 'test/finalize_metric/sum_a'
         assert "test/finalize_metric/sum_a" in raw_results
@@ -403,10 +403,10 @@ class TestMetricEngineAdvanced:
         model = MagicMock()
         engine.update({"model": model, "batch": {}})
 
-        from optimus_dl.modules.metrics import compute_metrics
+        from optimus_dl.modules.metrics import compute_meters
 
         # Internal metrics are stored under _internal/ prefix in the MeterGroup
-        raw_results = compute_metrics("internal_group", aggregate=False)
+        raw_results = compute_meters("internal_group", aggregate=False)
 
         assert "test/internal_metric/public" in raw_results
         assert "_internal/test/internal_metric/_internal" in raw_results

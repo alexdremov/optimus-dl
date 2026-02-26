@@ -17,7 +17,7 @@ from optimus_dl.core.registry import (
 )
 from optimus_dl.modules.criterion import BaseCriterion
 from optimus_dl.modules.metrics import (
-    compute_metrics,
+    compute_meters,
     log_averaged,
     log_event_end,
     log_event_occurence,
@@ -209,7 +209,7 @@ class Evaluator:
                 total_time = time.perf_counter() - start_time
                 log_event_end("perf/total_run")
 
-            eval_metrics = compute_metrics(
+            eval_metrics = compute_meters(
                 f"{metrics_prefix}/{eval_name}",
                 aggregate=True,
                 collective=collective,

@@ -446,7 +446,7 @@ def meters_group(name: str, log_freq: int | None = None, force_recreate: bool = 
             _active_meter_groups.pop(name)
 
 
-def compute_metrics(
+def compute_meters(
     group_name: str, aggregate: bool = False, collective: Collective | None = None
 ) -> dict[str, float | int | dict[str, float | int]]:
     """Compute final values for a named `MeterGroup`, with optional distributed aggregation.

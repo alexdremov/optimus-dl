@@ -7,7 +7,7 @@ from typing import (
 
 from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.metrics.base import (
-    compute_metrics,
+    compute_meters,
     meters_group,
 )
 from optimus_dl.modules.metrics.engine import MetricEngine
@@ -119,7 +119,7 @@ def test_engine_update_with_external_data_injection():
         # Inject 'ext_data' which is required by 'ext_data_source'
         engine.update(data={}, computed_data={"ext_data": 42.0})
 
-    results = compute_metrics("test_engine_injection")
+    results = compute_meters("test_engine_injection")
 
     # Metric naming should now be descriptive: 'ext_data_source_metric/val'
     assert "ext_data_source_metric/val" in results

@@ -8,7 +8,7 @@ from .base import (
     BaseMeter,
     MeterEntry,
     MeterGroup,
-    compute_metrics,
+    compute_meters,
     load_state_dict,
     log_meter,
     meters_group,

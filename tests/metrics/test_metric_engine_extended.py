@@ -114,9 +114,9 @@ class TestMetricEngineExtended:
         # Source should only be called once, despite being used by two metrics
         assert model.source_called == 1
 
-        from optimus_dl.modules.metrics import compute_metrics
+        from optimus_dl.modules.metrics import compute_meters
 
-        raw_results = compute_metrics("test_group", aggregate=False)
+        raw_results = compute_meters("test_group", aggregate=False)
         results = engine.compute(raw_results)
 
         # Descriptive naming with nested_name: prefix / nested_name / sub_name
@@ -154,9 +154,9 @@ class TestMetricEngineExtended:
 
         engine.update({"model": model, "batch": batch})
 
-        from optimus_dl.modules.metrics import compute_metrics
+        from optimus_dl.modules.metrics import compute_meters
 
-        raw_results = compute_metrics("multi_group", aggregate=False)
+        raw_results = compute_meters("multi_group", aggregate=False)
         results = engine.compute(raw_results)
 
         assert results["multi/ma/proto_a"] == 10.0

@@ -13,7 +13,7 @@ from optimus_dl.core.seed import set_seed
 from optimus_dl.modules.checkpoint import CheckpointManager
 from optimus_dl.modules.criterion import BaseCriterion
 from optimus_dl.modules.metrics import (
-    compute_metrics,
+    compute_meters,
     log_event_end,
     log_event_start,
     meters_group,
@@ -370,7 +370,7 @@ class TrainRecipe(
                 self.build_loggers()
                 self.setup_loggers(self.cfg.common.exp_name)
 
-        init_metrics = compute_metrics(
+        init_metrics = compute_meters(
             group_name="init",
             aggregate=True,
             collective=collective,
@@ -426,7 +426,7 @@ class TrainRecipe(
                 with meters_group("train") as should_log:
                     if should_log:
                         # Get aggregated metrics for progress bar
-                        current_metrics = compute_metrics(
+                        current_metrics = compute_meters(
                             "train",
                             aggregate=True,
                             collective=collective,

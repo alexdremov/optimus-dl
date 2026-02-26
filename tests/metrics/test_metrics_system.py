@@ -14,7 +14,7 @@ from optimus_dl.modules.metrics.base import (
     _active_meter_groups,
     _evaluate_value,
     _meter_groups,
-    compute_metrics,
+    compute_meters,
     load_state_dict,
     log_meter,
     meters_group,
@@ -829,22 +829,22 @@ class TestMeterUtilityFunctions:
         _meter_groups.clear()
         _active_meter_groups.clear()
 
-    def test_compute_metrics_no_group(self):
+    def test_compute_meters_no_group(self):
         self.setUp()
 
-        result = compute_metrics("nonexistent_group")
+        result = compute_meters("nonexistent_group")
         assert result == {}
 
-    def test_compute_metrics_local(self):
+    def test_compute_meters_local(self):
         self.setUp()
 
         with meters_group("test_group"):
             log_averaged("test_meter", value=10.0, weight=1.0)
 
-        result = compute_metrics("test_group", aggregate=False)
+        result = compute_meters("test_group", aggregate=False)
         assert result == {"test_meter": 10.0}
 
-    def test_compute_metrics_with_collective(self):
+    def test_compute_meters_with_collective(self):
         self.setUp()
 
         # Mock collective communication
@@ -860,7 +860,7 @@ class TestMeterUtilityFunctions:
             log_averaged("loss", value=2.5, weight=2.0)  # Local: sum=5, count=2
 
         # Compute aggregated metrics
-        aggregated = compute_metrics(
+        aggregated = compute_meters(
             "test_group", aggregate=True, collective=mock_collective
         )
 
@@ -961,13 +961,13 @@ class TestMetersIntegration:
 
                 # Compute meters at end of epoch
                 if should_log:
-                    meters = compute_metrics("train")
+                    meters = compute_meters("train")
                     assert "loss" in meters
                     assert "processed_samples" in meters
                     assert "forward_pass" in meters
 
         # Final meters should be accumulated (reduced expected value to 240 because meters reset)
-        final_meters = compute_metrics("train")
+        final_meters = compute_meters("train")
         # The processed_samples meter may have been reset between epochs due to reset flags
         # so we just check that it's positive
         assert final_meters["processed_samples"] > 0
@@ -985,7 +985,7 @@ class TestMetersIntegration:
                 log_averaged("f1_score", value=0.92, weight=100)
 
                 if should_log:
-                    meters = compute_metrics(f"eval/{dataset}")
+                    meters = compute_meters(f"eval/{dataset}")
                     assert meters["accuracy"] == 0.95
                     assert meters["f1_score"] == 0.92
 
@@ -1010,7 +1010,7 @@ class TestMetersIntegration:
 
         # Verify meters are restored
         assert "test_group" in _meter_groups
-        meters = compute_metrics("test_group")
+        meters = compute_meters("test_group")
         assert meters["meter1"] == 10.0
         assert meters["meter2"] == 20.0
 
@@ -1032,9 +1032,7 @@ class TestMetersIntegration:
             log_averaged("loss", value=2.5, weight=2.0)  # Local: sum=5, count=2
 
         # Compute aggregated meters
-        aggregated = compute_metrics(
-            "train", aggregate=True, collective=mock_collective
-        )
+        aggregated = compute_meters("train", aggregate=True, collective=mock_collective)
 
         # Should aggregate across all ranks: (5+10+15) / (2+3+1) = 30/6 = 5.0
         assert aggregated["loss"] == 5.0
@@ -1057,7 +1055,7 @@ class TestMetersIntegration:
         with meters_group("test_group"):
             log_meter("failing_meter", lambda: FailingMeter())
 
-        # Should crash the compute_metrics function when accessing directly
+        # Should crash the compute_meters function when accessing directly
         # We test that it indeed raises the exception
         with pytest.raises(ValueError, match="Computation failed"):
-            compute_metrics("test_group", aggregate=False)
+            compute_meters("test_group", aggregate=False)
