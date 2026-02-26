@@ -105,11 +105,7 @@ class AccuracyMetric(Metric):
     def __call__(
         self, sources_data: dict[str, dict[str, Any]]
     ) -> dict[str, dict[str, Any]]:
-        classif = sources_data.get(StandardProtocols.CLASSIFICATION)
-        if not classif:
-            return {}
-
-        data = classif.get(StandardProtocols.CLASSIFICATION)
+        data = sources_data.get(StandardProtocols.CLASSIFICATION)
         if not data:
             return {}
 
@@ -150,12 +146,8 @@ class PerplexityMetric(Metric):
     def __call__(
         self, sources_data: dict[str, dict[str, Any]]
     ) -> dict[str, dict[str, Any]]:
-        loss_dict = sources_data.get(StandardProtocols.LOSS)
-        if not loss_dict:
-            return {}
-
-        loss = loss_dict.get(StandardProtocols.LOSS)
-        if loss is None:
+        loss = sources_data.get(StandardProtocols.LOSS)
+        if not loss:
             return {}
 
         weight = 1.0
@@ -189,12 +181,8 @@ class LossMetric(Metric):
     def __call__(
         self, sources_data: dict[str, dict[str, Any]]
     ) -> dict[str, dict[str, Any]]:
-        loss_dict = sources_data.get(StandardProtocols.LOSS)
+        loss = sources_data.get(StandardProtocols.LOSS)
         if not loss_dict:
-            return {}
-
-        loss = loss_dict.get(StandardProtocols.LOSS)
-        if loss is None:
             return {}
 
         weight = 1.0
