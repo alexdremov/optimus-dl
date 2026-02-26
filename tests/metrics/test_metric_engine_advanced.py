@@ -192,10 +192,10 @@ class TestMetricEngineAdvanced:
 
         engine = MetricEngine("test_group", configs)
 
-        # Batch: 1 sequence, length 3. Labels are [2, 3] (shifted)
+        # Batch: 1 sequence, length 3. CausalLMSource will derive labels [2, 3]
+        # by shifting input_ids, so we don't need an explicit 'labels' field here.
         batch = {
             "input_ids": torch.tensor([[1, 2, 3]]),
-            "labels": torch.tensor([[2, 3]]),
         }
 
         # Model predicts 2 for the first token (correct), 4 for the second (incorrect)
