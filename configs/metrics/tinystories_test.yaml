@@ -1,0 +1,54 @@
+# @package @_global_
+defaults:
+  - default
+  - _self_
+
+common:
+  name: tinyllama-tinystories-eval
+  checkpoint_path: null
+  tokenizer:
+    _name: transformers
+    name: ${model.hf_model_name}
+  max_iterations: 10
+  use_gpu: true
+  output_path: outputs/metrics/tinystories_test
+
+model:
+  _name: preset_hfllama2
+  hf_model_name: TinyLlama/TinyLlama_v1.1
+
+data:
+  scratch:
+    base_transforms:
+      _name: compose
+      transforms:
+        - _name: tokenize
+          tokenizer_config: ${common.tokenizer}
+        - _name: chunk_tokens
+          max_seq_len: 512
+        - _name: flat_batcher
+          batch_size: 4
+          seq_len: 512
+        - _name: to_device
+
+  eval_datasets:
+    tinystories:
+      source:
+        _name: huggingface_dataset
+        dataset_load_kwargs:
+          path: roneneldan/TinyStories
+          split: validation
+          streaming: true
+      transform: ${data.scratch.base_transforms}
+
+metrics:
+  tinystories:
+    - _name: accuracy
+    - _name: perplexity
+    - _name: loss
+
+loggers:
+  - _name: jsonl
+    output_dir: ${common.output_path}/logs
+    filename: metrics.jsonl
+    enabled: true

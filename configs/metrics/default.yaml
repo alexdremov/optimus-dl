@@ -1,0 +1,32 @@
+# @package @_global_
+defaults:
+  - _self_
+
+_name: base
+
+# Common settings for metrics evaluation
+common:
+  seed: 42
+  data_seed: 42
+  checkpoint_path: null  # Must be provided or model must be configured
+  use_gpu: true
+  max_iterations: null   # Evaluate on full dataset by default
+  distributed:
+    tp_size: 1
+    sharding_world_size: null
+  # Tokenizer configuration
+  tokenizer: ???
+
+# Model configuration (if not loading from checkpoint or to override)
+model: null
+
+# Criterion configuration
+criterion:
+  _name: cross_entropy
+
+# Data configuration for evaluation
+data:
+  eval_datasets: ??? # Must be configured
+
+# Metric configurations for datasets
+metrics: {}
