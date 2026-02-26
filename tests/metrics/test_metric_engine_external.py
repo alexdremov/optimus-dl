@@ -65,9 +65,8 @@ class ExternalDataSourceMetric(Metric):
     def __call__(
         self, sources_data: dict[str, dict[str, Any]]
     ) -> dict[str, dict[str, Any]]:
-        # The engine wraps injected data in a dict mapping protocol to its value
-        data = sources_data.get("ext_data", {})
-        val = data.get("ext_data", 0.0)
+        # Injected computed_data is available directly as sources_data[protocol] = value
+        val = sources_data.get("ext_data", 0.0)
         return {"val": {"value": float(val), "weight": 1.0}}
 
 

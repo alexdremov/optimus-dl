@@ -11,6 +11,7 @@ from optimus_dl.core.registry import (
     build,
     make_registry,
 )
+from optimus_dl.modules.metrics.common import log_averaged
 from optimus_dl.modules.optim import OptimizationConfig
 
 logger = logging.getLogger(__name__)
@@ -64,9 +65,11 @@ class OptimizerBuilder:
             optimized_params.append(
                 sum([p.numel() for p in param_group["params"] if p.requires_grad])
             )
+        optimized_params_num = sum(optimized_params)
         logger.info(
-            f"Optimized {sum(optimized_params):,} parameters. Per group: {[f'{i:,}' for i in optimized_params]}"
+            f"Optimized {optimized_params_num:,} parameters. Per group: {[f'{i:,}' for i in optimized_params]}"
         )
+        log_averaged("optimized_params", optimized_params_num)
 
         return optimizer
 

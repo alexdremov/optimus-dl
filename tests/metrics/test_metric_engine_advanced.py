@@ -72,7 +72,7 @@ class DependentSource(MetricSource):
         return {"dummy_proto"}
 
     def __call__(self, dependencies, **kwargs):
-        base_val = dependencies["dummy_proto"]["dummy_proto"]
+        base_val = dependencies["dummy_proto"]
         return {"dep_proto": base_val * self.cfg.multiplier}
 
 
@@ -88,7 +88,7 @@ class DummyMetric(Metric):
         return {"dep_proto"}
 
     def __call__(self, sources_data):
-        val = sources_data["dep_proto"]["dep_proto"]
+        val = sources_data["dep_proto"]
         return {"dummy_metric": {"value": val, "weight": 1.0}}
 
 
@@ -322,7 +322,7 @@ class TestMetricEngineAdvanced:
                 return {"sum_a": "sum", "sum_b": "sum"}
 
             def __call__(self, sources_data):
-                val = sources_data["val_proto"]["val_proto"]
+                val = sources_data["val_proto"]
                 return {"sum_a": {"value": val}, "sum_b": {"value": 1.0}}
 
             def finalize(self, aggregated_data):
@@ -384,7 +384,7 @@ class TestMetricEngineAdvanced:
                 return {"public": "average", "_internal": "average"}
 
             def __call__(self, sources_data):
-                val = sources_data["dummy_proto"]["dummy_proto"]
+                val = sources_data["dummy_proto"]
                 return {
                     "public": {"value": val, "weight": 1.0},
                     "_internal": {"value": val * 2, "weight": 1.0},

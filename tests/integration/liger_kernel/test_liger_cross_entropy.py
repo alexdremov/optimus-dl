@@ -67,12 +67,12 @@ class TestLigerCrossEntropyEquivalence(unittest.TestCase):
 
         # 1. Base (PyTorch) Forward
         batch_base = {"input_ids": input_ids.clone(), "is_base": True}
-        loss_base = self.base_criterion(model, batch_base)
+        loss_base, _ = self.base_criterion(model, batch_base)
         loss_base.backward()
 
         # 2. Liger Forward
         batch_liger = {"input_ids": input_ids.clone(), "is_base": False}
-        loss_liger = self.liger_criterion(model, batch_liger)
+        loss_liger, _ = self.liger_criterion(model, batch_liger)
         loss_liger.backward()
 
         # Check Loss Equivalence

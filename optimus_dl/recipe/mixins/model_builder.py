@@ -10,6 +10,7 @@ from optimus_dl.core.registry import (
     make_registry,
 )
 from optimus_dl.modules.distributed import Collective
+from optimus_dl.modules.metrics.common import log_averaged
 from optimus_dl.modules.model import (
     BaseModel,
     ModelConfig,
@@ -70,19 +71,19 @@ class ModelBuilder:
             )
 
         model = build_model(model_config, **kwargs)
-        logger.info(
-            f"Params num (before model transforms): {get_num_parameters(model):,}"
-        )
+        num_param_before = get_num_parameters(model)
+        logger.info(f"Params num (before model transforms): {num_param_before:,}")
+        log_averaged("model/num_params_before_transforms", num_param_before)
         assert isinstance(model, BaseModel)
 
         # Apply model transforms (including distributed setup)
         model = self._apply_model_transforms(
             model, collective=collective, device=collective.default_device, **kwargs
         )
+        num_param_after = get_num_parameters(model)
         logger.info(f"Model \n{model}")
-        logger.info(
-            f"Params num (after model transforms): {get_num_parameters(model):,}"
-        )
+        logger.info(f"Params num (after model transforms): {num_param_after:,}")
+        log_averaged("model/num_params_after_transforms", num_param_after)
 
         return model
 

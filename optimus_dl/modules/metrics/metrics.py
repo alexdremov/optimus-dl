@@ -102,14 +102,14 @@ class AccuracyMetric(Metric):
     def requires(self) -> set[str]:
         return {StandardProtocols.CLASSIFICATION}
 
+    @property
+    def accumulators(self) -> dict[str, str]:
+        return {"accuracy": "average", "total": "sum"}
+
     def __call__(
         self, sources_data: dict[str, dict[str, Any]]
     ) -> dict[str, dict[str, Any]]:
-        classif = sources_data.get(StandardProtocols.CLASSIFICATION)
-        if not classif:
-            return {}
-
-        data = classif.get(StandardProtocols.CLASSIFICATION)
+        data = sources_data.get(StandardProtocols.CLASSIFICATION)
         if not data:
             return {}
 
@@ -127,7 +127,10 @@ class AccuracyMetric(Metric):
         if total == 0:
             return {}
 
-        return {"accuracy": {"value": correct.sum().item() / total, "weight": total}}
+        return {
+            "accuracy": {"value": correct.sum().item() / total, "weight": total},
+            "total": {"value": total},
+        }
 
 
 @dataclass
@@ -150,11 +153,7 @@ class PerplexityMetric(Metric):
     def __call__(
         self, sources_data: dict[str, dict[str, Any]]
     ) -> dict[str, dict[str, Any]]:
-        loss_dict = sources_data.get(StandardProtocols.LOSS)
-        if not loss_dict:
-            return {}
-
-        loss = loss_dict.get(StandardProtocols.LOSS)
+        loss = sources_data.get(StandardProtocols.LOSS)
         if loss is None:
             return {}
 
@@ -186,14 +185,14 @@ class LossMetric(Metric):
     def requires(self) -> set[str]:
         return {StandardProtocols.LOSS}
 
+    @property
+    def accumulators(self) -> dict[str, str]:
+        return {"loss": "average"}
+
     def __call__(
         self, sources_data: dict[str, dict[str, Any]]
     ) -> dict[str, dict[str, Any]]:
-        loss_dict = sources_data.get(StandardProtocols.LOSS)
-        if not loss_dict:
-            return {}
-
-        loss = loss_dict.get(StandardProtocols.LOSS)
+        loss = sources_data.get(StandardProtocols.LOSS)
         if loss is None:
             return {}
 
