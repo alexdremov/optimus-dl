@@ -5,6 +5,7 @@ from typing import (
     Any,
 )
 
+
 from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.metrics.base import (
     compute_metrics,
@@ -13,6 +14,7 @@ from optimus_dl.modules.metrics.base import (
 from optimus_dl.modules.metrics.engine import MetricEngine
 from optimus_dl.modules.metrics.metrics import (
     Metric,
+    MetricConfig,
     register_metric,
 )
 from optimus_dl.modules.metrics.source import (
@@ -22,8 +24,8 @@ from optimus_dl.modules.metrics.source import (
 
 
 @dataclass
-class ExternalTestMetricConfig(RegistryConfigStrict):
-    nested_name: str | None = None
+class ExternalTestMetricConfig(MetricConfig):
+    _name: str = "external_test_metric"
 
 
 @register_metric("external_test_metric", ExternalTestMetricConfig)
@@ -45,11 +47,11 @@ class ExternalTestMetric(Metric):
 
 
 @dataclass
-class ExternalDataSourceMetricConfig(RegistryConfigStrict):
-    nested_name: str | None = None
+class ExternalDataSourceMetricConfig(MetricConfig):
+    _name: str = "ext_data_source"
 
 
-@register_metric("ext_data_source_metric", ExternalDataSourceMetricConfig)
+@register_metric("ext_data_source", ExternalDataSourceMetricConfig)
 class ExternalDataSourceMetric(Metric):
     """Metric that consumes external data provided during update."""
 
@@ -110,17 +112,16 @@ def test_required_external_protocols():
 
 def test_engine_update_with_external_data_injection():
     """Test that data provided via 'computed_data' is correctly consumed by metrics."""
-    configs = [{"_name": "ext_data_source_metric"}]
+    configs = [{"_name": "ext_data_source"}]
 
     engine = MetricEngine("test_engine_injection", configs)
 
     with metrics_group("test_engine_injection", force_recreate=True):
-        # Inject 'ext_data' which is required by 'ext_data_source_metric'
+        # Inject 'ext_data' which is required by 'ext_data_source'
         engine.update(data={}, computed_data={"ext_data": 42.0})
 
     results = compute_metrics("test_engine_injection")
 
     # Metric naming should now be descriptive: 'ext_data_source_metric/val'
-    # because 'ext_data_source_metric' != 'val'
     assert "ext_data_source_metric/val" in results
     assert results["ext_data_source_metric/val"] == 42.0

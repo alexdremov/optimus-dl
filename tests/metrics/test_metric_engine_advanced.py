@@ -139,9 +139,11 @@ class TestMetricEngineAdvanced:
         results = engine.compute(raw_results)
 
         # 5 * 3 = 15
-        # Descriptive naming: 'test/dummy_metric'
-        assert "test/dummy_metric" in results
-        assert results["test/dummy_metric"] == 15.0
+        # Descriptive naming: 'test/dummy_metric_metric/dummy_metric'
+        # Since metric_name = dummy_metric + _metric = dummy_metric_metric
+        # and sub_name = dummy_metric
+        assert "test/dummy_metric_metric/dummy_metric" in results
+        assert results["test/dummy_metric_metric/dummy_metric"] == 15.0
 
     def test_cross_group_caching(self):
         # We will use a mock model to count forward passes
@@ -214,9 +216,9 @@ class TestMetricEngineAdvanced:
         results = engine.compute(raw_results)
 
         # Accuracy should be 0.5 (1/2)
-        # Descriptive naming: 'accuracy' (no prefix, _name == accuracy == sub_name)
-        assert "accuracy" in results
-        assert results["accuracy"] == 0.5
+        # Descriptive naming: 'accuracy_metric/accuracy'
+        assert "accuracy_metric/accuracy" in results
+        assert results["accuracy_metric/accuracy"] == 0.5
 
     def test_cyclic_dependency_detection(self, caplog):
         @dataclass
@@ -307,9 +309,9 @@ class TestMetricEngineAdvanced:
 
         @dataclass
         class FinalizeMetricConfig(MetricConfig):
-            _name: str = "finalize_metric"
+            _name: str = "finalize"
 
-        @register_metric("finalize_metric", FinalizeMetricConfig)
+        @register_metric("finalize", FinalizeMetricConfig)
         class FinalizeMetric(Metric):
             @property
             def requires(self) -> set[str]:
@@ -333,7 +335,7 @@ class TestMetricEngineAdvanced:
                 "_name": "source_group",
                 "prefix": "test",
                 "sources": {"provider": {"_name": "data_value_source"}},
-                "metrics": [{"_name": "finalize_metric"}],
+                "metrics": [{"_name": "finalize"}],
             }
         ]
 
@@ -369,9 +371,9 @@ class TestMetricEngineAdvanced:
 
         @dataclass
         class InternalMetricConfig(MetricConfig):
-            _name: str = "internal_metric"
+            _name: str = "internal"
 
-        @register_metric("internal_metric", InternalMetricConfig)
+        @register_metric("internal", InternalMetricConfig)
         class InternalMetric(Metric):
             @property
             def requires(self) -> set[str]:
@@ -393,7 +395,7 @@ class TestMetricEngineAdvanced:
                 "_name": "source_group",
                 "prefix": "test",
                 "sources": {"provider": {"_name": "dummy_source", "val": 5}},
-                "metrics": [{"_name": "internal_metric"}],
+                "metrics": [{"_name": "internal"}],
             }
         ]
 

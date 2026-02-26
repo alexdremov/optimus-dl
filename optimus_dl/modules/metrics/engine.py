@@ -245,8 +245,8 @@ class MetricEngine:
                 protocols_to_sources = group.protocols_to_sources
 
                 for i, metric in enumerate(group.metrics):
-                    metric_name = metric.nested_name or getattr(
-                        metric.cfg, "_name", f"metric_{i}"
+                    metric_name = metric.nested_name or (
+                        getattr(metric.cfg, "_name", f"{i}") + "_metric"
                     )
 
                     sources_data: dict[str, dict[str, Any]] = {}
@@ -339,8 +339,8 @@ class MetricEngine:
 
         for group in self.groups:
             for i, metric in enumerate(group.metrics):
-                metric_name = metric.nested_name or getattr(
-                    metric.cfg, "_name", f"metric_{i}"
+                metric_name = metric.nested_name or (
+                    getattr(metric.cfg, "_name", f"{i}") + "_metric"
                 )
 
                 acc_data: dict[str, Any] = {}

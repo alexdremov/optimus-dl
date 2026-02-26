@@ -3,6 +3,7 @@ from dataclasses import (
 )
 from unittest.mock import MagicMock
 
+
 from optimus_dl.modules.metrics.base import (
     _active_meter_groups,
     _meter_groups,
@@ -119,7 +120,8 @@ class TestMetricEngineExtended:
         raw_results = compute_metrics("test_group", aggregate=False)
         results = engine.compute(raw_results)
 
-        # Descriptive naming: prefix / nested_name / sub_name
+        # Descriptive naming with nested_name: prefix / nested_name / sub_name
+        # Since nested_name is provided, it is used as is.
         assert results["test/m1/value_proto"] == 42.0
         assert results["test/m2/value_proto"] == 42.0
 

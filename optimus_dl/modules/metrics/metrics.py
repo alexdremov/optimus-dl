@@ -86,9 +86,7 @@ class Metric(ABC):
         Returns:
             Dict of final metrics to be logged/reported.
         """
-        return {
-            k: v for k, v in aggregated_data.items() if not k.startswith("_internal/")
-        }
+        return {k: v for k, v in aggregated_data.items() if not k.startswith("_")}
 
 
 @dataclass
