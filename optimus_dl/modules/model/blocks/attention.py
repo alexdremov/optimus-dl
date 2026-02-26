@@ -240,7 +240,7 @@ class RotarySelfAttention(nn.Module):
         )
 
         for i in range(num_docs):
-            start, end = cu_seqlens[i], cu_seqlens[i + 1]
+            start, end = cu_seqlens[i].item(), cu_seqlens[i + 1].item()
             length = end - start
             q_padded[i, :length] = q[0, start:end]
             k_padded[i, :length] = k[0, start:end]
@@ -431,7 +431,9 @@ class RotarySelfAttention(nn.Module):
                 if document_ids is None:
                     document_ids = torch.zeros(1, T, dtype=torch.long, device=x.device)
                     for i in range(len(cu_seqlens) - 1):
-                        document_ids[0, cu_seqlens[i] : cu_seqlens[i + 1]] = i
+                        document_ids[
+                            0, cu_seqlens[i].item() : cu_seqlens[i + 1].item()
+                        ] = i
                 # By clearing cu_seqlens here, we'll enter the SDPA/Flex logic below
                 cu_seqlens = None
             else:

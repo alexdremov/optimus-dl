@@ -224,3 +224,123 @@ def test_flat_memory_efficiency(device):
     assert (
         mem_ratio < 0.4
     ), "Flat memory should be significantly less than padded memory in this scenario"
+
+
+def test_document_masking_independence(device):
+    """Verify that changing tokens in one document does not affect outputs of another document in a flat batch."""
+    config = LlamaConfig(
+        vocab_size=1000,
+        n_layer=2,
+        n_head=4,
+        n_embd=128,
+        sequence_length=1024,
+    )
+    model = Llama(config).to(device).eval()
+    if device.type == "cuda":
+        model = model.half()
+
+    # Two documents: doc1 (10 tokens), doc2 (10 tokens)
+    len1, len2 = 10, 10
+    total_len = len1 + len2
+
+    torch.manual_seed(42)
+    input_ids = torch.randint(0, 1000, (1, total_len)).to(device)
+    document_ids = torch.tensor([0] * len1 + [1] * len2).unsqueeze(0).to(device)
+    position_ids = (
+        torch.tensor(list(range(len1)) + list(range(len2))).unsqueeze(0).to(device)
+    )
+
+    # 1. Forward pass 1 (Flex/SDPA path)
+    with torch.no_grad():
+        out1 = model(input_ids, document_ids=document_ids, position_ids=position_ids)[
+            "logits"
+        ]
+        doc2_logits_orig = out1[0, len1:, :].clone()
+
+    # 2. Modify doc1 tokens
+    input_ids_modified = input_ids.clone()
+    # Change first document tokens completely
+    input_ids_modified[0, :len1] = (input_ids[0, :len1] + 1) % 1000
+
+    # 3. Forward pass 2 (Flex/SDPA path)
+    with torch.no_grad():
+        out2 = model(
+            input_ids_modified, document_ids=document_ids, position_ids=position_ids
+        )["logits"]
+        doc2_logits_new = out2[0, len1:, :]
+
+    # Check independence for flex/SDPA path
+    torch.testing.assert_close(doc2_logits_orig, doc2_logits_new)
+
+    # 4. Repeat check for varlen path
+    cu_seqlens = torch.tensor([0, len1, total_len], dtype=torch.int32).to(device)
+    max_seqlen = max(len1, len2)
+
+    with torch.no_grad():
+        out_v1 = model(
+            input_ids,
+            cu_seqlens=cu_seqlens,
+            max_seqlen=max_seqlen,
+            position_ids=position_ids,
+        )["logits"]
+        doc2_logits_v_orig = out_v1[0, len1:, :].clone()
+
+        out_v2 = model(
+            input_ids_modified,
+            cu_seqlens=cu_seqlens,
+            max_seqlen=max_seqlen,
+            position_ids=position_ids,
+        )["logits"]
+        doc2_logits_v_new = out_v2[0, len1:, :]
+
+    torch.testing.assert_close(doc2_logits_v_orig, doc2_logits_v_new)
+
+
+def test_causal_masking_within_document(device):
+    """Verify that changing a token in a document affects only subsequent tokens (causal property)."""
+    config = LlamaConfig(
+        vocab_size=1000,
+        n_layer=2,
+        n_head=4,
+        n_embd=128,
+        sequence_length=1024,
+    )
+    model = Llama(config).to(device).eval()
+    if device.type == "cuda":
+        model = model.half()
+
+    length = 20
+    torch.manual_seed(42)
+    input_ids = torch.randint(0, 1000, (1, length)).to(device)
+    document_ids = torch.zeros(1, length, dtype=torch.long).to(device)
+    position_ids = torch.arange(length).unsqueeze(0).to(device)
+
+    # Change token at index 10
+    modify_idx = 10
+
+    # 1. Forward pass 1
+    with torch.no_grad():
+        out1 = model(input_ids, document_ids=document_ids, position_ids=position_ids)[
+            "logits"
+        ]
+        logits_orig = out1[0].clone()
+
+    # 2. Modify token at modify_idx
+    input_ids_modified = input_ids.clone()
+    input_ids_modified[0, modify_idx] = (input_ids[0, modify_idx] + 1) % 1000
+
+    # 3. Forward pass 2
+    with torch.no_grad():
+        out2 = model(
+            input_ids_modified, document_ids=document_ids, position_ids=position_ids
+        )["logits"]
+        logits_new = out2[0]
+
+    # Preceding tokens should be UNCHANGED
+    torch.testing.assert_close(logits_orig[:modify_idx], logits_new[:modify_idx])
+
+    # Token at modify_idx and subsequent tokens should be CHANGED
+    # Note: logits at modify_idx depends on input at modify_idx, so it should change.
+    # We check that the max difference is significant.
+    diff = (logits_orig[modify_idx:] - logits_new[modify_idx:]).abs().max()
+    assert diff > 1e-3, f"Logits after modified token did not change (diff={diff})"
