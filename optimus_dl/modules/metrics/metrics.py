@@ -104,7 +104,7 @@ class AccuracyMetric(Metric):
 
     @property
     def accumulators(self) -> dict[str, str]:
-        return {"accuracy": "average"}
+        return {"accuracy": "average", "total": "sum"}
 
     def __call__(
         self, sources_data: dict[str, dict[str, Any]]
@@ -127,7 +127,10 @@ class AccuracyMetric(Metric):
         if total == 0:
             return {}
 
-        return {"accuracy": {"value": correct.sum().item() / total, "weight": total}}
+        return {
+            "accuracy": {"value": correct.sum().item() / total, "weight": total},
+            "total": {"value": total},
+        }
 
 
 @dataclass
