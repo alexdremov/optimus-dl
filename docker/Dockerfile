@@ -64,6 +64,8 @@ ENV UV_LINK_MODE=copy
 ENV UV_CACHE_DIR=/root/.cache/uv
 ENV VIRTUAL_ENV=/app/venv
 
+RUN apt remove libnccl-dev libnccl2 --allow-change-held-packages -y
+
 # Python packages
 ENV NCCL_VERSION=2.29.3-1
 ENV NCCL_VERSION_CODE=22903
@@ -73,8 +75,6 @@ COPY docker/deps/install_nccl.sh /setup/install_nccl.sh
 RUN --mount=type=cache,target=/root/.ccache \
     export PATH="/usr/lib/ccache:$PATH" && \
     chmod +x /setup/install_nccl.sh && /setup/install_nccl.sh
-
-RUN apt remove libnccl-dev libnccl2 --allow-change-held-packages -y
 RUN ls /opt/nccl/build/pkg/deb/*.deb | xargs -L 1 dpkg -i
 
 ENV TORCH_CUDA_ARCH_LIST="8.0;9.0;10.0;12.0"
