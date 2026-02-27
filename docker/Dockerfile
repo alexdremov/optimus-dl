@@ -75,7 +75,9 @@ COPY docker/deps/install_nccl.sh /setup/install_nccl.sh
 RUN --mount=type=cache,target=/root/.ccache \
     export PATH="/usr/lib/ccache:$PATH" && \
     chmod +x /setup/install_nccl.sh && /setup/install_nccl.sh
-RUN ls /opt/nccl/build/pkg/deb/*.deb | xargs -L 1 dpkg -i
+
+RUN ls /opt/nccl/build/pkg/deb/libnccl2*.deb | xargs -L 1 dpkg -i
+RUN ls /opt/nccl/build/pkg/deb/libnccl-dev*.deb | xargs -L 1 dpkg -i
 
 ENV TORCH_CUDA_ARCH_LIST="8.0;9.0;10.0;12.0"
 # Copy Pytorch source from source-fetcher (cloned once)
@@ -154,7 +156,8 @@ COPY --from=builder /app/venv /app/venv
 
 COPY --from=builder /opt/nccl /opt/nccl
 RUN apt remove libnccl-dev libnccl2 --allow-change-held-packages -y || true
-RUN ls /opt/nccl/build/pkg/deb/*.deb | xargs -L 1 dpkg -i
+RUN ls /opt/nccl/build/pkg/deb/libnccl2*.deb | xargs -L 1 dpkg -i
+RUN ls /opt/nccl/build/pkg/deb/libnccl-dev*.deb | xargs -L 1 dpkg -i
 
 ENV PATH="/app/venv/bin:$PATH"
 ENV VIRTUAL_ENV=/app/venv
