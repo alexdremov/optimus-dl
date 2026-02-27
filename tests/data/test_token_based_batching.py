@@ -88,7 +88,7 @@ def test_flat_batcher_max_tokens():
 
     # max_tokens = 32
     # In FlatTokensBatcher, we requested max_tokens=32
-    # It takes T+1 tokens from buffer (33)
+    # It consumes the document, shifts it (99 tokens), and adds to buffers.
     # Yields input length 32, labels length 32
     cfg = FlatTokensBatcherConfig(max_tokens=32, flatten=True)
     node = FlatTokensBatcherNode(source, cfg)
@@ -96,9 +96,35 @@ def test_flat_batcher_max_tokens():
     batch1 = node.next()
     assert batch1["input_ids"].shape == (1, 32)
     assert batch1["labels"].shape == (1, 32)
+    # Check shifting
+    np.testing.assert_array_equal(batch1["input_ids"][0], np.arange(32))
+    np.testing.assert_array_equal(batch1["labels"][0], np.arange(1, 33))
 
     batch2 = node.next()
     assert batch2["input_ids"].shape == (1, 32)
+
+
+def test_flat_batcher_non_flatten():
+    # Mock data: 100 tokens
+    data = [{"input_ids": np.arange(100)}]
+    source = MockNode(data)
+
+    # batch_size=2, seq_len=10. Total inputs needed: 20 tokens.
+    # Buffer will contain 99 shifted tokens from first item.
+    cfg = FlatTokensBatcherConfig(batch_size=2, seq_len=10, flatten=False)
+    node = FlatTokensBatcherNode(source, cfg)
+
+    batch1 = node.next()
+    assert batch1["input_ids"].shape == (2, 10)
+    assert batch1["labels"].shape == (2, 10)
+
+    # First row: 0..9 -> target 1..10
+    np.testing.assert_array_equal(batch1["input_ids"][0], np.arange(10))
+    np.testing.assert_array_equal(batch1["labels"][0], np.arange(1, 11))
+
+    # Second row: 10..19 -> target 11..20
+    np.testing.assert_array_equal(batch1["input_ids"][1], np.arange(10, 20))
+    np.testing.assert_array_equal(batch1["labels"][1], np.arange(11, 21))
 
 
 def test_basic_batcher_large_item():

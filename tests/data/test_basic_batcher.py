@@ -174,6 +174,60 @@ class TestBasicBatcher:
         assert isinstance(node, BasicBatcherNode)
         assert node.cfg.batch_size == 4
 
+    def test_flatten_mode_with_labels(self):
+        """Test that flatten=True correctly shifts documents and produces labels/metadata."""
+        data = [
+            {"input_ids": [1, 2, 3, 4]},  # Shifted: [1, 2, 3]
+            {"input_ids": [5, 6]},  # Shifted: [5]
+        ]
+        source = MockSourceNode(data)
+        config = BasicBatcherConfig(batch_size=2, flatten=True, pad_token_id=0)
+        batcher_node = BasicBatcherNode(source, config)
+
+        batch = next(batcher_node)
+
+        assert "input_ids" in batch
+        assert "labels" in batch
+        assert "cu_seqlens" in batch
+        assert "position_ids" in batch
+        assert "document_ids" in batch
+
+        # Input IDs should be [1, 2, 3, 5]
+        expected_ids = np.array([[1, 2, 3, 5]])
+        np.testing.assert_array_equal(batch["input_ids"], expected_ids)
+
+        # Labels should be [2, 3, 4, 6]
+        expected_labels = np.array([[2, 3, 4, 6]])
+        np.testing.assert_array_equal(batch["labels"], expected_labels)
+
+        # cu_seqlens: [0, 3, 4]
+        expected_cu = np.array([0, 3, 4])
+        np.testing.assert_array_equal(batch["cu_seqlens"], expected_cu)
+
+        # position_ids: [0, 1, 2, 0]
+        expected_pos = np.array([[0, 1, 2, 0]])
+        np.testing.assert_array_equal(batch["position_ids"], expected_pos)
+
+    def test_max_tokens_packing_logic(self):
+        """Test that max_tokens correctly packs multiple documents into one batch."""
+        data = [
+            {"input_ids": [1, 2]},  # Shifted: [1], length 2
+            {"input_ids": [3, 4]},  # Shifted: [3], length 2
+            {"input_ids": [5, 6, 7]},  # Shifted: [5, 6], length 3
+        ]
+        source = MockSourceNode(data)
+        # max_tokens = 4.
+        # Item 1 (2) + Item 2 (2) = 4 <= 4.
+        # Next is Item 3 (3). 4 + 3 = 7 > 4. Stop.
+        config = BasicBatcherConfig(max_tokens=4, flatten=True)
+        batcher_node = BasicBatcherNode(source, config)
+
+        batch = next(batcher_node)
+        # Shifted items: [1], [3]. Total len 2.
+        assert batch["input_ids"].shape[1] == 2
+        np.testing.assert_array_equal(batch["input_ids"], np.array([[1, 3]]))
+        np.testing.assert_array_equal(batch["labels"], np.array([[2, 4]]))
+
     def test_state_checkpointing(self):
         """Test get_state and reset logic for checkpointing."""
         data = [{"input_ids": [1]}, {"input_ids": [2]}, {"input_ids": [3]}]

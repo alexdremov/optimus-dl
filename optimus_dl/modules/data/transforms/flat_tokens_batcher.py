@@ -26,7 +26,7 @@ class FlatTokensBatcherConfig(RegistryConfigStrict):
         worker_cfg: Configuration for map workers (not used directly by batcher).
         field: The dictionary key containing the tokens (defaults to input_ids).
         mask_documents: If True, tracks document boundaries and emits document_ids/position_ids.
-        flatten: If True, yields a single flat sequence of shape (1, B*T) instead of (B, T).
+        flatten: If True, yields a single flat sequence of shape (1, sum_T) instead of (B, T).
     """
 
     batch_size: int | None = None
@@ -43,42 +43,54 @@ class FlatTokensBatcherConfig(RegistryConfigStrict):
 class FlatTokensBatcherNode(BaseNode):
     """Internal node for performing token aggregation and batching.
 
-    Accumulates tokens from variable-length document sources into a buffer
-    until it has enough to form a complete batch of the target size.
+    Accumulates pre-shifted segments from variable-length document sources
+    into buffers until it has enough to form a complete batch of the target size.
+    This ensures that document transitions are excluded from the sequence.
     """
 
     def __init__(self, node: BaseNode, cfg: FlatTokensBatcherConfig, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cfg = cfg
         self.node = node
-        self.buffer = []
+        self.input_buffer = []
+        self.label_buffer = []
         self.position_ids_buffer = []
         self.document_ids_buffer = []
         self._current_doc_id = 0
 
-        if self.cfg.max_tokens is None:
+        # Configuration Validation
+        if self.cfg.flatten:
+            if self.cfg.max_tokens is None and (
+                self.cfg.batch_size is None or self.cfg.seq_len is None
+            ):
+                raise ValueError(
+                    "FlatTokensBatcher (flatten=True) requires either 'max_tokens' or both 'batch_size' and 'seq_len'."
+                )
+        else:
             if self.cfg.batch_size is None or self.cfg.seq_len is None:
                 raise ValueError(
-                    "Either max_tokens or both batch_size and seq_len must be specified in FlatTokensBatcherConfig."
+                    "FlatTokensBatcher (flatten=False) requires 'batch_size' and 'seq_len' to define the batch layout."
                 )
 
     @property
     def target_size(self):
-        """Calculate total number of tokens needed for one batch (including +1 for shift)."""
+        """Calculate total number of tokens needed for one batch of inputs."""
         if self.cfg.max_tokens is not None:
-            return self.cfg.max_tokens + 1
+            return self.cfg.max_tokens
 
-        return self.cfg.batch_size * (self.cfg.seq_len + 1)
+        return self.cfg.batch_size * self.cfg.seq_len
 
     def reset(self, initial_state: dict | None = None):
         """Restore batcher buffer and source node state."""
         super().reset(initial_state)
-        self.buffer = []
+        self.input_buffer = []
+        self.label_buffer = []
         self.position_ids_buffer = []
         self.document_ids_buffer = []
         self._current_doc_id = 0
         if initial_state:
-            self.buffer = initial_state["buffer"]
+            self.input_buffer = initial_state.get("input_buffer", [])
+            self.label_buffer = initial_state.get("label_buffer", [])
             self.position_ids_buffer = initial_state.get("position_ids_buffer", [])
             self.document_ids_buffer = initial_state.get("document_ids_buffer", [])
             self._current_doc_id = initial_state.get("_current_doc_id", 0)
@@ -90,7 +102,8 @@ class FlatTokensBatcherNode(BaseNode):
     def get_state(self) -> dict[str, Any]:
         """Collect current buffer and source state for checkpointing."""
         return {
-            "buffer": self.buffer,
+            "input_buffer": self.input_buffer,
+            "label_buffer": self.label_buffer,
             "position_ids_buffer": self.position_ids_buffer,
             "document_ids_buffer": self.document_ids_buffer,
             "_current_doc_id": self._current_doc_id,
@@ -100,31 +113,33 @@ class FlatTokensBatcherNode(BaseNode):
 
     def next(self) -> Any:
         """Yield the next complete batch of tokens, filling from source as needed."""
-        # We need enough tokens to produce shifted inputs and labels
-        while len(self.buffer) < self.target_size:
+        # Fill buffers with pre-shifted segments
+        while len(self.input_buffer) < self.target_size:
             item = next(self.node)
             tokens = item[self.cfg.field]
-            self.buffer.extend(tokens)
+            if len(tokens) <= 1:
+                continue
+
+            self.input_buffer.extend(tokens[:-1])
+            self.label_buffer.extend(tokens[1:])
+
             if self.cfg.mask_documents:
-                self.position_ids_buffer.extend(range(len(tokens)))
-                self.document_ids_buffer.extend([self._current_doc_id] * len(tokens))
+                self.position_ids_buffer.extend(range(len(tokens) - 1))
+                self.document_ids_buffer.extend(
+                    [self._current_doc_id] * (len(tokens) - 1)
+                )
                 self._current_doc_id += 1
 
         # Extract segments
-        full_segment = np.array(self.buffer[: self.target_size], dtype=np.int64)
-        self.buffer = self.buffer[
-            self.target_size - (1 if self.cfg.flatten else self.cfg.batch_size) :
-        ]
+        input_tokens = np.array(self.input_buffer[: self.target_size], dtype=np.int64)
+        target_tokens = np.array(self.label_buffer[: self.target_size], dtype=np.int64)
+
+        self.input_buffer = self.input_buffer[self.target_size :]
+        self.label_buffer = self.label_buffer[self.target_size :]
 
         if self.cfg.flatten:
-            input_tokens = full_segment[:-1]
-            target_tokens = full_segment[1:]
             reshape_args = (1, -1)
         else:
-            # Reshape first to (B, T+1), then slice each row
-            full_segment = full_segment.reshape(self.cfg.batch_size, -1)
-            input_tokens = full_segment[:, :-1]
-            target_tokens = full_segment[:, 1:]
             reshape_args = (self.cfg.batch_size, -1)
 
         output = {
@@ -133,34 +148,14 @@ class FlatTokensBatcherNode(BaseNode):
         }
 
         if self.cfg.mask_documents:
-            # We need metadata for the inputs
-            pos_full = np.array(
+            pos_in = np.array(
                 self.position_ids_buffer[: self.target_size], dtype=np.int64
             )
-            doc_full = np.array(
+            doc_in = np.array(
                 self.document_ids_buffer[: self.target_size], dtype=np.int64
             )
-            self.position_ids_buffer = self.position_ids_buffer[
-                self.target_size - (1 if self.cfg.flatten else self.cfg.batch_size) :
-            ]
-            self.document_ids_buffer = self.document_ids_buffer[
-                self.target_size - (1 if self.cfg.flatten else self.cfg.batch_size) :
-            ]
-
-            if self.cfg.flatten:
-                pos_in = pos_full[:-1]
-                doc_in = doc_full[:-1]
-                # Also mask cross-document labels for flatten mode
-                target_mask = doc_full[:-1] != doc_full[1:]
-                output["labels"].view(-1)[target_mask] = -100
-            else:
-                pos_full = pos_full.reshape(self.cfg.batch_size, -1)
-                doc_full = doc_full.reshape(self.cfg.batch_size, -1)
-                pos_in = pos_full[:, :-1]
-                doc_in = doc_full[:, :-1]
-                # Mask cross-document labels
-                target_mask = doc_full[:, :-1] != doc_full[:, 1:]
-                output["labels"][target_mask] = -100
+            self.position_ids_buffer = self.position_ids_buffer[self.target_size :]
+            self.document_ids_buffer = self.document_ids_buffer[self.target_size :]
 
             # Re-base document IDs
             _, doc_ids = np.unique(doc_in, return_inverse=True)
