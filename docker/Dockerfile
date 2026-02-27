@@ -17,7 +17,7 @@ ENV PATH="/root/.local/bin/:$PATH"
 
 WORKDIR /setup
 COPY docker/deps/clone_torch.sh /setup/clone_torch.sh
-ENV PYTORCH_COMMIT=v2.10.0
+ENV PYTORCH_COMMIT=v2.9.1
 RUN chmod +x /setup/clone_torch.sh && /setup/clone_torch.sh
 
 # ---------------------------------------------------------------------------
