@@ -70,6 +70,9 @@ RUN --mount=type=cache,target=/root/.ccache \
     export PATH="/usr/lib/ccache:$PATH" && \
     chmod +x /setup/install_nccl.sh && /setup/install_nccl.sh
 
+RUN apt-get uninstall -y libnccl-dev libnccl2
+RUN ls /opt/nccl/build/pkg/deb/*.deb | xargs -L 1 dpkg -i
+
 ENV TORCH_CUDA_ARCH_LIST="8.0;9.0;10.0;12.0"
 # Copy Pytorch source from source-fetcher (cloned once)
 COPY --from=source-fetcher /setup/pytorch /setup/pytorch
@@ -146,6 +149,7 @@ ENV PATH="/root/.local/bin/:$PATH"
 COPY --from=builder /app/venv /app/venv
 
 COPY --from=builder /opt/nccl /opt/nccl
+RUN apt-get uninstall -y libnccl-dev libnccl2
 RUN ls /opt/nccl/build/pkg/deb/*.deb | xargs -L 1 dpkg -i
 
 ENV PATH="/app/venv/bin:$PATH"
