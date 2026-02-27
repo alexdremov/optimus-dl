@@ -107,6 +107,9 @@ commit_hash = "{scm_version.node}"
 commit_count = {scm_version.distance}
 '''
 
+[tool.uv.extra-build-dependencies]
+flash-attn = ["setuptools>=80.9.0", "torch>=2.10.0"]
+
 # Black configuration
 [tool.black]
 line-length = 88
