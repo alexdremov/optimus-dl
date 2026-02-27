@@ -60,6 +60,11 @@ class FlatTokensBatcherNode(BaseNode):
 
         # Configuration Validation
         if self.cfg.flatten:
+            if not self.cfg.mask_documents:
+                raise ValueError(
+                    "FlatTokensBatcher: 'mask_documents' must be True when 'flatten' is True. "
+                    "Flat batches require document tracking to generate 'cu_seqlens' and 'position_ids' for sequence isolation."
+                )
             if self.cfg.max_tokens is None and (
                 self.cfg.batch_size is None or self.cfg.seq_len is None
             ):

@@ -90,7 +90,7 @@ def test_flat_batcher_max_tokens():
     # In FlatTokensBatcher, we requested max_tokens=32
     # It consumes the document, shifts it (99 tokens), and adds to buffers.
     # Yields input length 32, labels length 32
-    cfg = FlatTokensBatcherConfig(max_tokens=32, flatten=True)
+    cfg = FlatTokensBatcherConfig(max_tokens=32, flatten=True, mask_documents=True)
     node = FlatTokensBatcherNode(source, cfg)
 
     batch1 = node.next()

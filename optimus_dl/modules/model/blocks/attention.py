@@ -28,14 +28,14 @@ except ImportError:
     flex_attention = None
     create_block_mask = None
 
-# Try to import varlen_attn
+# Try to import flash_attn (Tri Dao's Flash Attention 2/3)
 try:
-    from torch.nn.attention.varlen import varlen_attn
+    from flash_attn import flash_attn_varlen_func
 
-    VARLEN_ATTENTION_AVAILABLE = True
+    FLASH_ATTENTION_AVAILABLE = True
 except ImportError:
-    VARLEN_ATTENTION_AVAILABLE = False
-    varlen_attn = None
+    FLASH_ATTENTION_AVAILABLE = False
+    flash_attn_varlen_func = None
 
 
 def attention_mask_fn(
@@ -392,21 +392,14 @@ class RotarySelfAttention(nn.Module):
 
         y = None
         if cu_seqlens is not None:
-            # We use varlen_attn only if:
-            # 1. It's available and we are on CUDA
-            # 2. We are NOT using a sliding window (varlen_attn usually doesn't support it)
-            if (
-                VARLEN_ATTENTION_AVAILABLE
-                and xq.is_cuda
-                and self.sliding_window is None
-            ):
-                # Flash Attention Varlen path
+            # Use optimized variable-length kernels on CUDA
+            if FLASH_ATTENTION_AVAILABLE and xq.is_cuda:
                 # Reshape to (total_tokens, n_heads, head_dim)
                 xq_varlen = xq.reshape(-1, self.n_head, self.head_dim)
                 xk_varlen = xk.reshape(-1, self.n_kv_head, self.head_dim)
                 xv_varlen = xv.reshape(-1, self.n_kv_head, self.head_dim)
 
-                # Use provided max_seqlen or compute if missing (fallback)
+                # Use provided max_seqlen or compute if missing
                 if max_seqlen is not None:
                     max_q = (
                         int(max_seqlen.item())
@@ -416,20 +409,29 @@ class RotarySelfAttention(nn.Module):
                 else:
                     max_q = int((cu_seqlens[1:] - cu_seqlens[:-1]).max().item())
 
-                y = varlen_attn(
+                # Tri Dao's Flash Attention natively supports GQA and sliding window
+                # Window size -1 means no window
+                window_size = (
+                    (self.sliding_window, self.sliding_window)
+                    if self.sliding_window is not None
+                    else (-1, -1)
+                )
+                y = flash_attn_varlen_func(
                     xq_varlen,
                     xk_varlen,
                     xv_varlen,
-                    cu_seq_q=cu_seqlens,
-                    cu_seq_k=cu_seqlens,
-                    max_q=max_q,
-                    max_k=max_q,
-                    is_causal=True,
+                    cu_seqlens_q=cu_seqlens,
+                    cu_seqlens_k=cu_seqlens,
+                    max_seqlen_q=max_q,
+                    max_seqlen_k=max_q,
+                    dropout_p=self.dropout if self.training else 0.0,
+                    causal=True,
+                    window_size=window_size,
                 )
                 # Reshape back to (B, T, n_heads, head_dim)
                 y = y.view(B, T, self.n_head, self.head_dim)
-            elif xq.is_cuda:
-                # On CUDA but cannot use varlen_attn (e.g. sliding window)
+
+            if y is None and xq.is_cuda:
                 # Fallback to Flex Attention path by converting cu_seqlens to document_ids
                 if document_ids is None:
                     document_ids = torch.zeros(1, T, dtype=torch.long, device=x.device)
@@ -437,10 +439,9 @@ class RotarySelfAttention(nn.Module):
                         document_ids[
                             0, cu_seqlens[i].item() : cu_seqlens[i + 1].item()
                         ] = i
-                # By clearing cu_seqlens here, we'll enter the SDPA/Flex logic below
                 cu_seqlens = None
-            else:
-                # CPU path or no varlen_attn available: use the un-flattening fallback
+            elif y is None:
+                # CPU path: use the un-flattening fallback
                 max_q = (
                     max_seqlen
                     if max_seqlen is not None
