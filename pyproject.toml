@@ -106,6 +106,7 @@ commit_hash = "{scm_version.node}"
 commit_count = {scm_version.distance}
 '''
 
+
 # Black configuration
 [tool.black]
 line-length = 88

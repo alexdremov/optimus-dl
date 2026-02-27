@@ -19,9 +19,7 @@ from optimus_dl.modules.model.presets.hf_llama import HFLlamaConfig
         "AlignmentResearch/Llama-3.3-Tiny-Instruct-boolq",
     ],
 )
-def test_logits_matching(model_name):
-    device = "cpu"  # Use CPU to avoid issues if GPU not available, models are small
-
+def test_logits_matching(model_name, device):
     print(f"Loading HF model: {model_name}")
     hf_model = AutoModelForCausalLM.from_pretrained(model_name).to(device)
     hf_model.float()
@@ -51,8 +49,8 @@ def test_logits_matching(model_name):
         hf_out = hf_model(**inputs)
         opt_out = opt_model(inputs.input_ids)
 
-    hf_logits = hf_out.logits
-    opt_logits = opt_out["logits"]
+    hf_logits = hf_out.logits.cpu()
+    opt_logits = opt_out["logits"].cpu()
 
     print(f"HF logits shape: {hf_logits.shape}")
     print(f"Opt logits shape: {opt_logits.shape}")

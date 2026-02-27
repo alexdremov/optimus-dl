@@ -159,10 +159,8 @@ class PerplexityMetric(Metric):
 
         weight = 1.0
         classif = sources_data.get(StandardProtocols.CLASSIFICATION)
-        if classif:
-            data = classif.get(StandardProtocols.CLASSIFICATION)
-            if data and "mask" in data:
-                weight = data["mask"].sum().item()
+        if classif and "mask" in classif:
+            weight = classif["mask"].sum().item()
 
         return {
             "perplexity": {
@@ -198,10 +196,8 @@ class LossMetric(Metric):
 
         weight = 1.0
         classif = sources_data.get(StandardProtocols.CLASSIFICATION)
-        if classif:
-            data = classif.get(StandardProtocols.CLASSIFICATION)
-            if data and "mask" in data:
-                weight = data["mask"].sum().item()
+        if classif and "mask" in classif:
+            weight = classif["mask"].sum().item()
 
         return {
             "loss": {

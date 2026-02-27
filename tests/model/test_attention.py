@@ -71,9 +71,9 @@ class TestCausalSelfAttention:
         assert attention_no_bias.c_attn.bias is None
         assert attention_no_bias.c_proj.bias is None
 
-    def test_forward_shape_consistency(self):
+    def test_forward_shape_consistency(self, device):
         config = MockConfig(n_embd=768, n_head=12, block_size=1024)
-        attention = CausalSelfAttention(config)
+        attention = CausalSelfAttention(config).to(device)
 
         # Test various input shapes
         batch_sizes = [1, 4, 8]
@@ -82,29 +82,33 @@ class TestCausalSelfAttention:
         for batch_size in batch_sizes:
             for seq_len in seq_lengths:
                 if seq_len <= config.block_size:
-                    x = torch.randn(batch_size, seq_len, config.n_embd)
+                    x = torch.randn(batch_size, seq_len, config.n_embd).to(device)
                     output = attention(x)
 
                     # Output shape should match input shape
                     assert output.shape == (batch_size, seq_len, config.n_embd)
 
     @patch("torch.nn.functional.scaled_dot_product_attention")
-    def test_flash_attention_forward(self, mock_flash_attn):
+    def test_flash_attention_forward(self, mock_flash_attn, device):
         config = MockConfig(n_embd=768, n_head=12)
 
         with patch(
             "optimus_dl.modules.model.blocks.attention.hasattr", return_value=True
         ):
-            attention = CausalSelfAttention(config)
+            attention = CausalSelfAttention(config).to(device)
 
             # Mock flash attention to return expected shape
             batch_size, seq_len = 2, 10
             expected_output = torch.randn(
-                batch_size, config.n_head, seq_len, config.n_embd // config.n_head
+                batch_size,
+                config.n_head,
+                seq_len,
+                config.n_embd // config.n_head,
+                device=device,
             )
             mock_flash_attn.return_value = expected_output
 
-            x = torch.randn(batch_size, seq_len, config.n_embd)
+            x = torch.randn(batch_size, seq_len, config.n_embd).to(device)
             output = attention(x)
 
             # Check that flash attention was called
@@ -118,35 +122,35 @@ class TestCausalSelfAttention:
             # Check output shape
             assert output.shape == (batch_size, seq_len, config.n_embd)
 
-    def test_manual_attention_forward(self):
+    def test_manual_attention_forward(self, device):
         config = MockConfig(n_embd=768, n_head=12, block_size=1024)
 
         with patch(
             "optimus_dl.modules.model.blocks.attention.hasattr", return_value=False
         ):
-            attention = CausalSelfAttention(config)
+            attention = CausalSelfAttention(config).to(device)
             attention.eval()  # Disable dropout for deterministic testing
 
             batch_size, seq_len = 2, 5
-            x = torch.randn(batch_size, seq_len, config.n_embd)
+            x = torch.randn(batch_size, seq_len, config.n_embd).to(device)
 
             output = attention(x)
             assert output.shape == (batch_size, seq_len, config.n_embd)
 
-    def test_causal_mask_application(self):
+    def test_causal_mask_application(self, device):
         """Test that causal masking prevents attention to future positions."""
         config = MockConfig(n_embd=64, n_head=4, block_size=10)
 
         with patch(
             "optimus_dl.modules.model.blocks.attention.hasattr", return_value=False
         ):
-            attention = CausalSelfAttention(config)
+            attention = CausalSelfAttention(config).to(device)
             attention.eval()
 
             # Test with a small sequence to verify causal masking
             batch_size, seq_len = 1, 4
             x = torch.ones(
-                batch_size, seq_len, config.n_embd
+                batch_size, seq_len, config.n_embd, device=device
             )  # Use ones for predictable QKV
 
             # Override the c_attn to return known values for testing
@@ -159,12 +163,12 @@ class TestCausalSelfAttention:
             output = attention(x)
             assert output.shape == (batch_size, seq_len, config.n_embd)
 
-    def test_attention_head_reshaping(self):
+    def test_attention_head_reshaping(self, device):
         config = MockConfig(n_embd=768, n_head=12)
-        attention = CausalSelfAttention(config)
+        attention = CausalSelfAttention(config).to(device)
 
         batch_size, seq_len = 2, 8
-        x = torch.randn(batch_size, seq_len, config.n_embd)
+        x = torch.randn(batch_size, seq_len, config.n_embd).to(device)
 
         # Test that q, k, v are properly reshaped
         q, k, v = attention.c_attn(x).split(config.n_embd, dim=2)
@@ -191,13 +195,13 @@ class TestCausalSelfAttention:
         assert k_reshaped.shape == expected_shape
         assert v_reshaped.shape == expected_shape
 
-    def test_dropout_behavior(self):
+    def test_dropout_behavior(self, device):
         config = MockConfig(dropout=0.5)
-        attention = CausalSelfAttention(config)
+        attention = CausalSelfAttention(config).to(device)
 
         # Test training mode (dropout active)
         attention.train()
-        x = torch.randn(1, 10, config.n_embd)
+        x = torch.randn(1, 10, config.n_embd).to(device)
 
         # Run multiple times to see if outputs differ due to dropout
         [attention(x) for _ in range(3)]
@@ -213,11 +217,11 @@ class TestCausalSelfAttention:
         # In eval mode, outputs should be identical
         torch.testing.assert_close(output1, output2)
 
-    def test_gradient_flow(self):
+    def test_gradient_flow(self, device):
         config = MockConfig(n_embd=64, n_head=4)
-        attention = CausalSelfAttention(config)
+        attention = CausalSelfAttention(config).to(device)
 
-        x = torch.randn(1, 10, config.n_embd, requires_grad=True)
+        x = torch.randn(1, 10, config.n_embd, requires_grad=True, device=device)
         output = attention(x)
         loss = output.sum()
         loss.backward()
@@ -232,7 +236,7 @@ class TestCausalSelfAttention:
         if attention.c_proj.bias is not None:
             assert attention.c_proj.bias.grad is not None
 
-    def test_different_head_configurations(self):
+    def test_different_head_configurations(self, device):
         """Test various valid head configurations"""
         valid_configs = [
             (768, 12),  # Standard GPT-2
@@ -243,20 +247,20 @@ class TestCausalSelfAttention:
 
         for n_embd, n_head in valid_configs:
             config = MockConfig(n_embd=n_embd, n_head=n_head)
-            attention = CausalSelfAttention(config)
+            attention = CausalSelfAttention(config).to(device)
 
-            x = torch.randn(2, 10, n_embd)
+            x = torch.randn(2, 10, n_embd).to(device)
             output = attention(x)
             assert output.shape == (2, 10, n_embd)
 
-    def test_attention_scaling(self):
+    def test_attention_scaling(self, device):
         """Test that attention scaling factor (1/sqrt(head_size)) is applied correctly."""
         config = MockConfig(n_embd=768, n_head=12)
 
         with patch(
             "optimus_dl.modules.model.blocks.attention.hasattr", return_value=False
         ):
-            attention = CausalSelfAttention(config)
+            attention = CausalSelfAttention(config).to(device)
 
             # The scaling factor should be 1 / sqrt(head_size)
             head_size = config.n_embd // config.n_head
@@ -265,16 +269,16 @@ class TestCausalSelfAttention:
             # We can't directly access the scaling, but we can verify it's applied correctly
             # by checking the manual attention computation path
             batch_size, seq_len = 1, 3
-            x = torch.randn(batch_size, seq_len, config.n_embd)
+            x = torch.randn(batch_size, seq_len, config.n_embd).to(device)
 
             # Test that forward pass completes without error
             output = attention(x)
             assert output.shape == (batch_size, seq_len, config.n_embd)
 
-    def test_memory_efficiency(self):
+    def test_memory_efficiency(self, device):
         """Test memory usage is reasonable for different sequence lengths"""
         config = MockConfig(n_embd=768, n_head=12, block_size=2048)
-        attention = CausalSelfAttention(config)
+        attention = CausalSelfAttention(config).to(device)
 
         # Test with progressively larger sequences
         seq_lengths = [10, 50, 100, 500]
@@ -282,10 +286,10 @@ class TestCausalSelfAttention:
 
         for seq_len in seq_lengths:
             if seq_len <= config.block_size:
-                x = torch.randn(batch_size, seq_len, config.n_embd)
+                x = torch.randn(batch_size, seq_len, config.n_embd).to(device)
 
                 # Clear any cached memory
-                if torch.cuda.is_available():
+                if device.type == "cuda":
                     torch.cuda.empty_cache()
 
                 output = attention(x)
@@ -293,7 +297,7 @@ class TestCausalSelfAttention:
 
                 # Test that memory is released
                 del output
-                if torch.cuda.is_available():
+                if device.type == "cuda":
                     torch.cuda.empty_cache()
 
 
@@ -330,39 +334,45 @@ class TestRotarySelfAttention:
         assert attn_sh.q_norm.weight.shape == (256,)
         assert attn_sh.k_norm.weight.shape == (256,)
 
-    def test_forward_basic(self):
+    def test_forward_basic(self, device):
         n_embd, n_head, seq_len = 128, 4, 16
-        attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head)
-        x = torch.randn(2, seq_len, n_embd)
-        freqs_cis = precompute_freqs_cis(n_embd // n_head, seq_len)
+        attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head).to(device)
+        x = torch.randn(2, seq_len, n_embd).to(device)
+        freqs_cis = precompute_freqs_cis(n_embd // n_head, seq_len).to(device)
 
         out = attn(x, freqs_cis)
         assert out.shape == (2, seq_len, n_embd)
 
-    def test_forward_gqa(self):
+    def test_forward_gqa(self, device):
         n_embd, n_head, n_kv_head, seq_len = 128, 4, 2, 16
-        attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head, n_kv_head=n_kv_head)
-        x = torch.randn(2, seq_len, n_embd)
-        freqs_cis = precompute_freqs_cis(n_embd // n_head, seq_len)
+        attn = RotarySelfAttention(
+            n_embd=n_embd, n_head=n_head, n_kv_head=n_kv_head
+        ).to(device)
+        x = torch.randn(2, seq_len, n_embd).to(device)
+        freqs_cis = precompute_freqs_cis(n_embd // n_head, seq_len).to(device)
 
         out = attn(x, freqs_cis)
         assert out.shape == (2, seq_len, n_embd)
 
-    def test_sliding_window_forward(self):
+    def test_sliding_window_forward(self, device):
         n_embd, n_head, seq_len = 128, 4, 32
-        attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head, sliding_window=8)
-        x = torch.randn(1, seq_len, n_embd)
-        freqs_cis = precompute_freqs_cis(n_embd // n_head, seq_len)
+        attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head, sliding_window=8).to(
+            device
+        )
+        x = torch.randn(1, seq_len, n_embd).to(device)
+        freqs_cis = precompute_freqs_cis(n_embd // n_head, seq_len).to(device)
 
         # Test with/without flex_attention (manual vs flex)
         out = attn(x, freqs_cis)
         assert out.shape == (1, seq_len, n_embd)
 
-    def test_gradient_flow(self):
+    def test_gradient_flow(self, device):
         n_embd, n_head, seq_len = 64, 2, 8
-        attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head, use_qk_norm=True)
-        x = torch.randn(1, seq_len, n_embd, requires_grad=True)
-        freqs_cis = precompute_freqs_cis(n_embd // n_head, seq_len)
+        attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head, use_qk_norm=True).to(
+            device
+        )
+        x = torch.randn(1, seq_len, n_embd, requires_grad=True, device=device)
+        freqs_cis = precompute_freqs_cis(n_embd // n_head, seq_len).to(device)
 
         out = attn(x, freqs_cis)
         out.sum().backward()
@@ -372,61 +382,65 @@ class TestRotarySelfAttention:
         assert attn.q_norm.weight.grad is not None
         assert attn.wo.weight.grad is not None
 
-    def test_qk_norm_logic(self):
+    def test_qk_norm_logic(self, device):
         """Verify that QK norm actually changes values and works in both modes."""
         n_embd, n_head, seq_len = 64, 2, 8
-        freqs_cis = precompute_freqs_cis(n_embd // n_head, seq_len)
-        x = torch.randn(1, seq_len, n_embd)
+        freqs_cis = precompute_freqs_cis(n_embd // n_head, seq_len).to(device)
+        x = torch.randn(1, seq_len, n_embd).to(device)
 
         # 1. Per-head
         attn_ph = RotarySelfAttention(
             n_embd=n_embd, n_head=n_head, use_qk_norm=True, qk_norm_per_head=True
-        )
+        ).to(device)
         out_ph = attn_ph(x, freqs_cis)
 
         # 2. Shared
         attn_sh = RotarySelfAttention(
             n_embd=n_embd, n_head=n_head, use_qk_norm=True, qk_norm_per_head=False
-        )
+        ).to(device)
         out_sh = attn_sh(x, freqs_cis)
 
         assert not torch.allclose(out_ph, out_sh)
 
-    def test_seq_lens_forward_basic(self):
+    def test_seq_lens_forward_basic(self, device):
         """Test that the forward pass completes successfully when seq_lens is provided."""
         n_embd, n_head, seq_len = 128, 4, 16
-        attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head)
-        x = torch.randn(2, seq_len, n_embd)
-        freqs_cis = precompute_freqs_cis(n_embd // n_head, seq_len)
+        attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head).to(device)
+        x = torch.randn(2, seq_len, n_embd).to(device)
+        freqs_cis = precompute_freqs_cis(n_embd // n_head, seq_len).to(device)
 
         # Batch of 2, first sequence unpadded, second sequence padded
-        seq_lens = torch.tensor([16, 10])
+        seq_lens = torch.tensor([16, 10]).to(device)
 
         out = attn(x, freqs_cis, seq_lens=seq_lens)
         assert out.shape == (2, seq_len, n_embd)
 
-    def test_seq_lens_masking_equivalence(self):
+    def test_seq_lens_masking_equivalence(self, device):
         """Verify that padded tokens do not influence the attention output of valid tokens."""
         n_embd, n_head, max_seq_len = 128, 4, 16
         valid_len = 10
 
-        attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head)
+        attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head).to(device)
         attn.eval()  # Disable dropout for deterministic output comparison
 
         # 1. Base input (Unpadded)
-        x_base = torch.randn(1, valid_len, n_embd)
-        freqs_cis_base = precompute_freqs_cis(n_embd // n_head, valid_len)
+        x_base = torch.randn(1, valid_len, n_embd).to(device)
+        freqs_cis_base = precompute_freqs_cis(n_embd // n_head, valid_len).to(device)
 
         # 2. Padded input (Same valid tokens, followed by random noise padding)
-        x_padded = torch.zeros(1, max_seq_len, n_embd)
+        x_padded = torch.zeros(1, max_seq_len, n_embd).to(device)
         x_padded[:, :valid_len, :] = x_base
-        x_padded[:, valid_len:, :] = torch.randn(1, max_seq_len - valid_len, n_embd)
-        freqs_cis_padded = precompute_freqs_cis(n_embd // n_head, max_seq_len)
+        x_padded[:, valid_len:, :] = torch.randn(1, max_seq_len - valid_len, n_embd).to(
+            device
+        )
+        freqs_cis_padded = precompute_freqs_cis(n_embd // n_head, max_seq_len).to(
+            device
+        )
 
         # Run forward passes
         out_base = attn(x_base, freqs_cis_base)
         out_padded = attn(
-            x_padded, freqs_cis_padded, seq_lens=torch.tensor([valid_len])
+            x_padded, freqs_cis_padded, seq_lens=torch.tensor([valid_len]).to(device)
         )
 
         # The output for the valid tokens should be completely unaffected by the padded tokens
@@ -434,7 +448,7 @@ class TestRotarySelfAttention:
             out_base[0, :valid_len], out_padded[0, :valid_len], rtol=1e-4, atol=1e-4
         )
 
-    def test_seq_lens_with_sliding_window(self):
+    def test_seq_lens_with_sliding_window(self, device):
         """Verify seq_lens padding masking works together with sliding window masking."""
         n_embd, n_head, max_seq_len = 128, 4, 16
         valid_len = 12
@@ -442,23 +456,27 @@ class TestRotarySelfAttention:
 
         attn = RotarySelfAttention(
             n_embd=n_embd, n_head=n_head, sliding_window=sliding_window
-        )
+        ).to(device)
         attn.eval()
 
         # 1. Base input (Unpadded)
-        x_base = torch.randn(1, valid_len, n_embd)
-        freqs_cis_base = precompute_freqs_cis(n_embd // n_head, valid_len)
+        x_base = torch.randn(1, valid_len, n_embd).to(device)
+        freqs_cis_base = precompute_freqs_cis(n_embd // n_head, valid_len).to(device)
 
         # 2. Padded input
-        x_padded = torch.zeros(1, max_seq_len, n_embd)
+        x_padded = torch.zeros(1, max_seq_len, n_embd).to(device)
         x_padded[:, :valid_len, :] = x_base
-        x_padded[:, valid_len:, :] = torch.randn(1, max_seq_len - valid_len, n_embd)
-        freqs_cis_padded = precompute_freqs_cis(n_embd // n_head, max_seq_len)
+        x_padded[:, valid_len:, :] = torch.randn(1, max_seq_len - valid_len, n_embd).to(
+            device
+        )
+        freqs_cis_padded = precompute_freqs_cis(n_embd // n_head, max_seq_len).to(
+            device
+        )
 
         # Run forward passes
         out_base = attn(x_base, freqs_cis_base)
         out_padded = attn(
-            x_padded, freqs_cis_padded, seq_lens=torch.tensor([valid_len])
+            x_padded, freqs_cis_padded, seq_lens=torch.tensor([valid_len]).to(device)
         )
 
         # Check equivalence
@@ -467,21 +485,25 @@ class TestRotarySelfAttention:
         )
 
     @patch("optimus_dl.modules.model.blocks.attention.FLEX_ATTENTION_AVAILABLE", False)
-    def test_seq_lens_sdpa_fallback(self):
+    def test_seq_lens_sdpa_fallback(self, device):
         """Test that the scaled_dot_product_attention fallback handles seq_lens properly."""
         n_embd, n_head, max_seq_len = 128, 4, 16
         valid_len = 10
 
         # Include sliding window to test the combined fallback mask
-        attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head, sliding_window=4)
+        attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head, sliding_window=4).to(
+            device
+        )
         attn.eval()
 
-        x_padded = torch.randn(1, max_seq_len, n_embd)
-        freqs_cis_padded = precompute_freqs_cis(n_embd // n_head, max_seq_len)
+        x_padded = torch.randn(1, max_seq_len, n_embd).to(device)
+        freqs_cis_padded = precompute_freqs_cis(n_embd // n_head, max_seq_len).to(
+            device
+        )
 
         # Should execute the SDPA fallback branch without crashing
         out_padded = attn(
-            x_padded, freqs_cis_padded, seq_lens=torch.tensor([valid_len])
+            x_padded, freqs_cis_padded, seq_lens=torch.tensor([valid_len]).to(device)
         )
 
         assert out_padded.shape == (1, max_seq_len, n_embd)

@@ -1,5 +1,11 @@
+import torch
 import pytest
 from _pytest.mark import Mark
+
+
+@pytest.fixture(params=["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"])
+def device(request):
+    return torch.device(request.param)
 
 
 @pytest.fixture

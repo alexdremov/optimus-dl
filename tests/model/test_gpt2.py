@@ -91,35 +91,35 @@ class TestMLP:
         assert mlp_no_bias.c_fc.bias is None
         assert mlp_no_bias.c_proj.bias is None
 
-    def test_forward(self):
+    def test_forward(self, device):
         config = GPTConfig(
             n_embd=768, dropout=0.0
         )  # No dropout for deterministic testing
-        mlp = MLP(config)
+        mlp = MLP(config).to(device)
         mlp.eval()  # Disable dropout
 
         batch_size, seq_len = 2, 10
-        x = torch.randn(batch_size, seq_len, 768)
+        x = torch.randn(batch_size, seq_len, 768).to(device)
 
         output = mlp(x)
         assert output.shape == (batch_size, seq_len, 768)
 
-    def test_different_embedding_dimensions(self):
+    def test_different_embedding_dimensions(self, device):
         dimensions = [256, 512, 768, 1024, 2048]
 
         for n_embd in dimensions:
             config = GPTConfig(n_embd=n_embd)
-            mlp = MLP(config)
+            mlp = MLP(config).to(device)
 
-            x = torch.randn(2, 10, n_embd)
+            x = torch.randn(2, 10, n_embd).to(device)
             output = mlp(x)
             assert output.shape == (2, 10, n_embd)
 
-    def test_gradient_flow(self):
+    def test_gradient_flow(self, device):
         config = GPTConfig(n_embd=256)
-        mlp = MLP(config)
+        mlp = MLP(config).to(device)
 
-        x = torch.randn(2, 10, 256, requires_grad=True)
+        x = torch.randn(2, 10, 256, requires_grad=True, device=device)
         output = mlp(x)
         loss = output.sum()
         loss.backward()
@@ -151,13 +151,13 @@ class TestBlock:
         assert isinstance(block.attn, CausalSelfAttention)
         assert isinstance(block.mlp, MLP)
 
-    def test_forward_residual_connections(self):
+    def test_forward_residual_connections(self, device):
         config = GPTConfig(n_embd=768, n_head=12, dropout=0.0)
-        block = Block(config)
+        block = Block(config).to(device)
         block.eval()
 
         batch_size, seq_len = 2, 10
-        x = torch.randn(batch_size, seq_len, 768)
+        x = torch.randn(batch_size, seq_len, 768).to(device)
 
         # Test that residual connections work
         output = block(x)
@@ -166,22 +166,22 @@ class TestBlock:
         # Output should be different from input (due to transformations)
         assert not torch.allclose(output, x)
 
-    def test_layer_norm_placement(self):
+    def test_layer_norm_placement(self, device):
         """Test pre-norm architecture (LayerNorm before attention and MLP)"""
         config = GPTConfig(n_embd=768, n_head=12)
-        block = Block(config)
+        block = Block(config).to(device)
 
         # This tests the architecture: x + attn(ln_1(x)) and x + mlp(ln_2(x))
         # We can't directly test the ordering, but we can ensure forward pass works
-        x = torch.randn(2, 10, 768)
+        x = torch.randn(2, 10, 768).to(device)
         output = block(x)
         assert output.shape == x.shape
 
-    def test_gradient_flow(self):
+    def test_gradient_flow(self, device):
         config = GPTConfig(n_embd=256, n_head=8)
-        block = Block(config)
+        block = Block(config).to(device)
 
-        x = torch.randn(2, 10, 256, requires_grad=True)
+        x = torch.randn(2, 10, 256, requires_grad=True, device=device)
         output = block(x=x)
         loss = output.sum()
         loss.backward()
@@ -250,15 +250,17 @@ class TestGPT:
                 assert param.shape[0] == config.n_embd
                 assert param.requires_grad
 
-    def test_forward_basic(self):
+    def test_forward_basic(self, device):
         config = GPTConfig(
             vocab_size=1000, block_size=512, n_layer=2, n_head=4, n_embd=256
         )
-        model = GPT(config)
+        model = GPT(config).to(device)
         model.eval()
 
         batch_size, seq_len = 2, 10
-        input_ids = torch.randint(0, config.vocab_size, (batch_size, seq_len))
+        input_ids = torch.randint(0, config.vocab_size, (batch_size, seq_len)).to(
+            device
+        )
 
         output = model(input_ids)
 
@@ -276,15 +278,15 @@ class TestGPT:
         with pytest.raises(AssertionError):
             model(too_long_seq)
 
-    def test_forward_different_sequence_lengths(self):
+    def test_forward_different_sequence_lengths(self, device):
         config = GPTConfig(vocab_size=1000, block_size=1024, n_layer=2)
-        model = GPT(config)
+        model = GPT(config).to(device)
         model.eval()
 
         sequence_lengths = [1, 10, 50, 100, 500]
 
         for seq_len in sequence_lengths:
-            input_ids = torch.randint(0, config.vocab_size, (1, seq_len))
+            input_ids = torch.randint(0, config.vocab_size, (1, seq_len)).to(device)
             output = model(input_ids)
 
             logits = output["logits"]
@@ -328,16 +330,18 @@ class TestGPT:
         # Linear weights should decay (except embeddings and layer norms)
         # lm_head.weight should not decay due to weight tying
 
-    def test_generate_basic(self):
+    def test_generate_basic(self, device):
         """Test basic text generation functionality with single starting token."""
         config = GPTConfig(
             vocab_size=100, block_size=512, n_layer=2, n_head=4, n_embd=256
         )
-        model = GPT(config)
+        model = GPT(config).to(device)
         model.eval()
 
         # Start with a single token
-        start_tokens = torch.tensor([[1]], dtype=torch.long)  # batch_size=1, seq_len=1
+        start_tokens = torch.tensor(
+            [[1]], dtype=torch.long, device=device
+        )  # batch_size=1, seq_len=1
 
         generated = model.generate(start_tokens, max_new_tokens=5, temperature=1.0)
 
@@ -345,17 +349,17 @@ class TestGPT:
         assert generated.shape == (1, 6)  # original 1 + 5 new tokens
         assert generated[0, 0] == 1  # First token should remain unchanged
 
-    def test_generate_with_context(self):
+    def test_generate_with_context(self, device):
         """Test generation with longer context"""
         config = GPTConfig(
             vocab_size=100, block_size=512, n_layer=2, n_head=4, n_embd=256
         )
-        model = GPT(config)
+        model = GPT(config).to(device)
         model.eval()
 
         # Start with multiple tokens
         context_len = 10
-        start_tokens = torch.randint(0, config.vocab_size, (1, context_len))
+        start_tokens = torch.randint(0, config.vocab_size, (1, context_len)).to(device)
         original_context = start_tokens.clone()
 
         generated = model.generate(start_tokens, max_new_tokens=3, temperature=1.0)
@@ -364,15 +368,15 @@ class TestGPT:
         # Original context should be preserved
         assert torch.equal(generated[0, :context_len], original_context[0])
 
-    def test_generate_temperature_effect(self):
+    def test_generate_temperature_effect(self, device):
         """Test that temperature affects generation diversity"""
         config = GPTConfig(
             vocab_size=100, block_size=512, n_layer=2, n_head=4, n_embd=256
         )
-        model = GPT(config)
+        model = GPT(config).to(device)
         model.eval()
 
-        start_tokens = torch.tensor([[1]], dtype=torch.long)
+        start_tokens = torch.tensor([[1]], dtype=torch.long, device=device)
 
         # Generate with different temperatures
         # Note: Due to randomness, we can't guarantee different outputs,
@@ -383,15 +387,15 @@ class TestGPT:
         assert low_temp.shape == (1, 4)
         assert high_temp.shape == (1, 4)
 
-    def test_generate_top_k_sampling(self):
+    def test_generate_top_k_sampling(self, device):
         """Test top-k sampling in generation"""
         config = GPTConfig(
             vocab_size=100, block_size=512, n_layer=2, n_head=4, n_embd=256
         )
-        model = GPT(config)
+        model = GPT(config).to(device)
         model.eval()
 
-        start_tokens = torch.tensor([[1]], dtype=torch.long)
+        start_tokens = torch.tensor([[1]], dtype=torch.long, device=device)
 
         # Test with top_k sampling
         generated = model.generate(start_tokens, max_new_tokens=3, top_k=10)
@@ -401,16 +405,16 @@ class TestGPT:
         assert (generated >= 0).all()
         assert (generated < config.vocab_size).all()
 
-    def test_generate_long_sequence_cropping(self):
+    def test_generate_long_sequence_cropping(self, device):
         """Test that generation properly crops sequences that exceed block_size"""
         config = GPTConfig(
             vocab_size=100, block_size=20, n_layer=2, n_head=4, n_embd=256
         )
-        model = GPT(config)
+        model = GPT(config).to(device)
         model.eval()
 
         # Start with a sequence close to block_size
-        start_tokens = torch.randint(0, config.vocab_size, (1, 18))
+        start_tokens = torch.randint(0, config.vocab_size, (1, 18)).to(device)
 
         # Generate enough tokens to exceed block_size
         generated = model.generate(start_tokens, max_new_tokens=5, temperature=1.0)
@@ -418,7 +422,7 @@ class TestGPT:
         # Should generate successfully even though intermediate sequences exceed block_size
         assert generated.shape == (1, 23)  # 18 + 5
 
-    def test_model_different_configurations(self):
+    def test_model_different_configurations(self, device):
         """Test model with various valid configurations"""
         configs = [
             GPTConfig(vocab_size=1000, n_layer=6, n_head=6, n_embd=384),  # Small
@@ -427,21 +431,23 @@ class TestGPT:
         ]
 
         for config in configs:
-            model = GPT(config)
+            model = GPT(config).to(device)
 
             # Test forward pass
             batch_size, seq_len = 2, 10
-            input_ids = torch.randint(0, config.vocab_size, (batch_size, seq_len))
+            input_ids = torch.randint(0, config.vocab_size, (batch_size, seq_len)).to(
+                device
+            )
             output = model(input_ids)
 
             assert output["logits"].shape == (batch_size, seq_len, config.vocab_size)
 
-    def test_model_training_mode(self):
+    def test_model_training_mode(self, device):
         """Test model behavior in training vs eval mode"""
         config = GPTConfig(dropout=0.1, n_layer=2)
-        model = GPT(config)
+        model = GPT(config).to(device)
 
-        input_ids = torch.randint(0, config.vocab_size, (2, 10))
+        input_ids = torch.randint(0, config.vocab_size, (2, 10)).to(device)
 
         # Training mode
         model.train()
@@ -454,12 +460,12 @@ class TestGPT:
         # Outputs might be different due to dropout in training mode
         assert train_output["logits"].shape == eval_output["logits"].shape
 
-    def test_gradient_flow_full_model(self):
+    def test_gradient_flow_full_model(self, device):
         """Test gradient flow through the entire model"""
         config = GPTConfig(vocab_size=100, n_layer=2, n_head=4, n_embd=256)
-        model = GPT(config)
+        model = GPT(config).to(device)
 
-        input_ids = torch.randint(0, config.vocab_size, (2, 10))
+        input_ids = torch.randint(0, config.vocab_size, (2, 10)).to(device)
         output = model(input_ids)
         loss = output["logits"].sum()
         loss.backward()
@@ -490,39 +496,33 @@ class TestGPT:
         for expected_type in expected_types:
             assert expected_type in BLACKLIST_WEIGHT_MODULES
 
-    def test_model_device_consistency(self):
+    def test_model_device_consistency(self, device):
         """Test that model handles device placement correctly"""
         config = GPTConfig(vocab_size=100, n_layer=2, n_head=4, n_embd=256)
-        model = GPT(config)
+        model = GPT(config).to(device)
 
-        # Test CPU
-        input_ids = torch.randint(0, config.vocab_size, (2, 10))
+        input_ids = torch.randint(0, config.vocab_size, (2, 10)).to(device)
         output = model(input_ids)
-        assert output["logits"].device == input_ids.device
+        assert output["logits"].device.type == device.type
 
-        # Test GPU if available
-        if torch.cuda.is_available():
-            model_gpu = model.cuda()
-            input_ids_gpu = input_ids.cuda()
-            output_gpu = model_gpu(input_ids_gpu)
-            assert output_gpu["logits"].device == input_ids_gpu.device
-
-    def test_model_memory_efficiency(self):
+    def test_model_memory_efficiency(self, device):
         """Test model with different batch sizes to check memory usage"""
         config = GPTConfig(vocab_size=1000, n_layer=2, n_head=4, n_embd=256)
-        model = GPT(config)
+        model = GPT(config).to(device)
         model.eval()
 
         batch_sizes = [1, 2, 4, 8]
         seq_len = 50
 
         for batch_size in batch_sizes:
-            input_ids = torch.randint(0, config.vocab_size, (batch_size, seq_len))
+            input_ids = torch.randint(0, config.vocab_size, (batch_size, seq_len)).to(
+                device
+            )
             output = model(input_ids)
 
             assert output["logits"].shape == (batch_size, seq_len, config.vocab_size)
 
             # Clean up
             del output
-            if torch.cuda.is_available():
+            if device.type == "cuda":
                 torch.cuda.empty_cache()
