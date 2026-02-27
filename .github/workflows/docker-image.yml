@@ -6,80 +6,177 @@ permissions:
 on:
   release:
     types: [published]
+  pull_request:
+    paths:
+      - 'docker/**'
+      - '.github/workflows/docker-image.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  # -----------------------------------------------------------------
+  # Stage 1: Generate version & branch names centrally
+  # -----------------------------------------------------------------
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.prep.outputs.version }}
+      branch_name: ${{ steps.prep.outputs.branch_name }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build and get version
+        id: prep
+        run: |
+          pip install build setuptools_scm
+          VERSION=$(python -m setuptools_scm)
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BRANCH_NAME=$(echo "${{ github.head_ref }}" | sed 's/\//-/g')
+            echo "branch_name=${BRANCH_NAME}" >> $GITHUB_OUTPUT
+          else
+            echo "branch_name=" >> $GITHUB_OUTPUT
+          fi
+
+  # -----------------------------------------------------------------
+  # Stage 2: Build & Push per platform (Parallelized via Matrix)
+  # -----------------------------------------------------------------
   build:
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+        include:
+          - platform: linux/amd64
+            arch: amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Delete huge unnecessary tools folder
+        run: |
+          rm -rf /opt/hostedtoolcache
+          rm -rf "/usr/local/share/boost"
+          rm -rf "$AGENT_TOOLSDIRECTORY"
+          df -h
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Aggressive free disk space
+        run: |
+          # ... (Keep your exact cleanup script here, omitting for brevity) ...
+          docker container prune -f || true
+          docker image prune -af || true
+          docker volume prune -f || true
+
+      - name: Docker Build & Push Platform-Specific Image
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          BRANCH_NAME="${{ needs.prepare.outputs.branch_name }}"
+          ARCH="${{ matrix.arch }}"
+
+          echo "Building Version: $VERSION for Architecture: $ARCH on ${{ matrix.runner }}"
+
+          # Create arch-suffixed tags (e.g., my-image:latest-amd64)
+          TAGS=("alexdremov/optimus-dl:${VERSION}-${ARCH}")
+          TAGS_INTERACTIVE=("alexdremov/optimus-dl:interactive-${VERSION}-${ARCH}")
+
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            TAGS+=("alexdremov/optimus-dl:latest-${ARCH}")
+            TAGS_INTERACTIVE+=("alexdremov/optimus-dl:interactive-latest-${ARCH}")
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            TAGS+=("alexdremov/optimus-dl:branch-${BRANCH_NAME}-${ARCH}")
+            TAGS_INTERACTIVE+=("alexdremov/optimus-dl:interactive-branch-${BRANCH_NAME}-${ARCH}")
+          fi
+
+          BAKE_TAG_ARGS=""
+          for tag in "${TAGS[@]}"; do
+            BAKE_TAG_ARGS="${BAKE_TAG_ARGS} --set optimus-dl.tags=${tag}"
+          done
+          for tag in "${TAGS_INTERACTIVE[@]}"; do
+            BAKE_TAG_ARGS="${BAKE_TAG_ARGS} --set optimus-dl-interactive.tags=${tag}"
+          done
+
+          # Use `--set *.platform` to override the HCL default
+          docker buildx bake -f docker/docker-bake.hcl \
+            --allow network.host \
+            --push \
+            --set "*.args.VERSION=${VERSION}" \
+            --set "*.platform=${{ matrix.platform }}" \
+            ${BAKE_TAG_ARGS} \
+            --set *.cache-from=type=gha,ghtoken=${{ github.token }},scope=${{ matrix.arch }} \
+            --set *.cache-to=type=gha,mode=max,ghtoken=${{ github.token }},scope=${{ matrix.arch }}
+
+  # -----------------------------------------------------------------
+  # Stage 3: Merge manifest tags
+  # -----------------------------------------------------------------
+  merge:
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     steps:
-    - name: Delete huge unnecessary tools folder
-      run: |
-        rm -rf /opt/hostedtoolcache
-        rm -rf "/usr/local/share/boost"
-        rm -rf "$AGENT_TOOLSDIRECTORY"
-        df -h
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    - name: Checkout code
-      uses: actions/checkout@v6
-      with:
-        token: ${{ github.token }}
-        fetch-depth: 0
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: '3.11'
+      - name: Create and Push Multi-Platform Manifests
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          BRANCH_NAME="${{ needs.prepare.outputs.branch_name }}"
 
-    - name: Install build
-      run: |
-        pip install build setuptools_scm
-        python -m setuptools_scm > /opt/version.txt
+          # Reconstruct the BASE tags without the arch suffix
+          TAGS=("alexdremov/optimus-dl:${VERSION}")
+          TAGS_INTERACTIVE=("alexdremov/optimus-dl:interactive-${VERSION}")
 
-    - name: Login to Docker Hub
-      uses: docker/login-action@v3
-      with:
-        username: ${{ vars.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            TAGS+=("alexdremov/optimus-dl:latest")
+            TAGS_INTERACTIVE+=("alexdremov/optimus-dl:interactive-latest")
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            TAGS+=("alexdremov/optimus-dl:branch-${BRANCH_NAME}")
+            TAGS_INTERACTIVE+=("alexdremov/optimus-dl:interactive-branch-${BRANCH_NAME}")
+          fi
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+          # Function to merge tags using buildx imagetools
+          merge_manifest() {
+            local base_tag=$1
+            echo "Creating manifest for ${base_tag}..."
+            docker buildx imagetools create -t "${base_tag}" \
+              "${base_tag}-amd64" \
+              "${base_tag}-arm64"
+          }
 
-    - name: Aggressive free disk space
-      run: |
-        echo "################################"
-        echo "Disk usage BEFORE cleanup:"
-        echo "################################"
-        df -h
+          for tag in "${TAGS[@]}"; do
+            merge_manifest "$tag"
+          done
 
-        echo "Removing hosted toolcache..."
-        rm -rf /opt/hostedtoolcache || true
-
-        echo "Removing .NET..."
-        rm -rf /usr/share/dotnet || true
-
-        echo "Removing Android SDK..."
-        rm -rf /usr/local/lib/android || true
-
-        echo "Removing GHC / Haskell..."
-        rm -rf /opt/ghc || true
-        rm -rf /usr/local/.ghcup || true
-
-        echo "Docker prune (just in case runner had leftovers)..."
-        docker container prune -f || true
-        docker image prune -af || true
-        docker volume prune -f || true
-
-        echo "################################"
-        echo "Disk usage AFTER cleanup:"
-        echo "################################"
-        df -h
-
-    - name: Docker Build & Push Action
-      run: |
-        export VERSION=$(cat /opt/version.txt)
-        echo $VERSION
-        docker buildx bake -f docker/docker-bake.hcl --print
-        docker buildx bake -f docker/docker-bake.hcl \
-          --allow network.host \
-          --push \
-          --set *.cache-from=type=gha,ghtoken=${{ github.token }} \
-          --set *.cache-to=type=gha,mode=max,ghtoken=${{ github.token }}
+          for tag in "${TAGS_INTERACTIVE[@]}"; do
+            merge_manifest "$tag"
+          done

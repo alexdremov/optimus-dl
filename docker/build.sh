@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Default version if not provided
-export VERSION=$(python -m setuptools_scm ls)
+export VERSION="dev"
 
 echo "Building optimus-dl:${VERSION} and optimus-dl:latest..."
 
@@ -10,7 +10,7 @@ SCRIPT_DIR=$(dirname "$0")
 cd "$SCRIPT_DIR/.."
 
 # Run docker buildx bake
-docker buildx bake -f docker/docker-bake.hcl --progress plain --push
+docker buildx bake -f docker/docker-bake.hcl --progress plain
 
 if [ $? -eq 0 ]; then
     echo "Successfully built and pushed optimus-dl:${VERSION} and optimus-dl:latest."

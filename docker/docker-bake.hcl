@@ -14,10 +14,6 @@ target "optimus-dl" {
     "alexdremov/optimus-dl:${VERSION}",
     "alexdremov/optimus-dl:latest",
   ]
-  platforms = [
-    "linux/amd64",
-    "linux/arm64"
-  ]
   args = {
     VERSION = "${VERSION}"
   }
@@ -30,10 +26,6 @@ target "optimus-dl-interactive" {
   tags = [
     "alexdremov/optimus-dl:interactive-${VERSION}",
     "alexdremov/optimus-dl:interactive-latest",
-  ]
-  platforms = [
-    "linux/amd64",
-    "linux/arm64"
   ]
   args = {
     VERSION = "${VERSION}"

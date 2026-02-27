@@ -1,6 +1,99 @@
-FROM nvidia/cuda:12.6.3-base-ubuntu24.04 AS base
+# syntax=docker/dockerfile:1
+# ---------------------------------------------------------------------------
+# Source Fetching Stage (Shared across platforms)
+# ---------------------------------------------------------------------------
+FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS source-fetcher
 
-ARG VERSION=latest
+# Basic env for fetcher
+ENV DEBIAN_FRONTEND=noninteractive
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y git curl ca-certificates
+
+# Install uv for cloning logic
+ADD https://astral.sh/uv/install.sh /setup/uv-installer.sh
+RUN sh /setup/uv-installer.sh && rm /setup/uv-installer.sh
+ENV PATH="/root/.local/bin/:$PATH"
+
+WORKDIR /setup
+COPY docker/deps/clone_torch.sh /setup/clone_torch.sh
+ENV PYTORCH_COMMIT=v2.10.0
+RUN chmod +x /setup/clone_torch.sh && /setup/clone_torch.sh
+
+# ---------------------------------------------------------------------------
+# Builder Stage
+# ---------------------------------------------------------------------------
+FROM nvidia/cuda:12.9.1-devel-ubuntu24.04 AS builder
+
+# Basic env
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH="usr/local/cuda/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
+ENV PIP_DEFAULT_TIMEOUT=100
+ENV CCACHE_DIR=/root/.ccache
+
+WORKDIR /setup
+
+# Setup basic system for python and shell
+COPY docker/packages.txt packages.txt
+RUN <<EOR
+    set -ex
+    rm -f /etc/apt/apt.conf.d/docker-clean
+EOR
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt update && \
+    apt install -y software-properties-common curl wget ca-certificates locales sudo git openssh-client rsync unzip tmux htop nvtop ccache && \
+    apt-add-repository ppa:fish-shell/release-3 && \
+    add-apt-repository ppa:deadsnakes/ppa && \
+    apt update && \
+    apt install -y python3-pip python3.12 python3.12-venv python3.12-dev zsh fish build-essential $(cat packages.txt) && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create Venv
+ADD https://astral.sh/uv/install.sh uv-installer.sh
+
+# Run the installer then remove it
+RUN sh ./uv-installer.sh && rm uv-installer.sh
+ENV PATH="/root/.local/bin/:$PATH"
+
+RUN uv venv -p=3.12 /app/venv
+ENV PATH="/app/venv/bin:$PATH"
+ENV UV_LINK_MODE=copy
+ENV UV_CACHE_DIR=/root/.cache/uv
+ENV VIRTUAL_ENV=/app/venv
+
+# Python packages
+COPY docker/deps/install_nccl.sh /setup/install_nccl.sh
+RUN --mount=type=cache,target=/root/.ccache \
+    export PATH="/usr/lib/ccache:$PATH" && \
+    chmod +x /setup/install_nccl.sh && /setup/install_nccl.sh
+
+ENV TORCH_CUDA_ARCH_LIST="8.0;9.0;10.0;12.0"
+# Copy Pytorch source from source-fetcher (cloned once)
+COPY --from=source-fetcher /setup/pytorch /setup/pytorch
+COPY docker/deps/install_torch.sh /setup/install_torch.sh
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=cache,target=/root/.ccache \
+    export PATH="/usr/lib/ccache:$PATH" && \
+    chmod +x /setup/install_torch.sh && /setup/install_torch.sh
+
+ENV FLASH_COMMIT=v2.8.3
+COPY docker/deps/install_flash.sh /setup/install_flash.sh
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=cache,target=/root/.ccache \
+    export PATH="/usr/lib/ccache:$PATH" && \
+    chmod +x /setup/install_flash.sh && /setup/install_flash.sh
+
+COPY ./pyproject.toml /setup/optimus_dl/
+COPY ./optimus_dl /setup/optimus_dl/optimus_dl
+RUN --mount=type=cache,target=/root/.cache/uv cd /setup/optimus_dl/ && \
+    SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} uv pip install .[dev] --no-cache && \
+    chmod -R 777 /app/venv
+
+FROM nvidia/cuda:12.9.1-base-ubuntu24.04 AS base
+
 LABEL org.opencontainers.image.version=${VERSION}
 
 # Basic env
@@ -18,20 +111,17 @@ COPY docker/packages.txt packages.txt
 RUN <<EOR
     set -ex
     rm -f /etc/apt/apt.conf.d/docker-clean
-
-    apt update
-    apt install -y software-properties-common curl wget ca-certificates locales sudo git openssh-client rsync unzip tmux htop nvtop
-    apt-add-repository ppa:fish-shell/release-3
-    add-apt-repository ppa:deadsnakes/ppa
-    apt update
-
-    # Install Python 3.12 and shells (zsh/fish needed for entrypoint)
-    apt install -y python3-pip python3.12 python3.12-venv python3.12-dev zsh fish build-essential $(cat packages.txt)
-
-    # Clean up
-    rm -rf /var/lib/apt/lists/*
-    apt autoremove && apt clean
 EOR
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt update && \
+    apt install -y software-properties-common curl wget ca-certificates locales sudo git openssh-client rsync unzip tmux htop nvtop && \
+    apt-add-repository ppa:fish-shell/release-3 && \
+    add-apt-repository ppa:deadsnakes/ppa && \
+    apt update && \
+    apt install -y python3-pip python3.12 python3.12-venv python3.12-dev zsh fish build-essential $(cat packages.txt) && \
+    rm -rf /var/lib/apt/lists/*
 
 # Locale
 RUN locale-gen en_US.UTF-8
@@ -46,23 +136,20 @@ RUN echo 'root:root' | sudo chpasswd
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.12 10
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 10
 
-# Create Venv
+# Install uv
 ADD https://astral.sh/uv/install.sh uv-installer.sh
 
 # Run the installer then remove it
 RUN sh ./uv-installer.sh && rm uv-installer.sh
 ENV PATH="/root/.local/bin/:$PATH"
 
-RUN uv venv -p=3.12 /app/venv
-ENV PATH="/app/venv/bin:$PATH"
-ARG UV_LINK_MODE=copy
-ENV UV_NO_CACHE=1
+COPY --from=builder /app/venv /app/venv
 
-COPY ./pyproject.toml /setup/optimus_dl/
-COPY ./optimus_dl /setup/optimus_dl/optimus_dl
-RUN cd /setup/optimus_dl/ && \
-    SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} uv pip install .[dev] --no-cache && \
-    chmod -R 777 /app/venv
+COPY --from=builder /opt/nccl /opt/nccl
+RUN ls /opt/nccl/build/pkg/deb/*.deb | xargs -L 1 dpkg -i
+
+ENV PATH="/app/venv/bin:$PATH"
+ENV VIRTUAL_ENV=/app/venv
 
 WORKDIR /app
 RUN rm -rf /setup
@@ -75,12 +162,14 @@ FROM base AS interactive
 
 WORKDIR /setup
 COPY docker/requirements-dev.txt /setup/requirements-dev.txt
-RUN uv pip install -r /setup/requirements-dev.txt --no-cache
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install -r /setup/requirements-dev.txt --no-cache
 
-RUN <<EOR
-    apt update
-    apt install -y ffmpeg libsm6 libxext6 psmisc
-EOR
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt update && \
+    apt install -y ffmpeg libsm6 libxext6 psmisc && \
+    rm -rf /var/lib/apt/lists/*
 
 RUN curl https://getmic.ro | bash
 RUN mv ./micro /usr/local/bin/micro
