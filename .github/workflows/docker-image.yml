@@ -133,23 +133,23 @@ jobs:
             BAKE_TAG_ARGS="${BAKE_TAG_ARGS} --set optimus-dl-interactive.tags=${tag}"
           done
 
-          # Use `--set *.platform` to override the HCL default
-          # We mount the host ccache folder into the builder context
-          command=(
-            docker buildx bake -f docker/docker-bake.hcl \
-              --allow network.host \
-              --push \
-              --set "*.args.VERSION=${VERSION}" \
-              --set "*.platform=${{ matrix.platform }}" \
-              ${BAKE_TAG_ARGS} \
-              --set *.cache-from=type=registry,ref=alexdremov/optimus-dl:buildcache-${{ matrix.arch }} \
-              --set *.cache-to=type=registry,ref=alexdremov/optimus-dl:buildcache-${{ matrix.arch }},mode=max \
-              --set "*.cache-from=type=local,src=/tmp/ccache" \
-              --set "*.cache-to=type=local,dest=/tmp/ccache"
-          )
+          # Define the bake command as a string for reuse
+          BAKE_CMD="docker buildx bake -f docker/docker-bake.hcl \
+            --allow network.host \
+            --push \
+            --set \"*.args.VERSION=${VERSION}\" \
+            --set \"*.platform=${{ matrix.platform }}\" \
+            ${BAKE_TAG_ARGS} \
+            --set \"*.cache-from=type=registry,ref=alexdremov/optimus-dl:buildcache-${{ matrix.arch }}\" \
+            --set \"*.cache-to=type=registry,ref=alexdremov/optimus-dl:buildcache-${{ matrix.arch }},mode=max\" \
+            --set \"*.cache-from=type=local,src=/tmp/ccache\" \
+            --set \"*.cache-to=type=local,dest=/tmp/ccache\""
 
-          $command --print
-          $command
+          echo "Previewing build configuration:"
+          eval "$BAKE_CMD --print"
+          
+          echo "Starting build and push:"
+          eval "$BAKE_CMD"
 
 
       - name: Save updated ccache to registry
