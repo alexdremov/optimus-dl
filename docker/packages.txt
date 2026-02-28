@@ -23,7 +23,7 @@ nvtop
 devscripts
 debhelper
 libcudnn9-dev-cuda-12
-rdma-core \
+rdma-core
 numactl
 libconfig-dev
 libuv1-dev
