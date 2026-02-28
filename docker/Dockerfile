@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # ---------------------------------------------------------------------------
-# Cache seeding context (Overridden by --build-context in GHA)
+# Cache seeding context
 # ---------------------------------------------------------------------------
 FROM scratch AS ccache_src
 
@@ -54,8 +54,6 @@ RUN <<EOR
     set -ex
     rm -f /etc/apt/apt.conf.d/docker-clean
 EOR
-
-RUN exit 1
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
