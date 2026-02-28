@@ -49,3 +49,12 @@ target "ccache-export" {
     ARCH = "${ARCH}"
   }
 }
+
+target "ccache-seed" {
+  context = "."
+  target = "ccache-seed"
+  dockerfile = "./docker/Dockerfile"
+  args = {
+    ARCH = "${ARCH}"
+  }
+}

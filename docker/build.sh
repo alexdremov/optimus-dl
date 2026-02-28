@@ -45,10 +45,16 @@ if [[ "$*" == *"--push"* ]]; then
     ACTION="--push"
 fi
 
-# Run the build
-# 1. Load: ccache_src seeds the build from your host ~/.ccache
-# 2. Compile: Internal Docker cache mount handles high-speed writes
-# 3. Trap (on exit): Syncs those writes back to your host ~/.ccache
+# Step 1: Seed the internal Docker cache mount from your local ~/.ccache
+# This runs sequentially to avoid invalidating the main builder's layers.
+echo "Seeding internal Docker cache mount..."
+docker buildx bake -f docker/docker-bake.hcl ccache-seed \
+    --allow fs.read=$HOME \
+    --set "*.args.ARCH=${ARCH}" \
+    ${CCACHE_OVERRIDE}
+
+# Step 2: Run the main build
+# It uses the same cache id, so it picks up the data from Step 1.
 docker buildx bake -f docker/docker-bake.hcl \
     --progress plain \
     --allow network.host \
@@ -56,7 +62,6 @@ docker buildx bake -f docker/docker-bake.hcl \
     --allow fs.write=/tmp \
     ${ACTION} \
     --set "*.args.ARCH=${ARCH}" \
-    ${CCACHE_OVERRIDE} \
     "$@"
 
 BUILD_EXIT_CODE=$?

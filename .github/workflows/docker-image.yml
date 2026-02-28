@@ -129,6 +129,15 @@ jobs:
           docker rm ccache-loader
           ls -R /tmp/ccache | head -n 20
 
+      - name: Seed internal ccache mount
+        run: |
+          ARCH="${{ matrix.arch }}"
+          docker buildx bake -f docker/docker-bake.hcl ccache-seed \
+            --allow fs.read=/tmp/ccache \
+            --set "*.args.ARCH=${ARCH}" \
+            --set "*.platform=${{ matrix.platform }}" \
+            --set "*.contexts.ccache_src=/tmp/ccache"
+
       - name: Docker Build & Push Platform-Specific Image
         run: |
           VERSION="${{ needs.prepare.outputs.version }}"
@@ -165,7 +174,6 @@ jobs:
             --set \"*.args.VERSION=${VERSION}\" \
             --set \"*.args.ARCH=${ARCH}\" \
             --set \"*.platform=${{ matrix.platform }}\" \
-            --set \"*.contexts.ccache_src=/tmp/ccache\" \
             ${BAKE_TAG_ARGS} \
             --set \"*.cache-from=type=registry,ref=alexdremov/optimus-dl:buildcache-${ARCH}\" \
             --set \"*.cache-to=type=registry,ref=alexdremov/optimus-dl:buildcache-${ARCH},mode=max\""

@@ -65,12 +65,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt install -y python3-pip python3.12 python3.12-venv python3.12-dev zsh fish build-essential $(cat packages.txt) && \
     rm -rf /var/lib/apt/lists/*
 
-# Seed ccache from build context if available
-RUN --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
-    --mount=type=bind,from=ccache_src,target=/tmp/ccache_src \
-    [ -d /tmp/ccache_src ] && rsync -a /tmp/ccache_src/ /root/.ccache/ || true
-
-
 # Create Venv
 ADD https://astral.sh/uv/install.sh uv-installer.sh
 
@@ -271,3 +265,19 @@ RUN --mount=type=cache,target=/ccache,id=ccache-${ARCH} \
 
 FROM busybox AS ccache-only
 COPY --from=ccache-export /export /root/.ccache
+
+# ---------------------------------------------------------------------------
+# Ccache Seeding Stage (Used to warm the cache mount sequentially)
+# ---------------------------------------------------------------------------
+FROM ubuntu:24.04 AS ccache-seed
+RUN apt-get update && apt-get install -y rsync && rm -rf /var/lib/apt/lists/*
+ARG ARCH=amd64
+# We use FROM scratch AS ccache_src as a placeholder
+RUN --mount=type=cache,target=/ccache,id=ccache-${ARCH} \
+    --mount=type=bind,from=ccache_src,target=/src \
+    if [ -d /src/root/.ccache ]; then \
+        echo "Found registry ccache, seeding internal mount..."; \
+        rsync -a /src/root/.ccache/ /ccache/; \
+    else \
+        echo "No registry ccache found to seed."; \
+    fi
