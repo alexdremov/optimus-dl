@@ -18,6 +18,7 @@ target "optimus-dl" {
     "alexdremov/optimus-dl:${VERSION}",
     "alexdremov/optimus-dl:latest",
   ]
+  platforms = ["linux/amd64"]
   args = {
     VERSION = "${VERSION}"
     ARCH = "${ARCH}"
@@ -32,6 +33,7 @@ target "optimus-dl-interactive" {
     "alexdremov/optimus-dl:interactive-${VERSION}",
     "alexdremov/optimus-dl:interactive-latest",
   ]
+  platforms = ["linux/amd64"]
   args = {
     VERSION = "${VERSION}"
     ARCH = "${ARCH}"

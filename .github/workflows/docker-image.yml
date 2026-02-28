@@ -159,11 +159,13 @@ jobs:
 
           # Define the bake command as a string for reuse
           BAKE_CMD="docker buildx bake -f docker/docker-bake.hcl \
+            --allow fs.read=/tmp/ccache \
+            --allow fs.read=/tmp/ccache-out \
             --allow network.host \
             --push \
             --set \"*.args.VERSION=${VERSION}\" \
             --set \"*.args.ARCH=${ARCH}\" \
-            --set \"*.platform=${{ matrix.platform }}\" \
+            --set \"*.platforms=${{ matrix.platform }}\" \
             --set \"*.contexts.ccache_src=/tmp/ccache\" \
             ${BAKE_TAG_ARGS} \
             --set \"*.cache-from=type=registry,ref=alexdremov/optimus-dl:buildcache-${ARCH}\" \
@@ -171,7 +173,7 @@ jobs:
 
           echo "Previewing build configuration:"
           eval "$BAKE_CMD --print"
-          
+
           echo "Starting build and push:"
           eval "$BAKE_CMD"
 
@@ -181,14 +183,16 @@ jobs:
         run: |
           VERSION="${{ needs.prepare.outputs.version }}"
           ARCH="${{ matrix.arch }}"
-          
+
           echo "Exporting ccache from build context..."
           mkdir -p /tmp/ccache-out
-          
+
           # We use the ccache-export target which copies the cache mount to a local dir
           # Even if the previous build failed, the cache mount is preserved in the builder's state
           docker buildx bake -f docker/docker-bake.hcl ccache-export \
-            --set "*.platform=${{ matrix.platform }}" \
+            --allow fs.read=/tmp/ccache \
+            --allow fs.read=/tmp/ccache-out \
+            --set "*.platforms=${{ matrix.platform }}" \
             --set "*.args.ARCH=${ARCH}" \
             --set "*.contexts.ccache_src=/tmp/ccache" \
             --set "ccache-export.output=type=local,dest=/tmp/ccache-out" || echo "Ccache export failed, but continuing..."

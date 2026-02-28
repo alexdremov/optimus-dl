@@ -4,15 +4,9 @@
 export VERSION=${VERSION:-"dev"}
 
 # Detect host architecture
-HOST_ARCH=$(uname -m)
-case ${HOST_ARCH} in
-    x86_64)  ARCH="amd64" ;;
-    arm64)   ARCH="arm64" ;;
-    aarch64) ARCH="arm64" ;;
-    *)       ARCH="amd64" ;;
-esac
+ARCH="amd64"
 
-echo "Building for Architecture: ${ARCH} (Host: ${HOST_ARCH}) with Version: ${VERSION}"
+echo "Building for Architecture: ${ARCH} with Version: ${VERSION}"
 
 # Navigate to the project root
 SCRIPT_DIR=$(dirname "$0")
