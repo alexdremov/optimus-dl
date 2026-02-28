@@ -73,16 +73,25 @@ COPY docker/requirements-dev.txt /setup/requirements-dev.txt
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install -r /setup/requirements-dev.txt --no-cache
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt update && \
-    apt install -y ffmpeg libsm6 libxext6 psmisc && \
-    rm -rf /var/lib/apt/lists/*
-
 RUN curl https://getmic.ro | bash
 RUN mv ./micro /usr/local/bin/micro
 
-RUN grep -q '^/bin/fish$' /etc/shells; or echo '/bin/fish' | sudo tee -a /etc/shells
+RUN --mount=target=/var/lib/apt/lists,type=cache \
+    --mount=target=/var/cache/apt,type=cache <<EOR
+    set -ex
+    rm -f /etc/apt/apt.conf.d/docker-clean
+    apt update
+    apt install -y software-properties-common curl wget ca-certificates locales sudo git openssh-client rsync unzip tmux htop nvtop libsm6 libxext6 psmisc
+    apt-add-repository ppa:fish-shell/release-3
+    apt update
+    apt install -y fish
+
+    # Clean up
+    rm -rf /var/lib/apt/lists/*
+    apt autoremove && apt clean
+EOR
+
+RUN grep -q '^/bin/fish$' /etc/shells; or echo '/bin/fish' | tee -a /etc/shells
 ENV SHELL=/bin/fish
 SHELL ["/bin/fish", "-c"]
 RUN curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | source && fisher install jorgebucaran/fisher

@@ -57,6 +57,7 @@ docker buildx bake -f docker/docker-bake.hcl ccache-seed \
 # It uses the same cache id, so it picks up the data from Step 1.
 docker buildx bake -f docker/docker-bake.hcl \
     --progress plain \
+    --push \
     --allow network.host \
     --allow fs.read=$HOME \
     --allow fs.write=/tmp \
