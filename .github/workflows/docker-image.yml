@@ -198,10 +198,7 @@ jobs:
             --set "ccache-export.output=type=local,dest=/tmp/ccache-out" || echo "Ccache export failed, but continuing..."
 
           if [ -d "/tmp/ccache-out" ] && [ "$(ls -A /tmp/ccache-out)" ]; then
-            cat <<EOF > Dockerfile.ccache
-            FROM scratch
-            COPY . /root/.ccache
-            EOF
+            printf "FROM scratch\nCOPY . /root/.ccache\n" > Dockerfile.ccache
             docker build -f Dockerfile.ccache -t alexdremov/optimus-dl-ccache:${ARCH} /tmp/ccache-out
             docker push alexdremov/optimus-dl-ccache:${ARCH}
           else
