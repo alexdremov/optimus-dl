@@ -121,22 +121,26 @@ jobs:
 
       - name: Load ccache from registry
         run: |
-          mkdir -p /tmp/ccache
-          # Try to pull the ccache storage image; it might not exist yet
-          docker pull alexdremov/optimus-dl-ccache:${{ matrix.arch }} || exit 0
-          docker create --name ccache-loader alexdremov/optimus-dl-ccache:${{ matrix.arch }} true
-          docker cp ccache-loader:/root/.ccache/. /tmp/ccache
-          docker rm ccache-loader
-          ls -R /tmp/ccache | head -n 20
+          mkdir -p /tmp/ccache_root
+          if docker pull alexdremov/optimus-dl-ccache:${{ matrix.arch }}; then
+            echo "Registry ccache found. Loading..."
+            docker create --name ccache-loader alexdremov/optimus-dl-ccache:${{ matrix.arch }} true
+            docker cp ccache-loader:/root/.ccache /tmp/ccache_root
+            docker rm ccache-loader
+          else
+            echo "No ccache image found in registry, starting fresh."
+          fi
+          ls -R /tmp/ccache_root | head -n 20
 
       - name: Seed internal ccache mount
         run: |
           ARCH="${{ matrix.arch }}"
           docker buildx bake -f docker/docker-bake.hcl ccache-seed \
-            --allow fs.read=/tmp/ccache \
+            --allow fs.read=/tmp/ccache_root \
             --set "*.args.ARCH=${ARCH}" \
+            --set "*.args.CACHE_BUSTER=$(date +%s)" \
             --set "*.platform=${{ matrix.platform }}" \
-            --set "*.contexts.ccache_src=/tmp/ccache"
+            --set "*.contexts.ccache_src=/tmp/ccache_root"
 
       - name: Docker Build & Push Platform-Specific Image
         run: |
@@ -169,7 +173,7 @@ jobs:
           # Define the bake command as a string for reuse
           BAKE_CMD="docker buildx bake -f docker/docker-bake.hcl \
             --allow network.host \
-            --allow fs.read=/tmp/ccache \
+            --allow fs.read=/tmp/ccache_root \
             --push \
             --set \"*.args.VERSION=${VERSION}\" \
             --set \"*.args.ARCH=${ARCH}\" \
@@ -199,7 +203,8 @@ jobs:
             --push \
             --set "*.platform=${{ matrix.platform }}" \
             --set "*.args.ARCH=${ARCH}" \
-            --set "*.contexts.ccache_src=/tmp/ccache" || echo "Ccache preservation failed, but continuing..."
+            --set "*.args.CACHE_BUSTER=$(date +%s)" \
+            --set "*.contexts.ccache_src=/tmp/ccache_root" || echo "Ccache preservation failed, but continuing..."
 
   # -----------------------------------------------------------------
   # Stage 3: Merge manifest tags

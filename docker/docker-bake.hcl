@@ -6,6 +6,10 @@ variable "ARCH" {
   default = "amd64"
 }
 
+variable "CACHE_BUSTER" {
+  default = "0"
+}
+
 group "default" {
   targets = [ "optimus-dl", "optimus-dl-interactive" ]
 }
@@ -47,6 +51,7 @@ target "ccache-export" {
   tags = ["alexdremov/optimus-dl-ccache:${ARCH}"]
   args = {
     ARCH = "${ARCH}"
+    CACHE_BUSTER = "${CACHE_BUSTER}"
   }
 }
 
@@ -56,5 +61,6 @@ target "ccache-seed" {
   dockerfile = "./docker/Dockerfile"
   args = {
     ARCH = "${ARCH}"
+    CACHE_BUSTER = "${CACHE_BUSTER}"
   }
 }

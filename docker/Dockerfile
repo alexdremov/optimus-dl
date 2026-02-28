@@ -118,7 +118,9 @@ CMD ["/bin/zsh"]
 # ---------------------------------------------------------------------------
 FROM ubuntu:24.04 AS ccache-export
 ARG ARCH=amd64
+ARG CACHE_BUSTER=0
 RUN --mount=type=cache,target=/ccache,id=ccache-${ARCH} \
+    echo "Exporting ccache (buster: ${CACHE_BUSTER})..." && \
     mkdir -p /export && cp -a /ccache/. /export/ || true
 
 FROM busybox AS ccache-only
@@ -130,12 +132,17 @@ COPY --from=ccache-export /export /root/.ccache
 FROM ubuntu:24.04 AS ccache-seed
 RUN apt-get update && apt-get install -y rsync && rm -rf /var/lib/apt/lists/*
 ARG ARCH=amd64
+ARG CACHE_BUSTER=0
 # We use FROM scratch AS ccache_src as a placeholder
 RUN --mount=type=cache,target=/ccache,id=ccache-${ARCH} \
     --mount=type=bind,from=ccache_src,target=/src \
-    if [ -d /src/root/.ccache ]; then \
+    echo "Seeding ccache (buster: ${CACHE_BUSTER})..." && \
+    if [ -d /src/.ccache ]; then \
         echo "Found registry ccache, seeding internal mount..."; \
-        rsync -a /src/root/.ccache/ /ccache/; \
+        rsync -a /src/.ccache/ /ccache/; \
+    elif [ -d /src ]; then \
+        echo "Found source directory, attempting to seed from it directly..."; \
+        rsync -a /src/ /ccache/; \
     else \
         echo "No registry ccache found to seed."; \
     fi
