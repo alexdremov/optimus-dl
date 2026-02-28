@@ -17,7 +17,7 @@ ENV PATH="/root/.local/bin/:$PATH"
 
 WORKDIR /setup
 COPY docker/deps/clone_torch.sh /setup/clone_torch.sh
-ENV PYTORCH_COMMIT=v2.9.1
+ENV PYTORCH_COMMIT=v2.10.0
 RUN chmod +x /setup/clone_torch.sh && /setup/clone_torch.sh
 
 # ---------------------------------------------------------------------------
@@ -79,7 +79,7 @@ RUN --mount=type=cache,target=/root/.ccache \
 RUN ls /opt/nccl/build/pkg/deb/libnccl2*.deb | xargs -L 1 dpkg -i
 RUN ls /opt/nccl/build/pkg/deb/libnccl-dev*.deb | xargs -L 1 dpkg -i
 
-ENV TORCH_CUDA_ARCH_LIST="8.0;9.0;10.0;12.0"
+ENV TORCH_CUDA_ARCH_LIST="8.0;9.0;10.0"
 # Copy Pytorch source from source-fetcher (cloned once)
 COPY --from=source-fetcher /setup/pytorch /setup/pytorch
 COPY docker/deps/install_torch.sh /setup/install_torch.sh

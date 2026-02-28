@@ -21,7 +21,14 @@ export USE_SYSTEM_NCCL=1
 export USE_MPI=1
 export USE_XNNPACK=0
 export CFLAGS="-fno-gnu-unique -DPYTORCH_C10_DRIVER_API_SUPPORTED=1"
-export MAX_JOBS=4
+export MAX_JOBS=10
+
+# build fails
+sed -i '2i #include <cuda.h>' torch/csrc/distributed/c10d/symm_mem/CUDASymmetricMemoryTypes.hpp
+
+export CMAKE_C_COMPILER_LAUNCHER=ccache
+export CMAKE_CXX_COMPILER_LAUNCHER=ccache
+export CMAKE_CUDA_COMPILER_LAUNCHER=ccache
 
 uv pip install . -v --no-build-isolation
 
