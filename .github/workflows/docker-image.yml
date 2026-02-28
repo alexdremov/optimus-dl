@@ -141,7 +141,7 @@ jobs:
             --set \"*.args.VERSION=${VERSION}\" \
             --set \"*.args.ARCH=${ARCH}\" \
             --set \"*.platform=${{ matrix.platform }}\" \
-            --set \"*.CCACHE_SRC=/tmp/ccache\" \
+            --set \"CCACHE_SRC=/tmp/ccache\" \
             ${BAKE_TAG_ARGS} \
             --set \"*.cache-from=type=registry,ref=alexdremov/optimus-dl:buildcache-${ARCH}\" \
             --set \"*.cache-to=type=registry,ref=alexdremov/optimus-dl:buildcache-${ARCH},mode=max\""
