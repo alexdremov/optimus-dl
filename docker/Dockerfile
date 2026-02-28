@@ -36,13 +36,6 @@ ENV UV_CACHE_DIR=/root/.cache/uv
 RUN mkdir -p /app && uv venv /app/venv --system-site-packages
 ENV VIRTUAL_ENV=/app/venv
 
-ENV FLASH_COMMIT=v2.8.3
-COPY docker/deps/install_flash.sh /setup/install_flash.sh
-RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
-    export PATH="/usr/lib/ccache:$PATH" && \
-    chmod +x /setup/install_flash.sh && /setup/install_flash.sh
-
 COPY ./pyproject.toml /setup/optimus_dl/
 COPY ./optimus_dl /setup/optimus_dl/optimus_dl
 RUN --mount=type=cache,target=/root/.cache/uv cd /setup/optimus_dl/ && \

@@ -33,6 +33,7 @@ export_ccache() {
         --allow fs.read=$HOME \
         --allow fs.write=$HOME \
         --set "*.args.ARCH=${ARCH}" \
+        --set "*.args.CACHE_BUSTER=$(date +%s)" \
         --set "ccache-export.output=type=local,dest=$CCACHE_DIR"
 }
 
@@ -51,6 +52,7 @@ echo "Seeding internal Docker cache mount..."
 docker buildx bake -f docker/docker-bake.hcl ccache-seed \
     --allow fs.read=$HOME \
     --set "*.args.ARCH=${ARCH}" \
+    --set "*.args.CACHE_BUSTER=$(date +%s)" \
     ${CCACHE_OVERRIDE}
 
 # Step 2: Run the main build
