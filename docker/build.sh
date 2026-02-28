@@ -10,7 +10,7 @@ SCRIPT_DIR=$(dirname "$0")
 cd "$SCRIPT_DIR/.."
 
 # Run docker buildx bake
-docker buildx bake -f docker/docker-bake.hcl --progress plain
+docker buildx bake -f docker/docker-bake.hcl --progress plain --push
 
 if [ $? -eq 0 ]; then
     echo "Successfully built and pushed optimus-dl:${VERSION} and optimus-dl:latest."
