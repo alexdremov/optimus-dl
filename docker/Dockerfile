@@ -1,5 +1,10 @@
 # syntax=docker/dockerfile:1
 # ---------------------------------------------------------------------------
+# Cache seeding context (Overridden by --build-context in GHA)
+# ---------------------------------------------------------------------------
+FROM scratch AS ccache_src
+
+# ---------------------------------------------------------------------------
 # Source Fetching Stage (Shared across platforms)
 # ---------------------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS source-fetcher
@@ -24,6 +29,8 @@ RUN chmod +x /setup/clone_torch.sh && /setup/clone_torch.sh
 # Builder Stage
 # ---------------------------------------------------------------------------
 FROM nvidia/cuda:12.9.1-devel-ubuntu24.04 AS builder
+
+ARG ARCH=amd64
 
 # Basic env
 ENV DEBIAN_FRONTEND=noninteractive
@@ -58,6 +65,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt install -y python3-pip python3.12 python3.12-venv python3.12-dev zsh fish build-essential $(cat packages.txt) && \
     rm -rf /var/lib/apt/lists/*
 
+# Seed ccache from build context if available
+RUN --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
+    --mount=type=bind,from=ccache_src,target=/tmp/ccache_src \
+    [ -d /tmp/ccache_src ] && rsync -a /tmp/ccache_src/ /root/.ccache/ || true
+
 # Create Venv
 ADD https://astral.sh/uv/install.sh uv-installer.sh
 
@@ -79,15 +91,34 @@ ENV NCCL_VERSION_CODE=22903
 ENV NV_LIBNCCL_PACKAGE=libnccl2=2.29.3-1+cuda12.9
 ENV NV_LIBNCCL_DEV_PACKAGE=libnccl-dev=2.29.3-1+cuda12.9
 COPY docker/deps/install_nccl.sh /setup/install_nccl.sh
-RUN --mount=type=cache,target=/root/.ccache \
+RUN --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
     export PATH="/usr/lib/ccache:$PATH" && \
     chmod +x /setup/install_nccl.sh && /setup/install_nccl.sh
 
 RUN ls /opt/nccl/build/pkg/deb/libnccl2*.deb | xargs -L 1 dpkg -i
 RUN ls /opt/nccl/build/pkg/deb/libnccl-dev*.deb | xargs -L 1 dpkg -i
 
+
+COPY docker/deps/install_gdrcopy.sh /setup/install_gdrcopy.sh
+RUN --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
+    export PATH="/usr/lib/ccache:$PATH" && \
+    chmod +x /setup/install_gdrcopy.sh && /setup/install_gdrcopy.sh
+
+
+COPY docker/deps/install_libfabric.sh /setup/install_libfabric.sh
+RUN --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
+    export PATH="/usr/lib/ccache:$PATH" && \
+    chmod +x /setup/install_libfabric.sh && /setup/install_libfabric.sh
+
+
+COPY docker/deps/install_ucx.sh /setup/install_ucx.sh
+RUN --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
+    export PATH="/usr/lib/ccache:$PATH" && \
+    chmod +x /setup/install_ucx.sh && /setup/install_ucx.sh
+
+
 COPY docker/deps/install_ompi.sh /setup/install_ompi.sh
-RUN --mount=type=cache,target=/root/.ccache \
+RUN --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
     export PATH="/usr/lib/ccache:$PATH" && \
     chmod +x /setup/install_ompi.sh && /setup/install_ompi.sh
 
@@ -97,14 +128,14 @@ ENV TORCH_CUDA_ARCH_LIST="8.0;9.0;10.0"
 COPY --from=source-fetcher /setup/pytorch /setup/pytorch
 COPY docker/deps/install_torch.sh /setup/install_torch.sh
 RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=cache,target=/root/.ccache \
+    --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
     export PATH="/usr/lib/ccache:$PATH" && \
     chmod +x /setup/install_torch.sh && /setup/install_torch.sh
 
 ENV FLASH_COMMIT=v2.8.3
 COPY docker/deps/install_flash.sh /setup/install_flash.sh
 RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=cache,target=/root/.ccache \
+    --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
     export PATH="/usr/lib/ccache:$PATH" && \
     chmod +x /setup/install_flash.sh && /setup/install_flash.sh
 
@@ -167,7 +198,14 @@ ENV PATH="/root/.local/bin/:$PATH"
 
 COPY --from=builder /app/venv /app/venv
 
+COPY docker/deps/install_gdrcopy.sh /setup/install_gdrcopy.sh
+RUN --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
+    export PATH="/usr/lib/ccache:$PATH" && \
+    chmod +x /setup/install_gdrcopy.sh && /setup/install_gdrcopy.sh
+
 COPY --from=builder /opt/openmpi /opt/openmpi
+COPY --from=builder /opt/ucx /opt/ucx
+COPY --from=builder /opt/libfabric /opt/libfabric
 COPY --from=builder /opt/nccl /opt/nccl
 
 RUN apt remove libnccl-dev libnccl2 --allow-change-held-packages -y || true
@@ -221,3 +259,9 @@ RUN rm -rf /setup
 # Entrypoint
 ENV OMP_NUM_THREADS=1
 CMD ["/bin/zsh"]
+
+FROM builder AS ccache-export
+RUN --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
+    mkdir -p /export && cp -r /root/.ccache/. /export/
+FROM scratch AS ccache-only
+COPY --from=ccache-export /export /

@@ -20,6 +20,11 @@ ln -sf /usr/bin/ccache /tmp/ccache-bin/c++
 ln -sf /usr/bin/ccache /tmp/ccache-bin/cc
 export PATH="/tmp/ccache-bin:$PATH"
 
-./configure --with-cuda=/usr/local/cuda --prefix=/opt/openmpi | tee config.out
+./configure \
+    --with-cuda=/usr/local/cuda \
+    --prefix=/opt/openmpi \
+    --with-ofi=/opt/libfabric \
+    --with-ucx=/opt/ucx \
+    | tee config.out
 make -j$(nproc) all | tee make.out
 sudo make install | tee install.out

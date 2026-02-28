@@ -2,6 +2,10 @@ variable "VERSION" {
   default = "latest"
 }
 
+variable "ARCH" {
+  default = "amd64"
+}
+
 group "default" {
   targets = [ "optimus-dl", "optimus-dl-interactive" ]
 }
@@ -16,6 +20,10 @@ target "optimus-dl" {
   ]
   args = {
     VERSION = "${VERSION}"
+    ARCH = "${ARCH}"
+  }
+  contexts = {
+    ccache_src = "target:ccache-only"
   }
 }
 
@@ -29,5 +37,30 @@ target "optimus-dl-interactive" {
   ]
   args = {
     VERSION = "${VERSION}"
+    ARCH = "${ARCH}"
+  }
+  contexts = {
+    ccache_src = "target:ccache-only"
+  }
+}
+
+target "ccache-export" {
+  context = "."
+  target = "ccache-export"
+  dockerfile = "./docker/Dockerfile"
+  args = {
+    ARCH = "${ARCH}"
+  }
+  contexts = {
+    ccache_src = "target:ccache-only"
+  }
+}
+
+target "ccache-only" {
+  context = "."
+  target = "ccache-only"
+  dockerfile = "./docker/Dockerfile"
+  args = {
+    ARCH = "${ARCH}"
   }
 }
