@@ -18,11 +18,11 @@ echo "Building for Architecture: ${ARCH} (Host: ${HOST_ARCH}) with Version: ${VE
 SCRIPT_DIR=$(dirname "$0")
 cd "$SCRIPT_DIR/.."
 
-# Determine ccache source (use local ~/.ccache if it exists, otherwise fallback to bake default)
+# Determine ccache source override
 CCACHE_OVERRIDE=""
 if [ -d "$HOME/.ccache" ]; then
     echo "Found local ccache at $HOME/.ccache, using it for build context."
-    CCACHE_OVERRIDE="--set CCACHE_SRC=$HOME/.ccache"
+    CCACHE_OVERRIDE="--set *.contexts.ccache_src=$HOME/.ccache"
 fi
 
 # Allow overriding push vs load (default to load for local builds unless specified)

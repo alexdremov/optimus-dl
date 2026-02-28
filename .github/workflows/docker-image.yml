@@ -91,10 +91,33 @@ jobs:
 
       - name: Aggressive free disk space
         run: |
-          # ... (Keep your exact cleanup script here, omitting for brevity) ...
+          echo "################################"
+          echo "Disk usage BEFORE cleanup:"
+          echo "################################"
+          df -h
+
+          echo "Removing hosted toolcache..."
+          rm -rf /opt/hostedtoolcache || true
+
+          echo "Removing .NET..."
+          rm -rf /usr/share/dotnet || true
+
+          echo "Removing Android SDK..."
+          rm -rf /usr/local/lib/android || true
+
+          echo "Removing GHC / Haskell..."
+          rm -rf /opt/ghc || true
+          rm -rf /usr/local/.ghcup || true
+
+          echo "Docker prune (just in case runner had leftovers)..."
           docker container prune -f || true
           docker image prune -af || true
           docker volume prune -f || true
+
+          echo "################################"
+          echo "Disk usage AFTER cleanup:"
+          echo "################################"
+          df -h
 
       - name: Load ccache from registry
         run: |
@@ -141,7 +164,7 @@ jobs:
             --set \"*.args.VERSION=${VERSION}\" \
             --set \"*.args.ARCH=${ARCH}\" \
             --set \"*.platform=${{ matrix.platform }}\" \
-            --set \"CCACHE_SRC=/tmp/ccache\" \
+            --set \"*.contexts.ccache_src=/tmp/ccache\" \
             ${BAKE_TAG_ARGS} \
             --set \"*.cache-from=type=registry,ref=alexdremov/optimus-dl:buildcache-${ARCH}\" \
             --set \"*.cache-to=type=registry,ref=alexdremov/optimus-dl:buildcache-${ARCH},mode=max\""
@@ -167,7 +190,7 @@ jobs:
           docker buildx bake -f docker/docker-bake.hcl ccache-export \
             --set "*.platform=${{ matrix.platform }}" \
             --set "*.args.ARCH=${ARCH}" \
-            --build-context ccache_src=/tmp/ccache \
+            --set "*.contexts.ccache_src=/tmp/ccache" \
             --set "ccache-export.output=type=local,dest=/tmp/ccache-out" || echo "Ccache export failed, but continuing..."
 
           if [ -d "/tmp/ccache-out" ] && [ "$(ls -A /tmp/ccache-out)" ]; then

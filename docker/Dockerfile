@@ -263,6 +263,6 @@ CMD ["/bin/zsh"]
 
 FROM builder AS ccache-export
 RUN --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
-    mkdir -p /export && cp -r /root/.ccache/. /export/
+    mkdir -p /export && rsync -a /root/.ccache/. /export/
 FROM scratch AS ccache-only
 COPY --from=ccache-export /export /
