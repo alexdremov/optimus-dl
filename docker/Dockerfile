@@ -261,8 +261,9 @@ RUN rm -rf /setup
 ENV OMP_NUM_THREADS=1
 CMD ["/bin/zsh"]
 
-FROM builder AS ccache-export
+FROM ubuntu:24.04 AS ccache-export
+ARG ARCH=amd64
 RUN --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
-    mkdir -p /export && rsync -a /root/.ccache/. /export/
+    mkdir -p /export && cp -a /root/.ccache/. /export/ || true
 FROM scratch AS ccache-only
 COPY --from=ccache-export /export /

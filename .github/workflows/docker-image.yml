@@ -159,9 +159,9 @@ jobs:
 
           # Define the bake command as a string for reuse
           BAKE_CMD="docker buildx bake -f docker/docker-bake.hcl \
-            --allow fs.read=/tmp/ccache \
-            --allow fs.read=/tmp/ccache-out \
             --allow network.host \
+            --allow fs.read=/tmp \
+            --allow fs.write=/tmp \
             --push \
             --set \"*.args.VERSION=${VERSION}\" \
             --set \"*.args.ARCH=${ARCH}\" \
@@ -190,8 +190,8 @@ jobs:
           # We use the ccache-export target which copies the cache mount to a local dir
           # Even if the previous build failed, the cache mount is preserved in the builder's state
           docker buildx bake -f docker/docker-bake.hcl ccache-export \
-            --allow fs.read=/tmp/ccache \
-            --allow fs.read=/tmp/ccache-out \
+            --allow fs.read=/tmp \
+            --allow fs.write=/tmp \
             --set "*.platform=${{ matrix.platform }}" \
             --set "*.args.ARCH=${ARCH}" \
             --set "*.contexts.ccache_src=/tmp/ccache" \
