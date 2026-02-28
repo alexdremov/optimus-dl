@@ -7,8 +7,9 @@ FROM scratch AS ccache_src
 # ---------------------------------------------------------------------------
 # Builder Stage
 # ---------------------------------------------------------------------------
-FROM nvcr.io/nvidia/pytorch:26.02-py3 AS builder
+FROM nvcr.io/nvidia/pytorch:26.02-py3 AS base
 
+LABEL org.opencontainers.image.version=${VERSION}
 ARG ARCH=amd64
 
 # Basic env
@@ -32,6 +33,8 @@ ADD https://astral.sh/uv/install.sh uv-installer.sh
 RUN sh ./uv-installer.sh && rm uv-installer.sh
 ENV UV_LINK_MODE=copy
 ENV UV_CACHE_DIR=/root/.cache/uv
+RUN mkdir -p /app && uv venv /app/venv --system-site-packages
+ENV VIRTUAL_ENV=/app/venv
 
 ENV FLASH_COMMIT=v2.8.3
 COPY docker/deps/install_flash.sh /setup/install_flash.sh
@@ -45,10 +48,6 @@ COPY ./optimus_dl /setup/optimus_dl/optimus_dl
 RUN --mount=type=cache,target=/root/.cache/uv cd /setup/optimus_dl/ && \
     SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} uv pip install .[dev] --no-cache && \
     chmod -R 777 /usr/local/lib/python3.12/dist-packages
-
-FROM builder AS base
-
-LABEL org.opencontainers.image.version=${VERSION}
 
 # Basic env
 ENV DEBIAN_FRONTEND=noninteractive
