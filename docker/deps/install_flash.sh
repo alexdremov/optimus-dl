@@ -18,6 +18,6 @@ export PATH="/tmp/ccache-bin:$PATH"
 
 
 export FLASH_ATTN_CUDA_ARCHS="80;90;100;110"
-export MAX_JOBS=1
+export MAX_JOBS=2
 export CUDA_HOME=/usr/local/cuda
 uv run python setup.py install

@@ -46,8 +46,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY ./pyproject.toml /setup/optimus_dl/
 COPY ./optimus_dl /setup/optimus_dl/optimus_dl
 RUN --mount=type=cache,target=/root/.cache/uv cd /setup/optimus_dl/ && \
-    SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} uv pip install .[dev] --no-cache && \
-    chmod -R 777 /usr/local/lib/python3.12/dist-packages
+    SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} python -m pip install .[dev] --no-cache --no-build-isolation && \
+    chmod -R 777 /usr/local/lib/python3.12/dist-packages && chmod -R 777 /app/venv
 
 # Basic env
 ENV DEBIAN_FRONTEND=noninteractive
