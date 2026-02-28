@@ -55,6 +55,8 @@ RUN <<EOR
     rm -f /etc/apt/apt.conf.d/docker-clean
 EOR
 
+RUN exit 1
+
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt update && \
