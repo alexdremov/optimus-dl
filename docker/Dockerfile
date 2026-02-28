@@ -20,6 +20,17 @@ COPY docker/deps/clone_torch.sh /setup/clone_torch.sh
 ENV PYTORCH_COMMIT=v2.10.0
 RUN chmod +x /setup/clone_torch.sh && /setup/clone_torch.sh
 
+FROM ubuntu:24.04 AS source-fetcher-platform
+
+# Basic env for fetcher
+ENV DEBIAN_FRONTEND=noninteractive
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y git curl ca-certificates wget
+
+COPY docker/deps/fetch_hpc.sh /setup/fetch_hpc.sh
+RUN chmod +x /setup/fetch_hpc.sh && /setup/fetch_hpc.sh
+
 # ---------------------------------------------------------------------------
 # Builder Stage
 # ---------------------------------------------------------------------------
@@ -85,6 +96,13 @@ RUN --mount=type=cache,target=/root/.ccache \
 
 RUN ls /opt/nccl/build/pkg/deb/libnccl2*.deb | xargs -L 1 dpkg -i
 RUN ls /opt/nccl/build/pkg/deb/libnccl-dev*.deb | xargs -L 1 dpkg -i
+
+COPY --from=source-fetcher-platform /opt/nvhpc_install /opt/nvhpc_install
+COPY docker/deps/install_hpc.sh /setup/install_hpc.sh
+RUN --mount=type=cache,target=/root/.ccache \
+    export PATH="/usr/lib/ccache:$PATH" && \
+    chmod +x /setup/install_hpc.sh && /setup/install_hpc.sh
+
 
 ENV TORCH_CUDA_ARCH_LIST="8.0;9.0;10.0"
 # Copy Pytorch source from source-fetcher (cloned once)
@@ -158,6 +176,12 @@ ADD https://astral.sh/uv/install.sh uv-installer.sh
 # Run the installer then remove it
 RUN sh ./uv-installer.sh && rm uv-installer.sh
 ENV PATH="/root/.local/bin/:$PATH"
+
+COPY --from=source-fetcher-platform /opt/nvhpc_install /opt/nvhpc_install
+COPY docker/deps/install_hpc.sh /setup/install_hpc.sh
+RUN --mount=type=cache,target=/root/.ccache \
+    export PATH="/usr/lib/ccache:$PATH" && \
+    chmod +x /setup/install_hpc.sh && /setup/install_hpc.sh
 
 COPY --from=builder /app/venv /app/venv
 

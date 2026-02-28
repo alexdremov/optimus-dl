@@ -20,8 +20,6 @@ zsh
 keychain
 fish
 nvtop
-openmpi-bin
-libopenmpi-dev
 devscripts
 debhelper
 libcudnn9-dev-cuda-12
