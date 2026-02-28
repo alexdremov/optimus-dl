@@ -57,16 +57,8 @@ ENV PIP_DEFAULT_TIMEOUT=100
 
 RUN echo TF_FORCE_GPU_ALLOW_GROWTH='true' >> /etc/environment
 
-WORKDIR /setup
-
-# Locale
-RUN locale-gen en_US.UTF-8
-ENV LANG=en_US.UTF-8
-ENV LANGUAGE=en_US:en
-ENV LC_ALL=en_US.UTF-8
-
 # Root password
-RUN echo 'root:root' | sudo chpasswd
+RUN echo 'root:root' | chpasswd
 
 WORKDIR /app
 
