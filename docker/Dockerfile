@@ -5,30 +5,9 @@
 FROM scratch AS ccache_src
 
 # ---------------------------------------------------------------------------
-# Source Fetching Stage (Shared across platforms)
-# ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS source-fetcher
-
-# Basic env for fetcher
-ENV DEBIAN_FRONTEND=noninteractive
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y git curl ca-certificates
-
-# Install uv for cloning logic
-ADD https://astral.sh/uv/install.sh /setup/uv-installer.sh
-RUN sh /setup/uv-installer.sh && rm /setup/uv-installer.sh
-ENV PATH="/root/.local/bin/:$PATH"
-
-WORKDIR /setup
-COPY docker/deps/clone_torch.sh /setup/clone_torch.sh
-ENV PYTORCH_COMMIT=v2.10.0
-RUN chmod +x /setup/clone_torch.sh && /setup/clone_torch.sh
-
-# ---------------------------------------------------------------------------
 # Builder Stage
 # ---------------------------------------------------------------------------
-FROM nvidia/cuda:12.9.1-devel-ubuntu24.04 AS builder
+FROM nvcr.io/nvidia/pytorch:26.02-py3 AS builder
 
 ARG ARCH=amd64
 
@@ -48,84 +27,12 @@ ENV CMAKE_CUDA_COMPILER_LAUNCHER=ccache
 
 WORKDIR /setup
 
-# Setup basic system for python and shell
-COPY docker/packages.txt packages.txt
-RUN <<EOR
-    set -ex
-    rm -f /etc/apt/apt.conf.d/docker-clean
-EOR
-
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt update && \
-    apt install -y software-properties-common curl wget ca-certificates locales sudo git openssh-client rsync unzip tmux htop nvtop ccache && \
-    apt-add-repository ppa:fish-shell/release-3 && \
-    add-apt-repository ppa:deadsnakes/ppa && \
-    apt update && \
-    apt install -y python3-pip python3.12 python3.12-venv python3.12-dev zsh fish build-essential $(cat packages.txt) && \
-    rm -rf /var/lib/apt/lists/*
-
-# Create Venv
+# Install uv
 ADD https://astral.sh/uv/install.sh uv-installer.sh
-
-# Run the installer then remove it
 RUN sh ./uv-installer.sh && rm uv-installer.sh
-ENV PATH="/root/.local/bin/:$PATH"
-
-RUN uv venv -p=3.12 /app/venv
-ENV PATH="/app/venv/bin:$PATH"
 ENV UV_LINK_MODE=copy
 ENV UV_CACHE_DIR=/root/.cache/uv
 ENV VIRTUAL_ENV=/app/venv
-
-RUN apt remove libnccl-dev libnccl2 --allow-change-held-packages -y
-
-# Python packages
-ENV NCCL_VERSION=2.29.3-1
-ENV NCCL_VERSION_CODE=22903
-ENV NV_LIBNCCL_PACKAGE=libnccl2=2.29.3-1+cuda12.9
-ENV NV_LIBNCCL_DEV_PACKAGE=libnccl-dev=2.29.3-1+cuda12.9
-COPY docker/deps/install_nccl.sh /setup/install_nccl.sh
-RUN --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
-    export PATH="/usr/lib/ccache:$PATH" && \
-    chmod +x /setup/install_nccl.sh && /setup/install_nccl.sh
-
-RUN ls /opt/nccl/build/pkg/deb/libnccl2*.deb | xargs -L 1 dpkg -i
-RUN ls /opt/nccl/build/pkg/deb/libnccl-dev*.deb | xargs -L 1 dpkg -i
-
-
-COPY docker/deps/install_gdrcopy.sh /setup/install_gdrcopy.sh
-RUN --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
-    export PATH="/usr/lib/ccache:$PATH" && \
-    chmod +x /setup/install_gdrcopy.sh && /setup/install_gdrcopy.sh
-
-
-COPY docker/deps/install_libfabric.sh /setup/install_libfabric.sh
-RUN --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
-    export PATH="/usr/lib/ccache:$PATH" && \
-    chmod +x /setup/install_libfabric.sh && /setup/install_libfabric.sh
-
-
-COPY docker/deps/install_ucx.sh /setup/install_ucx.sh
-RUN --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
-    export PATH="/usr/lib/ccache:$PATH" && \
-    chmod +x /setup/install_ucx.sh && /setup/install_ucx.sh
-
-
-COPY docker/deps/install_ompi.sh /setup/install_ompi.sh
-RUN --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
-    export PATH="/usr/lib/ccache:$PATH" && \
-    chmod +x /setup/install_ompi.sh && /setup/install_ompi.sh
-
-
-ENV TORCH_CUDA_ARCH_LIST="8.0;9.0;10.0"
-# Copy Pytorch source from source-fetcher (cloned once)
-COPY --from=source-fetcher /setup/pytorch /setup/pytorch
-COPY docker/deps/install_torch.sh /setup/install_torch.sh
-RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
-    export PATH="/usr/lib/ccache:$PATH" && \
-    chmod +x /setup/install_torch.sh && /setup/install_torch.sh
 
 ENV FLASH_COMMIT=v2.8.3
 COPY docker/deps/install_flash.sh /setup/install_flash.sh
@@ -140,7 +47,7 @@ RUN --mount=type=cache,target=/root/.cache/uv cd /setup/optimus_dl/ && \
     SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} uv pip install .[dev] --no-cache && \
     chmod -R 777 /app/venv
 
-FROM nvidia/cuda:12.9.1-base-ubuntu24.04 AS base
+FROM builder AS base
 
 LABEL org.opencontainers.image.version=${VERSION}
 
@@ -154,23 +61,6 @@ RUN echo TF_FORCE_GPU_ALLOW_GROWTH='true' >> /etc/environment
 
 WORKDIR /setup
 
-# Setup basic system for python and shell
-COPY docker/packages.txt packages.txt
-RUN <<EOR
-    set -ex
-    rm -f /etc/apt/apt.conf.d/docker-clean
-EOR
-
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt update && \
-    apt install -y software-properties-common curl wget ca-certificates locales sudo git openssh-client rsync unzip tmux htop nvtop && \
-    apt-add-repository ppa:fish-shell/release-3 && \
-    add-apt-repository ppa:deadsnakes/ppa && \
-    apt update && \
-    apt install -y python3-pip python3.12 python3.12-venv python3.12-dev zsh fish build-essential $(cat packages.txt) && \
-    rm -rf /var/lib/apt/lists/*
-
 # Locale
 RUN locale-gen en_US.UTF-8
 ENV LANG=en_US.UTF-8
@@ -180,38 +70,7 @@ ENV LC_ALL=en_US.UTF-8
 # Root password
 RUN echo 'root:root' | sudo chpasswd
 
-# Python Alternatives
-RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.12 10
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 10
-
-# Install uv
-ADD https://astral.sh/uv/install.sh uv-installer.sh
-
-# Run the installer then remove it
-RUN sh ./uv-installer.sh && rm uv-installer.sh
-ENV PATH="/root/.local/bin/:$PATH"
-
-COPY --from=builder /app/venv /app/venv
-
-COPY docker/deps/install_gdrcopy.sh /setup/install_gdrcopy.sh
-RUN --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
-    export PATH="/usr/lib/ccache:$PATH" && \
-    chmod +x /setup/install_gdrcopy.sh && /setup/install_gdrcopy.sh
-
-COPY --from=builder /opt/openmpi /opt/openmpi
-COPY --from=builder /opt/ucx /opt/ucx
-COPY --from=builder /opt/libfabric /opt/libfabric
-COPY --from=builder /opt/nccl /opt/nccl
-
-RUN apt remove libnccl-dev libnccl2 --allow-change-held-packages -y || true
-RUN ls /opt/nccl/build/pkg/deb/libnccl2*.deb | xargs -L 1 dpkg -i
-RUN ls /opt/nccl/build/pkg/deb/libnccl-dev*.deb | xargs -L 1 dpkg -i
-
-ENV PATH="/app/venv/bin:$PATH"
-ENV VIRTUAL_ENV=/app/venv
-
 WORKDIR /app
-RUN rm -rf /setup
 
 # Entrypoint
 ENV OMP_NUM_THREADS=1

@@ -24,7 +24,7 @@ export USE_SYSTEM_NCCL=1
 export USE_MPI=1
 export USE_XNNPACK=0
 export CFLAGS="-fno-gnu-unique -DPYTORCH_C10_DRIVER_API_SUPPORTED=1"
-export MAX_JOBS=4
+export MAX_JOBS=2
 
 export CMAKE_C_COMPILER=/opt/openmpi/bin/mpicc
 export CMAKE_CXX_COMPILER=/opt/openmpi/bin/mpicxx
