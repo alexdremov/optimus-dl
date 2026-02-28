@@ -123,10 +123,10 @@ jobs:
         run: |
           mkdir -p /tmp/ccache
           # Try to pull the ccache storage image; it might not exist yet
-          docker pull alexdremov/optimus-dl-ccache:${{ matrix.arch }} || true
-          docker create --name ccache-loader alexdremov/optimus-dl-ccache:${{ matrix.arch }} || true
-          docker cp ccache-loader:/root/.ccache/. /tmp/ccache || echo "No existing ccache found"
-          docker rm ccache-loader || true
+          docker pull alexdremov/optimus-dl-ccache:${{ matrix.arch }} || exit 0
+          docker create --name ccache-loader alexdremov/optimus-dl-ccache:${{ matrix.arch }} true
+          docker cp ccache-loader:/root/.ccache/. /tmp/ccache
+          docker rm ccache-loader
           ls -R /tmp/ccache | head -n 20
 
       - name: Docker Build & Push Platform-Specific Image
@@ -160,8 +160,7 @@ jobs:
           # Define the bake command as a string for reuse
           BAKE_CMD="docker buildx bake -f docker/docker-bake.hcl \
             --allow network.host \
-            --allow fs.read=/tmp \
-            --allow fs.write=/tmp \
+            --allow fs.read=/tmp/ccache \
             --push \
             --set \"*.args.VERSION=${VERSION}\" \
             --set \"*.args.ARCH=${ARCH}\" \
@@ -184,26 +183,15 @@ jobs:
           VERSION="${{ needs.prepare.outputs.version }}"
           ARCH="${{ matrix.arch }}"
 
-          echo "Exporting ccache from build context..."
-          mkdir -p /tmp/ccache-out
-
-          # We use the ccache-export target which copies the cache mount to a local dir
-          # Even if the previous build failed, the cache mount is preserved in the builder's state
+          echo "Exporting and pushing ccache to registry..."
+          
+          # We use the ccache-export target which handles the push natively
           docker buildx bake -f docker/docker-bake.hcl ccache-export \
-            --allow fs.read=/tmp \
-            --allow fs.write=/tmp \
+            --allow network.host \
+            --push \
             --set "*.platform=${{ matrix.platform }}" \
             --set "*.args.ARCH=${ARCH}" \
-            --set "*.contexts.ccache_src=/tmp/ccache" \
-            --set "ccache-export.output=type=local,dest=/tmp/ccache-out" || echo "Ccache export failed, but continuing..."
-
-          if [ -d "/tmp/ccache-out" ] && [ "$(ls -A /tmp/ccache-out)" ]; then
-            printf "FROM scratch\nCOPY . /root/.ccache\n" > Dockerfile.ccache
-            docker build -f Dockerfile.ccache -t alexdremov/optimus-dl-ccache:${ARCH} /tmp/ccache-out
-            docker push alexdremov/optimus-dl-ccache:${ARCH}
-          else
-            echo "No ccache entries to save."
-          fi
+            --set "*.contexts.ccache_src=/tmp/ccache" || echo "Ccache preservation failed, but continuing..."
 
   # -----------------------------------------------------------------
   # Stage 3: Merge manifest tags

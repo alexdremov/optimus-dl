@@ -261,9 +261,13 @@ RUN rm -rf /setup
 ENV OMP_NUM_THREADS=1
 CMD ["/bin/zsh"]
 
+# ---------------------------------------------------------------------------
+# Ccache Storage Image Stage
+# ---------------------------------------------------------------------------
 FROM ubuntu:24.04 AS ccache-export
 ARG ARCH=amd64
-RUN --mount=type=cache,target=/root/.ccache,id=ccache-${ARCH} \
-    mkdir -p /export && cp -a /root/.ccache/. /export/ || true
-FROM scratch AS ccache-only
-COPY --from=ccache-export /export /
+RUN --mount=type=cache,target=/ccache,id=ccache-${ARCH} \
+    mkdir -p /export && cp -a /ccache/. /export/ || true
+
+FROM busybox AS ccache-only
+COPY --from=ccache-export /export /root/.ccache

@@ -44,6 +44,7 @@ target "ccache-export" {
   context = "."
   target = "ccache-only"
   dockerfile = "./docker/Dockerfile"
+  tags = ["alexdremov/optimus-dl-ccache:${ARCH}"]
   args = {
     ARCH = "${ARCH}"
   }
