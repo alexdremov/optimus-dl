@@ -32,7 +32,6 @@ ADD https://astral.sh/uv/install.sh uv-installer.sh
 RUN sh ./uv-installer.sh && rm uv-installer.sh
 ENV UV_LINK_MODE=copy
 ENV UV_CACHE_DIR=/root/.cache/uv
-ENV VIRTUAL_ENV=/app/venv
 
 ENV FLASH_COMMIT=v2.8.3
 COPY docker/deps/install_flash.sh /setup/install_flash.sh
@@ -45,7 +44,7 @@ COPY ./pyproject.toml /setup/optimus_dl/
 COPY ./optimus_dl /setup/optimus_dl/optimus_dl
 RUN --mount=type=cache,target=/root/.cache/uv cd /setup/optimus_dl/ && \
     SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} uv pip install .[dev] --no-cache && \
-    chmod -R 777 /app/venv
+    chmod -R 777 /usr/local/lib/python3.12/dist-packages
 
 FROM builder AS base
 
