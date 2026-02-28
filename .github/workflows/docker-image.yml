@@ -165,7 +165,7 @@ jobs:
             --push \
             --set \"*.args.VERSION=${VERSION}\" \
             --set \"*.args.ARCH=${ARCH}\" \
-            --set \"*.platforms=${{ matrix.platform }}\" \
+            --set \"*.platform=${{ matrix.platform }}\" \
             --set \"*.contexts.ccache_src=/tmp/ccache\" \
             ${BAKE_TAG_ARGS} \
             --set \"*.cache-from=type=registry,ref=alexdremov/optimus-dl:buildcache-${ARCH}\" \
@@ -192,7 +192,7 @@ jobs:
           docker buildx bake -f docker/docker-bake.hcl ccache-export \
             --allow fs.read=/tmp/ccache \
             --allow fs.read=/tmp/ccache-out \
-            --set "*.platforms=${{ matrix.platform }}" \
+            --set "*.platform=${{ matrix.platform }}" \
             --set "*.args.ARCH=${ARCH}" \
             --set "*.contexts.ccache_src=/tmp/ccache" \
             --set "ccache-export.output=type=local,dest=/tmp/ccache-out" || echo "Ccache export failed, but continuing..."
