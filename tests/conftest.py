@@ -4,7 +4,6 @@ import resource
 
 import torch
 import pytest
-from _pytest.mark import Mark
 
 
 @pytest.fixture(autouse=True)
@@ -80,7 +79,13 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         terminalreporter.write_line(f"{short_id:<60} {memory_info}")
 
 
-@pytest.fixture(params=["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"])
+@pytest.fixture(
+    params=(
+        ["cpu"]
+        + (["cuda"] if torch.cuda.is_available() else [])
+        + (["mps"] if torch.backends.mps.is_available() else [])
+    )
+)
 def device(request):
     return torch.device(request.param)
 
@@ -93,12 +98,8 @@ def unique_port(worker_id):
     return 29500 + worker_num
 
 
-empty_mark = Mark("", [], {})
-slow_mark = Mark("slow", [], {})
-
-
 def by_slow_marker(item):
-    return item.get_closest_marker("slow", default=empty_mark).name == "slow"
+    return item.get_closest_marker("slow") is not None
 
 
 def pytest_collection_modifyitems(items):

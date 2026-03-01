@@ -141,8 +141,7 @@ force_grid_wrap = 2
 ensure_newline_before_comments = true
 skip = ["optimus_dl/_version.py", ".venv"]
 
-# pytest configuration
-[tool.pytest.ini_options]
+[pytest]
 minversion = "6.0"
 addopts = "-ra -q --strict-markers --disable-warnings"
 testpaths = ["tests"]
@@ -151,8 +150,6 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 markers = [
     "slow: marks tests as slow",
-    "integration: marks tests as integration tests",
-    "gpu: marks tests that require GPU",
 ]
 
 # mypy configuration

@@ -126,11 +126,11 @@ def _run_collectives_test(
 # Configs for parametrization
 llama2_cfg = {
     "_name": "llama2",
-    "n_embd": 128,
+    "n_embd": 64,
     "n_head": 4,
     "n_layer": 2,
-    "vocab_size": 512,
-    "sequence_length": 16,
+    "vocab_size": 64,
+    "sequence_length": 128,
 }
 qwen3_test_cfg = {
     "_name": "qwen3",
@@ -138,7 +138,7 @@ qwen3_test_cfg = {
     "n_head": 4,
     "n_kv_head": 2,
     "n_layer": 2,
-    "vocab_size": 256,
+    "vocab_size": 64,
     "sequence_length": 128,
     "attention_bias": True,
 }
