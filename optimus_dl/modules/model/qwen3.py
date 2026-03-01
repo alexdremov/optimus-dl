@@ -85,6 +85,10 @@ class Qwen3Config(GPTConfig):
             "description": "Make SwiGLU hidden layer size multiple of large power of 2"
         },
     )
+    sliding_window: int | None = field(
+        default=None,
+        metadata={"description": "Window size for sliding window attention."},
+    )
     use_liger_rmsnorm: bool | None = field(
         default=False,
         metadata={
@@ -116,6 +120,7 @@ class Qwen3Block(RotaryTransformerBlock):
             qk_norm_per_head=True,
             intermediate_size=config.intermediate_size,
             multiple_of=config.multiple_of,
+            sliding_window=config.sliding_window,
             use_liger_rmsnorm=config.use_liger_rmsnorm,
             use_liger_swiglu=config.use_liger_swiglu,
         )

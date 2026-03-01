@@ -39,6 +39,7 @@ def make_hf_qwen3_model(cfg: HFQwen3Config, **_):
     # Update local config from HF config
     update_config_from_hf(cfg, hf_config)
     cfg.attention_bias = getattr(hf_config, "attention_bias", False)
+    cfg.sliding_window = getattr(hf_config, "sliding_window", None)
 
     # Initialize local Qwen3 model
     model = Qwen3(cfg)

@@ -55,16 +55,21 @@ class RMSNorm(nn.Module):
     bias.
 
     Args:
-        dim: Input dimension.
+        dim: Input dimension(s). Can be an int or a tuple of ints.
         eps: Small value for numerical stability.
         use_liger: If True, uses the high-performance Liger kernel. If None,
             automatically enables if available.
     """
 
-    def __init__(self, dim: int, eps: float = 1e-6, use_liger: bool | None = None):
+    def __init__(
+        self, dim: int | tuple[int, ...], eps: float = 1e-6, use_liger: bool | None = None
+    ):
         super().__init__()
         self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim))
+        if isinstance(dim, int):
+            self.weight = nn.Parameter(torch.ones(dim))
+        else:
+            self.weight = nn.Parameter(torch.ones(*dim))
 
         if use_liger is None:
             self.use_liger = LIGER_AVAILABLE
