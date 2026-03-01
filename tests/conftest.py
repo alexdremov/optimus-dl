@@ -1,9 +1,9 @@
+import gc
+import platform
+import resource
+
 import torch
 import pytest
-import gc
-import os
-import resource
-import platform
 from _pytest.mark import Mark
 
 
@@ -31,7 +31,7 @@ def pytest_runtest_call(item):
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
 
-    outcome = yield
+    yield
 
     report_parts = []
     if torch.cuda.is_available():
@@ -81,6 +81,7 @@ def unique_port(worker_id):
 
 
 empty_mark = Mark("", [], {})
+slow_mark = Mark("slow", [], {})
 
 
 def by_slow_marker(item):

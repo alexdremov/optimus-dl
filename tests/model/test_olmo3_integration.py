@@ -1,6 +1,5 @@
 import logging
 import os
-import gc
 
 import torch
 import pytest

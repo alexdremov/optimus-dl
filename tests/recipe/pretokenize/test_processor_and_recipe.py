@@ -1,10 +1,10 @@
 import json
 import logging
 import multiprocessing
+import os
 import pathlib
 import shutil
 import tempfile
-import os
 from dataclasses import dataclass
 
 import numpy as np
@@ -87,7 +87,7 @@ def test_end_to_end_pretokenization_wikitext(temp_output_dir, num_proc):
 
     processing_config = ProcessingConfig(
         shard_size_mb=0.5,  # Even smaller shard size for CI
-        shuffle_buffer_size=50, # Smaller buffer for CI
+        shuffle_buffer_size=50,  # Smaller buffer for CI
         text_column="text",
         seed=42,
         dtype="uint16",
@@ -179,7 +179,7 @@ def reference_tokenization(request, ref_temp_output_dir):
     # Small shard size to ensure we flush and checkpoint frequently
     i, dataset = request.param
     processing_config = ProcessingConfig(
-        shard_size_mb=0.5, # Small shards for CI
+        shard_size_mb=0.5,  # Small shards for CI
         shuffle_buffer_size=10,
         text_column="text",
         seed=42,
