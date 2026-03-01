@@ -31,16 +31,16 @@ WORKDIR /setup
 # Install uv
 ADD https://astral.sh/uv/install.sh uv-installer.sh
 RUN sh ./uv-installer.sh && rm uv-installer.sh
-ENV UV_LINK_MODE=copy
-ENV UV_CACHE_DIR=/root/.cache/uv
-RUN mkdir -p /app && uv venv /app/venv --system-site-packages
-ENV VIRTUAL_ENV=/app/venv
 
 COPY ./pyproject.toml /setup/optimus_dl/
 COPY ./optimus_dl /setup/optimus_dl/optimus_dl
 RUN --mount=type=cache,target=/root/.cache/uv cd /setup/optimus_dl/ && \
-    SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} python -m pip install .[dev] --no-cache --no-build-isolation && \
-    chmod -R 777 /usr/local/lib/python3.12/dist-packages && chmod -R 777 /app/venv
+    SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} \
+    pip install .[dev] \
+        --no-cache \
+        --no-build-isolation \
+    && chmod -R 777 /usr/local/lib/python3.12/dist-packages \
+    && chmod -R 777 /app/venv
 
 # Basic env
 ENV DEBIAN_FRONTEND=noninteractive
