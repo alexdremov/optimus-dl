@@ -62,7 +62,10 @@ class RMSNorm(nn.Module):
     """
 
     def __init__(
-        self, dim: int | tuple[int, ...], eps: float = 1e-6, use_liger: bool | None = None
+        self,
+        dim: int | tuple[int, ...],
+        eps: float = 1e-6,
+        use_liger: bool | None = None,
     ):
         super().__init__()
         self.eps = eps

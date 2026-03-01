@@ -189,9 +189,15 @@ class RotarySelfAttention(nn.Module):
         self.wo = nn.Linear(n_head * self.head_dim, n_embd, bias=bias)
 
         if use_qk_norm:
-            q_norm_dim = (self.n_head, self.head_dim) if qk_norm_per_head else n_head * self.head_dim
+            q_norm_dim = (
+                (self.n_head, self.head_dim)
+                if qk_norm_per_head
+                else n_head * self.head_dim
+            )
             k_norm_dim = (
-                (self.n_kv_head, self.head_dim) if qk_norm_per_head else self.n_kv_head * self.head_dim
+                (self.n_kv_head, self.head_dim)
+                if qk_norm_per_head
+                else self.n_kv_head * self.head_dim
             )
             self.q_norm = RMSNorm(q_norm_dim, eps=rmsnorm_eps, use_liger=False)
             self.k_norm = RMSNorm(k_norm_dim, eps=rmsnorm_eps, use_liger=False)
