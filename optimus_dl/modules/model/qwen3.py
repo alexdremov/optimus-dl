@@ -90,13 +90,13 @@ class Qwen3Config(GPTConfig):
         metadata={"description": "Window size for sliding window attention."},
     )
     use_liger_rmsnorm: bool | None = field(
-        default=False,
+        default=None,
         metadata={
             "description": "Enable Liger-kernel for RMSNorm. None = auto-enable if available."
         },
     )
     use_liger_swiglu: bool | None = field(
-        default=False,
+        default=None,
         metadata={
             "description": "Enable Liger-kernel for SwiGLU. None = auto-enable if available."
         },
