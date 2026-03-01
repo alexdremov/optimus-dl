@@ -416,7 +416,7 @@ class RotarySelfAttention(nn.Module):
                     self.sliding_window is None or self.sliding_window > 0
                 ), "Sliding window must be positive or None"
                 window_size = (
-                    (self.sliding_window, 0)
+                    (self.sliding_window - 1, 0)
                     if self.sliding_window is not None
                     else (-1, -1)
                 )
