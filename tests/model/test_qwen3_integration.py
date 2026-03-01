@@ -30,7 +30,7 @@ class TestQwen3Integration:
         hf_config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
         hf_model = AutoModelForCausalLM.from_pretrained(
             model_name, trust_remote_code=True, dtype=torch.float32
-        ).to(device)
+        )
         hf_model.eval()
 
         optimus_model = build_model(
@@ -105,11 +105,11 @@ class TestQwen3Integration:
 
         # 5. Run Inference
         torch.manual_seed(42)
-        input_ids = torch.randint(0, hf_config.vocab_size, (1, 10)).to(device)
+        input_ids = torch.randint(0, hf_config.vocab_size, (1, 10))
 
         with torch.no_grad():
-            hf_out = hf_model(input_ids).logits
-            optimus_out = optimus_model(input_ids)["logits"]
+            hf_out = hf_model(input_ids).logits.cpu()
+            optimus_out = optimus_model(input_ids.to(device))["logits"].cpu()
 
         # Compare intermediate outputs
         for name in hf_outputs:
@@ -117,8 +117,8 @@ class TestQwen3Integration:
                 logging.info(f"Skipping check for {name}, not found in optimus outputs")
                 continue
 
-            hf_tensor = hf_outputs[name]
-            optimus_tensor = optimus_outputs[name]
+            hf_tensor = hf_outputs[name].cpu()
+            optimus_tensor = optimus_outputs[name].cpu()
 
             max_diff = (hf_tensor.float() - optimus_tensor.float()).abs().max().item()
             logging.info(f"Layer '{name}' max diff: {max_diff}")

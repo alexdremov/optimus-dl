@@ -31,7 +31,7 @@ class TestOlmo3Integration:
         hf_config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
         hf_model = AutoModelForCausalLM.from_pretrained(
             model_name, trust_remote_code=True, dtype=torch.float32
-        ).to(device)
+        )
         hf_model.eval()
 
         optimus_model = build_model(
@@ -133,14 +133,14 @@ class TestOlmo3Integration:
         torch.manual_seed(42)
         # Use smaller sequence length for easier debugging
         seq_len = 164
-        input_ids = torch.randint(0, hf_config.vocab_size, (1, seq_len)).to(device)
+        input_ids = torch.randint(0, hf_config.vocab_size, (1, seq_len))
 
         # Debug: Print HF keys
         # print("HF Model Keys:", list(hf_model.state_dict().keys()))
 
         with torch.no_grad():
-            hf_out = hf_model(input_ids).logits
-            optimus_out = optimus_model(input_ids)["logits"]
+            hf_out = hf_model(input_ids).logits.cpu()
+            optimus_out = optimus_model(input_ids.to(device))["logits"].cpu()
 
         # Compare masks
         for name, mask in hf_masks.items():
