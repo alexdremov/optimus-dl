@@ -48,7 +48,7 @@ A `source_group` allows you to run a set of metrics over a specific set of sourc
 ### Standard Metrics
 -   **`loss`**: Reports the raw loss.
 -   **`accuracy`**: Computes Top-1 accuracy.
--   **`perplexity`**: Computes perplexity ($e^{	ext{loss}}$).
+-   **`perplexity`**: Computes perplexity ($e^{\\text{loss}}$).
 
 ## Advanced Features
 
