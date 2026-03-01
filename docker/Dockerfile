@@ -39,8 +39,7 @@ RUN --mount=type=cache,target=/root/.cache/uv cd /setup/optimus_dl/ && \
     pip install .[dev] \
         --no-cache \
         --no-build-isolation \
-    && chmod -R 777 /usr/local/lib/python3.12/dist-packages \
-    && chmod -R 777 /app/venv
+    && chmod -R 777 /usr/local/lib/python3.12/dist-packages
 
 # Basic env
 ENV DEBIAN_FRONTEND=noninteractive
