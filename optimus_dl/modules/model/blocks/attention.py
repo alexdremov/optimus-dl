@@ -412,9 +412,9 @@ class RotarySelfAttention(nn.Module):
 
                 # Tri Dao's Flash Attention natively supports GQA and sliding window
                 # Window size -1 means no window
-                assert self.sliding_window is None or self.sliding_window > 0, (
-                    "Sliding window must be positive or None"
-                )
+                assert (
+                    self.sliding_window is None or self.sliding_window > 0
+                ), "Sliding window must be positive or None"
                 window_size = (
                     (self.sliding_window - 1, 0)
                     if self.sliding_window is not None
