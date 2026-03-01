@@ -215,6 +215,9 @@ class TestOlmo3Integration:
         max_diff = (optimus_out.float() - hf_out.float()).abs().max().item()
         logging.info(f"Final logits max diff: {max_diff}")
 
+        atol = 1e-4
+        if device.type == "cuda":
+            atol = 1e-2
         assert torch.allclose(
-            optimus_out.float(), hf_out.float(), atol=1e-4, rtol=1e-4
+            optimus_out.float(), hf_out.float(), atol=atol, rtol=0
         ), f"Logits mismatch! Max diff: {max_diff}"

@@ -96,7 +96,7 @@ class RMSNorm(nn.Module):
         is_dtensor = isinstance(x, DTensor)
 
         if self.use_liger and x.device.type != "cpu" and not is_dtensor:
-            return liger_rms_norm(x, self.weight, self.eps)
+            return liger_rms_norm(x, self.weight, self.eps, casting_mode="gemma")
 
         output = self._norm(x.float())
 

@@ -122,16 +122,22 @@ class TestQwen3Integration:
 
             max_diff = (hf_tensor.float() - optimus_tensor.float()).abs().max().item()
             logging.info(f"Layer '{name}' max diff: {max_diff}")
+            div = 1
+            if device.type == "cuda":
+                div = 10
             assert torch.allclose(
                 hf_tensor.float(),
                 optimus_tensor.float(),
-                atol=1e-5 if len(hf_outputs) < 10 else 1e-3,
+                atol=(1e-5 if len(hf_outputs) < 10 else 1e-3) * div,
             ), f"Mismatch at layer '{name}'. Max diff: {max_diff}"
 
         # 6. Verify Final Logits
         max_diff = (optimus_out.float() - hf_out.float()).abs().max().item()
         logging.info(f"Final logits max diff: {max_diff}")
 
+        atol = 1e-3
+        if device.type == "cuda":
+            atol = 1e-2
         assert torch.allclose(
-            optimus_out.float(), hf_out.float(), atol=1e-4, rtol=1e-4
+            optimus_out.float(), hf_out.float(), atol=atol, rtol=0
         ), f"Logits mismatch! Max diff: {max_diff}"

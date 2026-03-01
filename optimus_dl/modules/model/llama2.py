@@ -92,13 +92,13 @@ class LlamaConfig(GPTConfig):
         metadata={"description": "RoPE scaling configuration."},
     )
     use_liger_rmsnorm: bool | None = field(
-        default=None,
+        default=False,
         metadata={
             "description": "Enable Liger-kernel for RMSNorm. None = auto-enable if available."
         },
     )
     use_liger_swiglu: bool | None = field(
-        default=None,
+        default=False,
         metadata={
             "description": "Enable Liger-kernel for SwiGLU. None = auto-enable if available."
         },

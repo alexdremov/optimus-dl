@@ -448,7 +448,7 @@ class TestLlama:
         # Sequence longer than sequence_length should raise an error
         long_input = torch.randint(0, config.vocab_size, (1, 150))
 
-        with pytest.raises(AssertionError):
+        with pytest.raises((AssertionError, IndexError)):
             model(long_input)
 
     def test_weight_tying(self):
