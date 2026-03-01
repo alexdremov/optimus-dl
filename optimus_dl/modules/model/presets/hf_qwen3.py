@@ -38,7 +38,9 @@ def make_hf_qwen3_model(cfg: HFQwen3Config, **_):
 
     # Update local config from HF config
     update_config_from_hf(cfg, hf_config)
-    cfg.attention_bias = getattr(hf_config, "attention_bias", False)
+
+    # Qwen models often use attention_bias in config, but sometimes it is implied by presence of biases
+    cfg.attention_bias = getattr(hf_config, "attention_bias", getattr(hf_config, "use_bias", False))
     cfg.sliding_window = getattr(hf_config, "sliding_window", None)
     cfg.rmsnorm_eps = getattr(
         hf_config, "rms_norm_eps", getattr(hf_config, "layer_norm_epsilon", 1e-6)
@@ -79,9 +81,6 @@ def make_hf_qwen3_model(cfg: HFQwen3Config, **_):
         mapper.copy(
             f"model.layers.{i}.self_attn.q_proj.bias",
             f"transformer.h.{i}.attn.wq.bias",
-            permute=True,
-            n_heads=cfg.n_head,
-            head_dim=cfg.head_dim,
         )
         mapper.copy(
             f"model.layers.{i}.self_attn.k_proj.weight",
@@ -93,9 +92,6 @@ def make_hf_qwen3_model(cfg: HFQwen3Config, **_):
         mapper.copy(
             f"model.layers.{i}.self_attn.k_proj.bias",
             f"transformer.h.{i}.attn.wk.bias",
-            permute=True,
-            n_heads=cfg.n_kv_head,
-            head_dim=cfg.head_dim,
         )
         mapper.copy(
             f"model.layers.{i}.self_attn.v_proj.weight",
@@ -108,13 +104,17 @@ def make_hf_qwen3_model(cfg: HFQwen3Config, **_):
         mapper.copy(
             f"model.layers.{i}.self_attn.o_proj.weight",
             f"transformer.h.{i}.attn.wo.weight",
+            permute=True,
+            n_heads=cfg.n_head,
+            head_dim=cfg.head_dim,
+            dim=1,
         )
         mapper.copy(
             f"model.layers.{i}.self_attn.o_proj.bias",
             f"transformer.h.{i}.attn.wo.bias",
         )
 
-        # Q/K Norms - DO NOT permute element-wise norm weights
+        # Q/K Norms
         mapper.copy(
             f"model.layers.{i}.self_attn.q_norm.weight",
             f"transformer.h.{i}.attn.q_norm.weight",
@@ -129,11 +129,21 @@ def make_hf_qwen3_model(cfg: HFQwen3Config, **_):
             f"model.layers.{i}.mlp.gate_proj.weight", f"transformer.h.{i}.mlp.w1.weight"
         )
         mapper.copy(
+            f"model.layers.{i}.mlp.gate_proj.bias", f"transformer.h.{i}.mlp.w1.bias"
+        )
+        mapper.copy(
             f"model.layers.{i}.mlp.up_proj.weight", f"transformer.h.{i}.mlp.w2.weight"
+        )
+        mapper.copy(
+            f"model.layers.{i}.mlp.up_proj.bias", f"transformer.h.{i}.mlp.w2.bias"
         )
         mapper.copy(
             f"model.layers.{i}.mlp.down_proj.weight",
             f"transformer.h.{i}.mlp.c_proj.weight",
+        )
+        mapper.copy(
+            f"model.layers.{i}.mlp.down_proj.bias",
+            f"transformer.h.{i}.mlp.c_proj.bias",
         )
 
         # Layer Norms

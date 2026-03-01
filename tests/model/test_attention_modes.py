@@ -189,10 +189,17 @@ class TestAttentionModesEquivalence:
         doc_ids_masked = (
             torch.tensor([0] * doc1_len + [1] * doc2_len).unsqueeze(0).to(device)
         )
+        pos_ids_masked = (
+            torch.cat([torch.arange(doc1_len), torch.arange(doc2_len)])
+            .unsqueeze(0)
+            .to(device)
+        )
 
         with torch.no_grad():
             out_unmasked = attn(x, freqs_cis, document_ids=doc_ids_none)
-            out_masked = attn(x, freqs_cis, document_ids=doc_ids_masked)
+            out_masked = attn(
+                x, freqs_cis, document_ids=doc_ids_masked, position_ids=pos_ids_masked
+            )
 
         # For the first document, both should be identical because there are no PREVIOUS documents to attend to
         torch.testing.assert_close(
@@ -200,7 +207,6 @@ class TestAttentionModesEquivalence:
         )
 
         # For the second document, they MUST differ because in unmasked case it attends to doc1
-        # (Unless the data is zero, but it's random)
         assert not torch.allclose(
             out_unmasked[:, doc1_len:, :], out_masked[:, doc1_len:, :]
         )
@@ -211,7 +217,7 @@ class TestAttentionModesEquivalence:
         out_doc2_alone = attn(x_doc2, freqs_cis_doc2)
 
         torch.testing.assert_close(
-            out_masked[:, doc1_len:, :], out_doc2_alone, rtol=0, atol=1e-2
+            out_masked[:, doc1_len:, :], out_doc2_alone, rtol=1e-5, atol=1e-5
         )
 
     def test_position_ids_equivalence(self, setup_data, device):

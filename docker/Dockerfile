@@ -55,6 +55,7 @@ RUN echo 'root:root' | chpasswd
 WORKDIR /app
 
 # Entrypoint
+ENV TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=0
 ENV OMP_NUM_THREADS=1
 CMD ["/bin/zsh"]
 

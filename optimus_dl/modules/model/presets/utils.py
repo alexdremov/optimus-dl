@@ -77,8 +77,19 @@ class WeightMapper:
         n_heads: int | None = None,
         head_dim: int | None = None,
         transpose: bool = False,
+        dim: int = 0,
     ):
-        """Copy weight from HF state dict to local state dict."""
+        """Copy weight from HF state dict to local state dict.
+
+        Args:
+            src_key: Key in HF state dict.
+            dest_key: Key in local state dict.
+            permute: If True, permutes the weight for RoPE.
+            n_heads: Number of heads (required for permutation).
+            head_dim: Dimension per head (required for permutation).
+            transpose: If True, transposes the weight.
+            dim: Dimension to permute (0 for output, 1 for input).
+        """
         if src_key not in self.hf_sd:
             if dest_key in self.local_sd:
                 logger.warning(f"Missing key in HF model: {src_key}")
@@ -90,7 +101,12 @@ class WeightMapper:
 
         if permute:
             assert n_heads is not None and head_dim is not None
-            w = permute_rope_weight(w, n_heads, head_dim)
+            if dim == 0:
+                w = permute_rope_weight(w, n_heads, head_dim)
+            else:
+                # Permute along input dimension (for WO)
+                # We need to transpose, permute, then transpose back
+                w = permute_rope_weight(w.t(), n_heads, head_dim).t()
 
         if dest_key not in self.local_sd:
             logger.warning(f"Extra key in HF model not in local model: {dest_key}")
@@ -123,9 +139,7 @@ class WeightMapper:
             }
 
         # Common ignorable keys
-        missing_keys = {
-            k for k in missing_keys if "inv_freq" not in k and "bias" not in k
-        }
+        missing_keys = {k for k in missing_keys if "inv_freq" not in k}
 
         if tie_word_embeddings:
             if (
@@ -155,7 +169,9 @@ def update_config_from_hf(
     optimus_cfg.vocab_size = hf_config.vocab_size
     optimus_cfg.sequence_length = getattr(hf_config, "max_position_embeddings", 2048)
     optimus_cfg.block_size = optimus_cfg.sequence_length
-    optimus_cfg.rmsnorm_eps = getattr(hf_config, "rms_norm_eps", 1e-5)
+    optimus_cfg.rmsnorm_eps = getattr(
+        hf_config, "rms_norm_eps", getattr(hf_config, "layer_norm_epsilon", 1e-5)
+    )
     optimus_cfg.intermediate_size = getattr(hf_config, "intermediate_size", None)
     optimus_cfg.tie_word_embeddings = getattr(hf_config, "tie_word_embeddings", False)
 
@@ -169,8 +185,8 @@ def update_config_from_hf(
                 if rope_theta is not None:
                     break
 
-    if hasattr(optimus_cfg, "rope_theta"):
-        optimus_cfg.rope_theta = rope_theta if rope_theta is not None else 10000.0
+    if hasattr(optimus_cfg, "rope_theta") and rope_theta is not None:
+        optimus_cfg.rope_theta = float(rope_theta)
 
     # Handle rope_scaling if it exists in local config
     if hasattr(optimus_cfg, "rope_scaling"):
