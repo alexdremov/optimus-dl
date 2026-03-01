@@ -20,6 +20,9 @@ class TestSlidingWindowConsistency:
         """Verify that flex_attention produces same results as manual masking."""
         batch_size = 1
 
+        if device.type == "mps":
+            return pytest.skip("MPS does not support flex_attention")
+
         # Inputs
         q = torch.randn(
             batch_size, n_head, seq_len, head_dim, device=device, dtype=torch.float32
