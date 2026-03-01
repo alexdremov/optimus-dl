@@ -24,7 +24,7 @@ The server provides several OpenAI-compatible endpoints:
 ### Example Request
 
 ```bash
-curl -X POST http://localhost:8000/v1/completions 
+curl -X POST http://localhost:8000/v1/completions \
   -d '{"prompt": "The future of AI is", "max_tokens": 50, "temperature": 0.7}'
 ```
 
@@ -48,7 +48,7 @@ server:
 To serve your own model:
 
 ```bash
-python scripts/serve.py 
-  common.checkpoint_path=outputs/my-run/checkpoint_latest 
+python scripts/serve.py
+  common.checkpoint_path=outputs/my-run/checkpoint_latest
   model._name=llama2
 ```

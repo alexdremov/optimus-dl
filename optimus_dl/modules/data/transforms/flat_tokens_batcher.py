@@ -131,7 +131,7 @@ class FlatTokensBatcherNode(BaseNode):
                 - input_ids: Tensor of shape (B, T) or (1, sum_T)
                 - labels: Tensor of shape (B, T) or (1, sum_T), shifted by 1
                 - position_ids: (Optional) Position indices within each document
-                - document_id: (Optional) Unique ID for each document in the batch
+                - document_ids: (Optional) Unique ID for each document in the batch
                 - cu_seqlens: (Optional, flat only) Cumulative document lengths
                 - max_seqlen: (Optional, flat only) Length of the longest document
         """

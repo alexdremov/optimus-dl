@@ -25,9 +25,9 @@ This will create an image named `optimus-dl:latest` (by default) with all the ne
 When running the container, ensure you provide access to your GPUs and mount your project directory.
 
 ```bash
-docker run --gpus all -it 
-  -v $(pwd):/workspace 
-  -w /workspace 
+docker run --gpus all -it \
+  -v $(pwd):/workspace \
+  -w /workspace \
   optimus-dl:latest /bin/bash
 ```
 

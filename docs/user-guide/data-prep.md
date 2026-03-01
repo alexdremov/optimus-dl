@@ -49,8 +49,8 @@ python scripts/pretokenize.py --config-name=default
 You can override parameters from the command line:
 
 ```bash
-python scripts/pretokenize.py 
-    source.path="roneneldan/TinyStories" 
+python scripts/pretokenize.py \
+    source.path="roneneldan/TinyStories" \
     sharder.output_dir="outputs/data/tinystories"
 ```
 
