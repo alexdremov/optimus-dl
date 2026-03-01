@@ -225,10 +225,17 @@ class CrossEntropyCriterion(BaseCriterion):
         if (
             StandardProtocols.LOGITS in requested_protocols
             or StandardProtocols.CLASSIFICATION in requested_protocols
+            or StandardProtocols.LOSS in requested_protocols
         ):
             with torch.no_grad():
                 is_flat = B == 1 and "cu_seqlens" in batch
                 current_seq_lens = batch.get("seq_lens")
+
+                if StandardProtocols.LOSS in requested_protocols:
+                    loss_for_exposed = loss
+                    if isinstance(loss_for_exposed, DTensor):
+                        loss_for_exposed = loss_for_exposed.full_tensor()
+                    exposed[StandardProtocols.LOSS] = loss_for_exposed.detach()
 
                 if StandardProtocols.LOGITS in requested_protocols:
                     res_logits = logits

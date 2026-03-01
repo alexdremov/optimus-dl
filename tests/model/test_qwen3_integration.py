@@ -1,4 +1,5 @@
 import logging
+import os
 
 import torch
 import pytest
@@ -19,7 +20,13 @@ class TestQwen3Integration:
         [
             "snake7gun/tiny-random-qwen3",
             "michaelbenayoun/qwen3-tiny-4kv-heads-4layers-random",
-            "Qwen/Qwen3-0.6B",
+            # Skip large model on CI to prevent RAM violation
+            pytest.param(
+                "Qwen/Qwen3-0.6B",
+                marks=pytest.mark.skipif(
+                    os.environ.get("CI") == "true", reason="Too large for CI RAM"
+                ),
+            ),
         ],
     )
     def test_hf_qwen3_logits_match(self, model_name, device):

@@ -86,16 +86,30 @@ class CheckpointManager:
 
     def is_restart(self, checkpoint_path):
         """Check if a checkpoint exists in the given directory.
-        Such case corresponds to the case when run was started, stopped and then restarted again.
+
+        This is used to determine if a training run is a fresh start or a
+        restart from a previously interrupted run (e.g., due to preemption
+        or manual stop). If True, the recipe will attempt to resume state.
 
         Args:
-            checkpoint_path: Path for output checkpoints
+            checkpoint_path: Path to the output directory or checkpoint.
         """
         return self.get_checkpoint(checkpoint_path) is not None
 
     def get_checkpoint(self, path: str | pathlib.Path) -> CheckpointPath | None:
-        """Get a checkpoint from a path.
-        Path can be a directory, then the latest checkpoint is selected or a specific checkpoint directory or metadata file.
+        """Resolve a generic path into a structured CheckpointPath.
+
+        The path can be:
+        1.  A directory: The method searches for the 'latest' symlink or the
+            most recent metadata file.
+        2.  A metadata file: Direct resolution.
+        3.  A checkpoint directory: Direct resolution.
+
+        Args:
+            path: The path to resolve.
+
+        Returns:
+            A CheckpointPath object if a valid checkpoint is found, else None.
         """
         if not isinstance(path, pathlib.Path):
             path = pathlib.Path(str(path))

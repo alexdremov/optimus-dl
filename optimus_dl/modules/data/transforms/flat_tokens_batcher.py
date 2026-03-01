@@ -116,8 +116,25 @@ class FlatTokensBatcherNode(BaseNode):
             "source_state": self.node.state_dict(),
         }
 
-    def next(self) -> Any:
-        """Yield the next complete batch of tokens, filling from source as needed."""
+    def next(self) -> dict[str, Any]:
+        """Yield the next complete batch of tokens, filling from source as needed.
+
+        The batcher maintains an internal buffer of tokens. When the buffer falls
+        below the target size (batch_size * seq_len or max_tokens), it pulls
+        more documents from the source node. Unfinished batches are not yielded.
+
+        If 'flatten' is True, it generates metadata required for sequence
+        isolation in FlashAttention (cu_seqlens and max_seqlen).
+
+        Returns:
+            A dictionary containing:
+                - input_ids: Tensor of shape (B, T) or (1, sum_T)
+                - labels: Tensor of shape (B, T) or (1, sum_T), shifted by 1
+                - position_ids: (Optional) Position indices within each document
+                - document_ids: (Optional) Unique ID for each document in the batch
+                - cu_seqlens: (Optional, flat only) Cumulative document lengths
+                - max_seqlen: (Optional, flat only) Length of the longest document
+        """
         # Fill buffers with pre-shifted segments
         while len(self.input_buffer) < self.target_size:
             item = next(self.node)
@@ -169,7 +186,7 @@ class FlatTokensBatcherNode(BaseNode):
             output["document_ids"] = doc_ids.reshape(*reshape_args)
 
             if self.cfg.flatten:
-                # Compute cu_seqlens for the flat batch
+                # Compute cu_seqlens for the flat batch (used for FlashAttention varlen)
                 flat_doc_ids = doc_ids.reshape(-1)
                 diff = np.diff(flat_doc_ids, prepend=-1)
                 change_indices = np.where(diff != 0)[0]
