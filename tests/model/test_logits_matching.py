@@ -64,7 +64,7 @@ def test_logits_matching(model_name, device):
     print(f"Max diff: {max_diff}")
 
     # We expect very close match, float32 precision
-    atol=1e-3
+    atol = 1e-3
     if device.type == "cuda":
         atol = 1e-2
     assert np.allclose(hf_logits.numpy(), opt_logits.numpy(), atol=atol, rtol=0), (
