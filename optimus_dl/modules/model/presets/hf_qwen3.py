@@ -40,7 +40,9 @@ def make_hf_qwen3_model(cfg: HFQwen3Config, **_):
     update_config_from_hf(cfg, hf_config)
     cfg.attention_bias = getattr(hf_config, "attention_bias", False)
     cfg.sliding_window = getattr(hf_config, "sliding_window", None)
-    cfg.rmsnorm_eps = getattr(hf_config, "rms_norm_eps", getattr(hf_config, "layer_norm_epsilon", 1e-6))
+    cfg.rmsnorm_eps = getattr(
+        hf_config, "rms_norm_eps", getattr(hf_config, "layer_norm_epsilon", 1e-6)
+    )
 
     # Initialize local Qwen3 model
     model = Qwen3(cfg)
