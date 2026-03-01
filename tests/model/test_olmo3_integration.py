@@ -174,7 +174,7 @@ class TestOlmo3Integration:
 
                 # HF mask is (B, 1, T, T)
                 hf_mask_2d = mask_bool[0, 0]
-                mask_diff = (hf_mask_2d != our_mask).sum().item()
+                mask_diff = (hf_mask_2d.cpu() != our_mask.cpu()).sum().item()
                 logging.info(f"Mask {name} diff count: {mask_diff}")
                 if mask_diff > 0:
                     logging.info(f"DIVERGENCE at Mask {name}")
@@ -187,8 +187,8 @@ class TestOlmo3Integration:
         for name in sorted(hf_outputs.keys()):
             if name not in optimus_outputs:
                 continue
-            hf_val = hf_outputs[name]
-            opt_val = optimus_outputs[name]
+            hf_val = hf_outputs[name].cpu()
+            opt_val = optimus_outputs[name].cpu()
 
             def to_interleaved(w, heads, dim):
                 B, T, D = w.shape
@@ -212,12 +212,12 @@ class TestOlmo3Integration:
             #     print(f"DIVERGENCE at {name}")
 
         # Verify Final Logits
-        max_diff = (optimus_out.float() - hf_out.float()).abs().max().item()
+        max_diff = (optimus_out.cpu().float() - hf_out.cpu().float()).abs().max().item()
         logging.info(f"Final logits max diff: {max_diff}")
 
         atol = 1e-4
         if device.type == "cuda":
             atol = 1e-2
         assert torch.allclose(
-            optimus_out.float(), hf_out.float(), atol=atol, rtol=0
+            optimus_out.cpu().float(), hf_out.cpu().float(), atol=atol, rtol=0
         ), f"Logits mismatch! Max diff: {max_diff}"
