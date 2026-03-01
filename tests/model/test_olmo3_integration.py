@@ -217,7 +217,7 @@ class TestOlmo3Integration:
 
         atol = 1e-4
         if device.type == "cuda":
-            atol = 1e-2
+            atol = 1e-3
         assert torch.allclose(
             optimus_out.cpu().float(), hf_out.cpu().float(), atol=atol, rtol=0
         ), f"Logits mismatch! Max diff: {max_diff}"
