@@ -61,16 +61,13 @@ class TestQwen3Integration:
             layer.input_layernorm.register_forward_hook(
                 get_hook(hf_outputs, f"h.{i}.ln_1")
             )
-            # Attention block hooks
-            # layer.self_attn.q_proj.register_forward_hook(get_hook(hf_outputs, f"h.{i}.attn.q_proj"))
-            # layer.self_attn.k_proj.register_forward_hook(get_hook(hf_outputs, f"h.{i}.attn.k_proj"))
+            # Note: We DO NOT hook q_proj, k_proj, q_norm, k_norm.
+            # Optimus-DL permutes these weights at load time to support interleaved RoPE.
+            # Comparing these intermediate tensors directly against HF's contiguous layout
+            # will result in massive diffs, even though the dot product (Q*K^T) is identical.
             layer.self_attn.v_proj.register_forward_hook(
                 get_hook(hf_outputs, f"h.{i}.attn.v_proj")
             )
-            # Qwen3 specific QK Norms
-            # if hasattr(layer.self_attn, "q_norm"):
-            # layer.self_attn.q_norm.register_forward_hook(get_hook(hf_outputs, f"h.{i}.attn.q_norm"))
-            # layer.self_attn.k_norm.register_forward_hook(get_hook(hf_outputs, f"h.{i}.attn.k_norm"))
             layer.self_attn.o_proj.register_forward_hook(
                 get_hook(hf_outputs, f"h.{i}.attn.o_proj")
             )
@@ -87,13 +84,10 @@ class TestQwen3Integration:
         )
         for i, block in enumerate(optimus_model.transformer.h):
             block.ln_1.register_forward_hook(get_hook(optimus_outputs, f"h.{i}.ln_1"))
-            # block.attn.wq.register_forward_hook(get_hook(optimus_outputs, f"h.{i}.attn.q_proj"))
-            # block.attn.wk.register_forward_hook(get_hook(optimus_outputs, f"h.{i}.attn.k_proj"))
+            # Note: skipping wq, wk, q_norm, k_norm hooks (see comment above)
             block.attn.wv.register_forward_hook(
                 get_hook(optimus_outputs, f"h.{i}.attn.v_proj")
             )
-            # block.attn.q_norm.register_forward_hook(get_hook(optimus_outputs, f"h.{i}.attn.q_norm"))
-            # block.attn.k_norm.register_forward_hook(get_hook(optimus_outputs, f"h.{i}.attn.k_norm"))
             block.attn.wo.register_forward_hook(
                 get_hook(optimus_outputs, f"h.{i}.attn.o_proj")
             )
