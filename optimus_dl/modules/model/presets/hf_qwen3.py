@@ -40,6 +40,7 @@ def make_hf_qwen3_model(cfg: HFQwen3Config, **_):
     update_config_from_hf(cfg, hf_config)
     cfg.attention_bias = getattr(hf_config, "attention_bias", False)
     cfg.sliding_window = getattr(hf_config, "sliding_window", None)
+    cfg.rmsnorm_eps = getattr(hf_config, "rms_norm_eps", getattr(hf_config, "layer_norm_epsilon", 1e-6))
 
     # Initialize local Qwen3 model
     model = Qwen3(cfg)
@@ -111,20 +112,14 @@ def make_hf_qwen3_model(cfg: HFQwen3Config, **_):
             f"transformer.h.{i}.attn.wo.bias",
         )
 
-        # Q/K Norms
+        # Q/K Norms - DO NOT permute element-wise norm weights
         mapper.copy(
             f"model.layers.{i}.self_attn.q_norm.weight",
             f"transformer.h.{i}.attn.q_norm.weight",
-            permute=True,
-            n_heads=cfg.n_head,
-            head_dim=cfg.head_dim,
         )
         mapper.copy(
             f"model.layers.{i}.self_attn.k_norm.weight",
             f"transformer.h.{i}.attn.k_norm.weight",
-            permute=True,
-            n_heads=cfg.n_kv_head,
-            head_dim=cfg.head_dim,
         )
 
         # MLP

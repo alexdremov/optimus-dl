@@ -416,7 +416,7 @@ class RotarySelfAttention(nn.Module):
                     self.sliding_window is None or self.sliding_window > 0
                 ), "Sliding window must be positive or None"
                 window_size = (
-                    (self.sliding_window - 1, 0)
+                    (self.sliding_window, 0)
                     if self.sliding_window is not None
                     else (-1, -1)
                 )
@@ -495,17 +495,13 @@ class RotarySelfAttention(nn.Module):
                         )
                     block_mask = self._block_mask
 
-                _flex_attention = flex_attention
-                if xq.device.type == "cuda":
-                    _flex_attention = torch.compile(flex_attention)
-
                 if self.dropout > 1e-5:
                     warn_once(
                         logger=logger,
                         message="Dropout is not supported in flex attention. Ignoring dropout.",
                     )
 
-                y = _flex_attention(
+                y = flex_attention(
                     xq, xk, xv, block_mask=block_mask, enable_gqa=enable_gqa
                 )
             else:
