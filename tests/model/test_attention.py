@@ -449,7 +449,7 @@ class TestRotarySelfAttention:
 
         # The output for the valid tokens should be completely unaffected by the padded tokens
         torch.testing.assert_close(
-            out_base[0, :valid_len], out_padded[0, :valid_len], rtol=0, atol=1e-3
+            out_base[0, :valid_len], out_padded[0, :valid_len], rtol=1e-4, atol=1e-4
         )
 
     @torch.no_grad()

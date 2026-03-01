@@ -51,7 +51,7 @@ class TestLigerEquivalence(unittest.TestCase):
             base_out = self.base_model(input_ids)["logits"]
             liger_out = liger_model(input_ids)["logits"]
 
-        torch.testing.assert_close(base_out, liger_out, rtol=0, atol=1e-3)
+        torch.testing.assert_close(base_out, liger_out, rtol=1e-5, atol=1e-5)
 
     def test_swiglu_equivalence(self):
         """Test that Liger SwiGLU produces same output as PyTorch implementation."""
@@ -74,7 +74,7 @@ class TestLigerEquivalence(unittest.TestCase):
             base_out = self.base_model(input_ids)["logits"]
             liger_out = liger_model(input_ids)["logits"]
 
-        torch.testing.assert_close(base_out, liger_out, rtol=0, atol=1e-3)
+        torch.testing.assert_close(base_out, liger_out, rtol=1e-5, atol=1e-5)
 
     def test_full_liger_equivalence(self):
         """Test all Liger kernels enabled simultaneously."""
@@ -97,7 +97,7 @@ class TestLigerEquivalence(unittest.TestCase):
             base_out = self.base_model(input_ids)["logits"]
             liger_out = liger_model(input_ids)["logits"]
 
-        torch.testing.assert_close(base_out, liger_out, rtol=0, atol=1e-3)
+        torch.testing.assert_close(base_out, liger_out, rtol=1e-5, atol=1e-5)
 
 
 if __name__ == "__main__":
