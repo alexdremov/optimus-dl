@@ -48,20 +48,33 @@ def pytest_runtest_call(item):
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
-    """Add memory usage summary to the terminal output."""
+    """Add memory usage summary to the terminal output, sorted by RSS usage."""
     if "passed" not in terminalreporter.stats:
         return
 
+    import re
+
     terminalreporter.section("Memory Usage Report")
-    for reports in terminalreporter.stats["passed"]:
-        nodeid = reports.nodeid
-        # Extract memory info from user_properties
+
+    # Collect reports and extract memory values for sorting
+    reports_with_mem = []
+    for report in terminalreporter.stats["passed"]:
         memory_info = "N/A"
-        for key, value in reports.user_properties:
+        rss_value = 0.0
+        for key, value in report.user_properties:
             if key == "memory":
                 memory_info = value
+                # Extract numeric RSS for sorting
+                match = re.search(r"RSS: ([\d.]+)MB", value)
+                if match:
+                    rss_value = float(match.group(1))
                 break
+        reports_with_mem.append((report.nodeid, memory_info, rss_value))
 
+    # Sort by RSS value decreasing
+    reports_with_mem.sort(key=lambda x: x[2], reverse=True)
+
+    for nodeid, memory_info, _ in reports_with_mem:
         # Shorten nodeid for better readability
         short_id = nodeid.split("/")[-1]
         terminalreporter.write_line(f"{short_id:<60} {memory_info}")
