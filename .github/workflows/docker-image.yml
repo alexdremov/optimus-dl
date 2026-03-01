@@ -196,11 +196,12 @@ jobs:
           ARCH="${{ matrix.arch }}"
 
           echo "Exporting and pushing ccache to registry..."
-          
+
           # We use the ccache-export target which handles the push natively
           docker buildx bake -f docker/docker-bake.hcl ccache-export \
             --allow network.host \
             --push \
+            --allow=fs.read=/tmp/ccache_root
             --set "*.platform=${{ matrix.platform }}" \
             --set "*.args.ARCH=${ARCH}" \
             --set "*.args.CACHE_BUSTER=$(date +%s)" \
