@@ -394,6 +394,7 @@ class RotarySelfAttention(nn.Module):
         if cu_seqlens is not None:
             # Use optimized variable-length kernels on CUDA
             if FLASH_ATTENTION_AVAILABLE and xq.is_cuda:
+                assert flash_attn_varlen_func is not None
                 # Reshape to (total_tokens, n_heads, head_dim)
                 xq_varlen = xq.reshape(-1, self.n_head, self.head_dim)
                 xk_varlen = xk.reshape(-1, self.n_kv_head, self.head_dim)
