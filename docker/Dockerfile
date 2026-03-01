@@ -32,7 +32,7 @@ WORKDIR /setup
 ADD https://astral.sh/uv/install.sh uv-installer.sh
 RUN sh ./uv-installer.sh && rm uv-installer.sh
 
-COPY ./* /setup/optimus_dl/
+COPY ./ /setup/optimus_dl
 RUN --mount=type=cache,target=/root/.cache/uv cd /setup/optimus_dl/ && \
     SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} \
     pip install .[dev] \
