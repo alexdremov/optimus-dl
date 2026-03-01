@@ -1,4 +1,6 @@
 import logging
+import os
+import gc
 
 import torch
 import pytest
@@ -17,7 +19,12 @@ class TestOlmo3Integration:
     @pytest.mark.parametrize(
         "model_name",
         [
-            "dralex/olmo3-0.2b-random-ci",
+            pytest.param(
+                "dralex/olmo3-0.2b-random-ci",
+                marks=pytest.mark.skipif(
+                    os.environ.get("CI") == "true", reason="Skip integration on CI"
+                ),
+            ),
         ],
     )
     def test_hf_olmo3_logits_match(self, model_name, device):

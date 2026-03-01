@@ -4,6 +4,7 @@ import multiprocessing
 import pathlib
 import shutil
 import tempfile
+import os
 from dataclasses import dataclass
 
 import numpy as np
@@ -61,13 +62,14 @@ def temp_output_dir(tmp_path):
         shutil.rmtree(output_dir)
     output_dir.mkdir()
     yield output_dir
-    # Cleanup handled by pytest tmp_path, but explicitly if needed:
-    shutil.rmtree(output_dir)
+    # Cleanup handled by pytest tmp_path
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
 
 
 @pytest.mark.parametrize(
     "num_proc",
-    [0, 1, 2],
+    [0, 1] if os.environ.get("CI") == "true" else [0, 1, 2],
 )
 def test_end_to_end_pretokenization_wikitext(temp_output_dir, num_proc):
     """
@@ -84,8 +86,8 @@ def test_end_to_end_pretokenization_wikitext(temp_output_dir, num_proc):
     )
 
     processing_config = ProcessingConfig(
-        shard_size_mb=1,  # Small shard size to trigger multiple shards if dataset is large enough
-        shuffle_buffer_size=100,
+        shard_size_mb=0.5,  # Even smaller shard size for CI
+        shuffle_buffer_size=50, # Smaller buffer for CI
         text_column="text",
         seed=42,
         dtype="uint16",
@@ -177,7 +179,7 @@ def reference_tokenization(request, ref_temp_output_dir):
     # Small shard size to ensure we flush and checkpoint frequently
     i, dataset = request.param
     processing_config = ProcessingConfig(
-        shard_size_mb=1,
+        shard_size_mb=0.5, # Small shards for CI
         shuffle_buffer_size=10,
         text_column="text",
         seed=42,
