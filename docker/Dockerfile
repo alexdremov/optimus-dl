@@ -1,7 +1,45 @@
-FROM nvidia/cuda:12.6.3-base-ubuntu24.04 AS base
+# syntax=docker/dockerfile:1
+# ---------------------------------------------------------------------------
+# Cache seeding context
+# ---------------------------------------------------------------------------
+FROM scratch AS ccache_src
 
-ARG VERSION=latest
+# ---------------------------------------------------------------------------
+# Builder Stage
+# ---------------------------------------------------------------------------
+FROM nvcr.io/nvidia/pytorch:26.02-py3 AS base
+
 LABEL org.opencontainers.image.version=${VERSION}
+ARG ARCH=amd64
+
+# Basic env
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH="usr/local/cuda/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
+ENV PIP_DEFAULT_TIMEOUT=100
+ENV CCACHE_DIR=/root/.ccache
+ENV CCACHE_MAXSIZE=0
+ENV CCACHE_COMPRESS=1
+ENV CCACHE_COMPRESSLEVEL=6
+ENV CCACHE_SLOPINESS=include_file_ctime,include_file_mtime,time_macros
+ENV CMAKE_C_COMPILER_LAUNCHER=ccache
+ENV CMAKE_CXX_COMPILER_LAUNCHER=ccache
+ENV CMAKE_CUDA_COMPILER_LAUNCHER=ccache
+
+WORKDIR /setup
+
+# Install uv
+ADD https://astral.sh/uv/install.sh uv-installer.sh
+RUN sh ./uv-installer.sh && rm uv-installer.sh
+
+COPY ./pyproject.toml /setup/optimus_dl/
+COPY ./optimus_dl /setup/optimus_dl/optimus_dl
+RUN --mount=type=cache,target=/root/.cache/uv cd /setup/optimus_dl/ && \
+    SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} \
+    pip install .[dev] \
+        --no-cache \
+        --no-build-isolation \
+    && chmod -R 777 /usr/local/lib/python3.12/dist-packages
 
 # Basic env
 ENV DEBIAN_FRONTEND=noninteractive
@@ -11,61 +49,10 @@ ENV PIP_DEFAULT_TIMEOUT=100
 
 RUN echo TF_FORCE_GPU_ALLOW_GROWTH='true' >> /etc/environment
 
-WORKDIR /setup
-
-# Setup basic system for python and shell
-COPY docker/packages.txt packages.txt
-RUN <<EOR
-    set -ex
-    rm -f /etc/apt/apt.conf.d/docker-clean
-
-    apt update
-    apt install -y software-properties-common curl wget ca-certificates locales sudo git openssh-client rsync unzip tmux htop nvtop
-    apt-add-repository ppa:fish-shell/release-3
-    add-apt-repository ppa:deadsnakes/ppa
-    apt update
-
-    # Install Python 3.12 and shells (zsh/fish needed for entrypoint)
-    apt install -y python3-pip python3.12 python3.12-venv python3.12-dev zsh fish build-essential $(cat packages.txt)
-
-    # Clean up
-    rm -rf /var/lib/apt/lists/*
-    apt autoremove && apt clean
-EOR
-
-# Locale
-RUN locale-gen en_US.UTF-8
-ENV LANG=en_US.UTF-8
-ENV LANGUAGE=en_US:en
-ENV LC_ALL=en_US.UTF-8
-
 # Root password
-RUN echo 'root:root' | sudo chpasswd
-
-# Python Alternatives
-RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.12 10
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 10
-
-# Create Venv
-ADD https://astral.sh/uv/install.sh uv-installer.sh
-
-# Run the installer then remove it
-RUN sh ./uv-installer.sh && rm uv-installer.sh
-ENV PATH="/root/.local/bin/:$PATH"
-
-RUN uv venv -p=3.12 /app/venv
-ENV PATH="/app/venv/bin:$PATH"
-ARG UV_LINK_MODE=copy
-ENV UV_NO_CACHE=1
-
-COPY ./pyproject.toml /setup/optimus_dl/
-COPY ./optimus_dl /setup/optimus_dl/optimus_dl
-RUN cd /setup/optimus_dl/ && \
-    SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} uv pip install .[dev] --no-cache && \
-    chmod -R 777 /app/venv
+RUN echo 'root:root' | chpasswd
 
 WORKDIR /app
-RUN rm -rf /setup
 
 # Entrypoint
 ENV OMP_NUM_THREADS=1
@@ -75,17 +62,28 @@ FROM base AS interactive
 
 WORKDIR /setup
 COPY docker/requirements-dev.txt /setup/requirements-dev.txt
-RUN uv pip install -r /setup/requirements-dev.txt --no-cache
-
-RUN <<EOR
-    apt update
-    apt install -y ffmpeg libsm6 libxext6 psmisc
-EOR
+RUN --mount=type=cache,target=/root/.cache/uv \
+    pip install -r /setup/requirements-dev.txt --no-cache
 
 RUN curl https://getmic.ro | bash
 RUN mv ./micro /usr/local/bin/micro
 
-RUN grep -q '^/bin/fish$' /etc/shells; or echo '/bin/fish' | sudo tee -a /etc/shells
+RUN --mount=target=/var/lib/apt/lists,type=cache \
+    --mount=target=/var/cache/apt,type=cache <<EOR
+    set -ex
+    rm -f /etc/apt/apt.conf.d/docker-clean
+    apt update
+    apt install -y software-properties-common curl wget ca-certificates locales sudo git openssh-client rsync unzip tmux htop nvtop libsm6 libxext6 psmisc
+    apt-add-repository ppa:fish-shell/release-3
+    apt update
+    apt install -y fish
+
+    # Clean up
+    rm -rf /var/lib/apt/lists/*
+    apt autoremove && apt clean
+EOR
+
+RUN grep -q '^/bin/fish$' /etc/shells; or echo '/bin/fish' | tee -a /etc/shells
 ENV SHELL=/bin/fish
 SHELL ["/bin/fish", "-c"]
 RUN curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | source && fisher install jorgebucaran/fisher
@@ -106,3 +104,37 @@ RUN rm -rf /setup
 # Entrypoint
 ENV OMP_NUM_THREADS=1
 CMD ["/bin/zsh"]
+
+# ---------------------------------------------------------------------------
+# Ccache Storage Image Stage
+# ---------------------------------------------------------------------------
+FROM ubuntu:24.04 AS ccache-export
+ARG ARCH=amd64
+ARG CACHE_BUSTER=0
+RUN --mount=type=cache,target=/ccache,id=ccache-${ARCH} \
+    echo "Exporting ccache (buster: ${CACHE_BUSTER})..." && \
+    mkdir -p /export && cp -a /ccache/. /export/ || true
+
+FROM busybox AS ccache-only
+COPY --from=ccache-export /export /root/.ccache
+
+# ---------------------------------------------------------------------------
+# Ccache Seeding Stage (Used to warm the cache mount sequentially)
+# ---------------------------------------------------------------------------
+FROM ubuntu:24.04 AS ccache-seed
+RUN apt-get update && apt-get install -y rsync && rm -rf /var/lib/apt/lists/*
+ARG ARCH=amd64
+ARG CACHE_BUSTER=0
+# We use FROM scratch AS ccache_src as a placeholder
+RUN --mount=type=cache,target=/ccache,id=ccache-${ARCH} \
+    --mount=type=bind,from=ccache_src,target=/src \
+    echo "Seeding ccache (buster: ${CACHE_BUSTER})..." && \
+    if [ -d /src/.ccache ]; then \
+        echo "Found registry ccache, seeding internal mount..."; \
+        rsync -a /src/.ccache/ /ccache/; \
+    elif [ -d /src ]; then \
+        echo "Found source directory, attempting to seed from it directly..."; \
+        rsync -a /src/ /ccache/; \
+    else \
+        echo "No registry ccache found to seed."; \
+    fi

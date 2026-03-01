@@ -2,6 +2,14 @@ variable "VERSION" {
   default = "latest"
 }
 
+variable "ARCH" {
+  default = "amd64"
+}
+
+variable "CACHE_BUSTER" {
+  default = "0"
+}
+
 group "default" {
   targets = [ "optimus-dl", "optimus-dl-interactive" ]
 }
@@ -14,12 +22,10 @@ target "optimus-dl" {
     "alexdremov/optimus-dl:${VERSION}",
     "alexdremov/optimus-dl:latest",
   ]
-  platforms = [
-    "linux/amd64",
-    "linux/arm64"
-  ]
+  platforms = ["linux/amd64"]
   args = {
     VERSION = "${VERSION}"
+    ARCH = "${ARCH}"
   }
 }
 
@@ -31,11 +37,30 @@ target "optimus-dl-interactive" {
     "alexdremov/optimus-dl:interactive-${VERSION}",
     "alexdremov/optimus-dl:interactive-latest",
   ]
-  platforms = [
-    "linux/amd64",
-    "linux/arm64"
-  ]
+  platforms = ["linux/amd64"]
   args = {
     VERSION = "${VERSION}"
+    ARCH = "${ARCH}"
+  }
+}
+
+target "ccache-export" {
+  context = "."
+  target = "ccache-only"
+  dockerfile = "./docker/Dockerfile"
+  tags = ["alexdremov/optimus-dl-ccache:${ARCH}"]
+  args = {
+    ARCH = "${ARCH}"
+    CACHE_BUSTER = "${CACHE_BUSTER}"
+  }
+}
+
+target "ccache-seed" {
+  context = "."
+  target = "ccache-seed"
+  dockerfile = "./docker/Dockerfile"
+  args = {
+    ARCH = "${ARCH}"
+    CACHE_BUSTER = "${CACHE_BUSTER}"
   }
 }
