@@ -65,7 +65,11 @@ nav:
   - User Guide:
     - Quick Start: user-guide/quick-start.md
     - Configuration: user-guide/configuration.md
+    - Data Preparation: user-guide/data-prep.md
     - Models: user-guide/models.md
     - Data Pipelines: user-guide/data.md
-    - Optimizers: user-guide/optimizers.md
+    - Metrics: user-guide/metrics.md
+    - Optimizers & Schedulers: user-guide/optimizers.md
+    - Serving: user-guide/serving.md
+    - Docker & Deployment: user-guide/docker.md
   - API Reference: reference/
