@@ -30,7 +30,7 @@ class TestQwen3Integration:
         hf_config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
         hf_model = AutoModelForCausalLM.from_pretrained(
             model_name, trust_remote_code=True, dtype=torch.float32
-        ).to(device)
+        )
         hf_model.eval()
 
         optimus_model = build_model(
@@ -61,16 +61,13 @@ class TestQwen3Integration:
             layer.input_layernorm.register_forward_hook(
                 get_hook(hf_outputs, f"h.{i}.ln_1")
             )
-            # Attention block hooks
-            # layer.self_attn.q_proj.register_forward_hook(get_hook(hf_outputs, f"h.{i}.attn.q_proj"))
-            # layer.self_attn.k_proj.register_forward_hook(get_hook(hf_outputs, f"h.{i}.attn.k_proj"))
+            # Note: We DO NOT hook q_proj, k_proj, q_norm, k_norm.
+            # Optimus-DL permutes these weights at load time to support interleaved RoPE.
+            # Comparing these intermediate tensors directly against HF's contiguous layout
+            # will result in massive diffs, even though the dot product (Q*K^T) is identical.
             layer.self_attn.v_proj.register_forward_hook(
                 get_hook(hf_outputs, f"h.{i}.attn.v_proj")
             )
-            # Qwen3 specific QK Norms
-            # if hasattr(layer.self_attn, "q_norm"):
-            # layer.self_attn.q_norm.register_forward_hook(get_hook(hf_outputs, f"h.{i}.attn.q_norm"))
-            # layer.self_attn.k_norm.register_forward_hook(get_hook(hf_outputs, f"h.{i}.attn.k_norm"))
             layer.self_attn.o_proj.register_forward_hook(
                 get_hook(hf_outputs, f"h.{i}.attn.o_proj")
             )
@@ -87,13 +84,10 @@ class TestQwen3Integration:
         )
         for i, block in enumerate(optimus_model.transformer.h):
             block.ln_1.register_forward_hook(get_hook(optimus_outputs, f"h.{i}.ln_1"))
-            # block.attn.wq.register_forward_hook(get_hook(optimus_outputs, f"h.{i}.attn.q_proj"))
-            # block.attn.wk.register_forward_hook(get_hook(optimus_outputs, f"h.{i}.attn.k_proj"))
+            # Note: skipping wq, wk, q_norm, k_norm hooks (see comment above)
             block.attn.wv.register_forward_hook(
                 get_hook(optimus_outputs, f"h.{i}.attn.v_proj")
             )
-            # block.attn.q_norm.register_forward_hook(get_hook(optimus_outputs, f"h.{i}.attn.q_norm"))
-            # block.attn.k_norm.register_forward_hook(get_hook(optimus_outputs, f"h.{i}.attn.k_norm"))
             block.attn.wo.register_forward_hook(
                 get_hook(optimus_outputs, f"h.{i}.attn.o_proj")
             )
@@ -105,11 +99,11 @@ class TestQwen3Integration:
 
         # 5. Run Inference
         torch.manual_seed(42)
-        input_ids = torch.randint(0, hf_config.vocab_size, (1, 10)).to(device)
+        input_ids = torch.randint(0, hf_config.vocab_size, (1, 10))
 
         with torch.no_grad():
-            hf_out = hf_model(input_ids).logits
-            optimus_out = optimus_model(input_ids)["logits"]
+            hf_out = hf_model(input_ids).logits.cpu()
+            optimus_out = optimus_model(input_ids.to(device))["logits"].cpu()
 
         # Compare intermediate outputs
         for name in hf_outputs:
@@ -117,15 +111,15 @@ class TestQwen3Integration:
                 logging.info(f"Skipping check for {name}, not found in optimus outputs")
                 continue
 
-            hf_tensor = hf_outputs[name]
-            optimus_tensor = optimus_outputs[name]
+            hf_tensor = hf_outputs[name].cpu()
+            optimus_tensor = optimus_outputs[name].cpu()
 
             max_diff = (hf_tensor.float() - optimus_tensor.float()).abs().max().item()
             logging.info(f"Layer '{name}' max diff: {max_diff}")
             assert torch.allclose(
                 hf_tensor.float(),
                 optimus_tensor.float(),
-                atol=1e-5 if len(hf_outputs) < 10 else 1e-3,
+                atol=(1e-5 if len(hf_outputs) < 10 else 1e-3),
             ), f"Mismatch at layer '{name}'. Max diff: {max_diff}"
 
         # 6. Verify Final Logits

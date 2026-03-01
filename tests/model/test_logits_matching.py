@@ -21,7 +21,7 @@ from optimus_dl.modules.model.presets.hf_llama import HFLlamaConfig
 )
 def test_logits_matching(model_name, device):
     print(f"Loading HF model: {model_name}")
-    hf_model = AutoModelForCausalLM.from_pretrained(model_name).to(device)
+    hf_model = AutoModelForCausalLM.from_pretrained(model_name)
     hf_model.float()
     hf_model.eval()
     tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -42,12 +42,12 @@ def test_logits_matching(model_name, device):
     print(opt_model)
 
     input_text = "The quick brown fox jumps over the lazy dog"
-    inputs = tokenizer(input_text, return_tensors="pt").to(device)
+    inputs = tokenizer(input_text, return_tensors="pt")
 
     print("Running inference...")
     with torch.no_grad():
         hf_out = hf_model(**inputs)
-        opt_out = opt_model(inputs.input_ids)
+        opt_out = opt_model(inputs.input_ids.to(device))
 
     hf_logits = hf_out.logits.cpu()
     opt_logits = opt_out["logits"].cpu()

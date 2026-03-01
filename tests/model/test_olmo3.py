@@ -62,6 +62,7 @@ class TestOlmo3Attention:
         assert isinstance(attn.wv, nn.Linear)
         assert isinstance(attn.wo, nn.Linear)
 
+    @torch.no_grad()
     def test_forward_sliding_window(self, device):
         config = Olmo3Config(
             n_embd=256,
@@ -108,6 +109,7 @@ class TestOlmo3Block:
         assert isinstance(block.attn, Olmo3Attention)
         assert isinstance(block.mlp, SwiGLUMLP)
 
+    @torch.no_grad()
     def test_forward(self, device):
         config = Olmo3Config(n_embd=256, n_head=4, n_kv_head=4)
         block = Olmo3Block(config, layer_idx=0).to(device)

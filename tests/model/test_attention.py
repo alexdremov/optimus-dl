@@ -334,6 +334,7 @@ class TestRotarySelfAttention:
         assert attn_sh.q_norm.weight.shape == (256,)
         assert attn_sh.k_norm.weight.shape == (256,)
 
+    @torch.no_grad()
     def test_forward_basic(self, device):
         n_embd, n_head, seq_len = 128, 4, 16
         attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head).to(device)
@@ -354,6 +355,7 @@ class TestRotarySelfAttention:
         out = attn(x, freqs_cis)
         assert out.shape == (2, seq_len, n_embd)
 
+    @torch.no_grad()
     def test_sliding_window_forward(self, device):
         n_embd, n_head, seq_len = 128, 4, 32
         attn = RotarySelfAttention(n_embd=n_embd, n_head=n_head, sliding_window=8).to(
@@ -402,6 +404,7 @@ class TestRotarySelfAttention:
 
         assert not torch.allclose(out_ph, out_sh)
 
+    @torch.no_grad()
     def test_seq_lens_forward_basic(self, device):
         """Test that the forward pass completes successfully when seq_lens is provided."""
         n_embd, n_head, seq_len = 128, 4, 16
@@ -415,6 +418,7 @@ class TestRotarySelfAttention:
         out = attn(x, freqs_cis, seq_lens=seq_lens)
         assert out.shape == (2, seq_len, n_embd)
 
+    @torch.no_grad()
     def test_seq_lens_masking_equivalence(self, device):
         """Verify that padded tokens do not influence the attention output of valid tokens."""
         n_embd, n_head, max_seq_len = 128, 4, 16
@@ -448,6 +452,7 @@ class TestRotarySelfAttention:
             out_base[0, :valid_len], out_padded[0, :valid_len], rtol=1e-4, atol=1e-4
         )
 
+    @torch.no_grad()
     def test_seq_lens_with_sliding_window(self, device):
         """Verify seq_lens padding masking works together with sliding window masking."""
         n_embd, n_head, max_seq_len = 128, 4, 16

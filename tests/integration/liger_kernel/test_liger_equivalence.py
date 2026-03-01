@@ -97,7 +97,7 @@ class TestLigerEquivalence(unittest.TestCase):
             base_out = self.base_model(input_ids)["logits"]
             liger_out = liger_model(input_ids)["logits"]
 
-        torch.testing.assert_close(base_out, liger_out, rtol=1e-4, atol=1e-4)
+        torch.testing.assert_close(base_out, liger_out, rtol=1e-5, atol=1e-5)
 
 
 if __name__ == "__main__":

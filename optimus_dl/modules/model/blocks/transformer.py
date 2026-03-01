@@ -26,6 +26,7 @@ class RotaryTransformerBlock(nn.Module):
         qk_norm_per_head: bool = True,
         intermediate_size: int | None = None,
         multiple_of: int = 256,
+        sliding_window: int | None = None,
         use_liger_rmsnorm: bool | None = None,
         use_liger_swiglu: bool | None = None,
     ):
@@ -41,6 +42,7 @@ class RotaryTransformerBlock(nn.Module):
             use_qk_norm=use_qk_norm,
             qk_norm_per_head=qk_norm_per_head,
             rmsnorm_eps=rmsnorm_eps,
+            sliding_window=sliding_window,
         )
         self.ln_2 = RMSNorm(n_embd, eps=rmsnorm_eps, use_liger=use_liger_rmsnorm)
         self.mlp = SwiGLUMLP(

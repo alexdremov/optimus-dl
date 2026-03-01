@@ -31,7 +31,7 @@ class TestOlmo3Integration:
         hf_config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
         hf_model = AutoModelForCausalLM.from_pretrained(
             model_name, trust_remote_code=True, dtype=torch.float32
-        ).to(device)
+        )
         hf_model.eval()
 
         optimus_model = build_model(
@@ -133,14 +133,14 @@ class TestOlmo3Integration:
         torch.manual_seed(42)
         # Use smaller sequence length for easier debugging
         seq_len = 164
-        input_ids = torch.randint(0, hf_config.vocab_size, (1, seq_len)).to(device)
+        input_ids = torch.randint(0, hf_config.vocab_size, (1, seq_len))
 
         # Debug: Print HF keys
         # print("HF Model Keys:", list(hf_model.state_dict().keys()))
 
         with torch.no_grad():
-            hf_out = hf_model(input_ids).logits
-            optimus_out = optimus_model(input_ids)["logits"]
+            hf_out = hf_model(input_ids).logits.cpu()
+            optimus_out = optimus_model(input_ids.to(device))["logits"].cpu()
 
         # Compare masks
         for name, mask in hf_masks.items():
@@ -174,7 +174,7 @@ class TestOlmo3Integration:
 
                 # HF mask is (B, 1, T, T)
                 hf_mask_2d = mask_bool[0, 0]
-                mask_diff = (hf_mask_2d != our_mask).sum().item()
+                mask_diff = (hf_mask_2d.cpu() != our_mask.cpu()).sum().item()
                 logging.info(f"Mask {name} diff count: {mask_diff}")
                 if mask_diff > 0:
                     logging.info(f"DIVERGENCE at Mask {name}")
@@ -187,8 +187,8 @@ class TestOlmo3Integration:
         for name in sorted(hf_outputs.keys()):
             if name not in optimus_outputs:
                 continue
-            hf_val = hf_outputs[name]
-            opt_val = optimus_outputs[name]
+            hf_val = hf_outputs[name].cpu()
+            opt_val = optimus_outputs[name].cpu()
 
             def to_interleaved(w, heads, dim):
                 B, T, D = w.shape
@@ -212,9 +212,9 @@ class TestOlmo3Integration:
             #     print(f"DIVERGENCE at {name}")
 
         # Verify Final Logits
-        max_diff = (optimus_out.float() - hf_out.float()).abs().max().item()
+        max_diff = (optimus_out.cpu().float() - hf_out.cpu().float()).abs().max().item()
         logging.info(f"Final logits max diff: {max_diff}")
 
         assert torch.allclose(
-            optimus_out.float(), hf_out.float(), atol=1e-4, rtol=1e-4
+            optimus_out.cpu().float(), hf_out.cpu().float(), atol=1e-4, rtol=1e-4
         ), f"Logits mismatch! Max diff: {max_diff}"

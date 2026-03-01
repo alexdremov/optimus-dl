@@ -393,7 +393,8 @@ class RotarySelfAttention(nn.Module):
         y = None
         if cu_seqlens is not None:
             # Use optimized variable-length kernels on CUDA
-            if FLASH_ATTENTION_AVAILABLE and xq.is_cuda:
+            if FLASH_ATTENTION_AVAILABLE and xq.is_cuda and document_ids is None:
+                assert flash_attn_varlen_func is not None
                 # Reshape to (total_tokens, n_heads, head_dim)
                 xq_varlen = xq.reshape(-1, self.n_head, self.head_dim)
                 xk_varlen = xk.reshape(-1, self.n_kv_head, self.head_dim)
@@ -411,8 +412,11 @@ class RotarySelfAttention(nn.Module):
 
                 # Tri Dao's Flash Attention natively supports GQA and sliding window
                 # Window size -1 means no window
+                assert (
+                    self.sliding_window is None or self.sliding_window > 0
+                ), "Sliding window must be positive or None"
                 window_size = (
-                    (self.sliding_window, self.sliding_window)
+                    (self.sliding_window - 1, 0)
                     if self.sliding_window is not None
                     else (-1, -1)
                 )
@@ -466,6 +470,9 @@ class RotarySelfAttention(nn.Module):
                     or document_ids is not None
                 )
                 and (x.device.type in {"cuda", "cpu", "xpu", "hpu"})
+                and (
+                    not x.requires_grad or x.device.type != "cpu"  # no backward on cpu
+                )
             )
 
             if use_flex:
