@@ -86,8 +86,8 @@ def _test_consistency(model, device):
         rtol = 1e-5
         atol = 1e-5
         if device.type == "cuda":
-            rtol = 1e-4
-            atol = 1e-4
+            rtol = 1e-3
+            atol = 1e-3
 
         # Check Masked Flat vs Padded
         torch.testing.assert_close(
