@@ -466,6 +466,9 @@ class RotarySelfAttention(nn.Module):
                     or document_ids is not None
                 )
                 and (x.device.type in {"cuda", "cpu", "xpu", "hpu"})
+                and (
+                    not x.requires_grad or x.device.type != "cpu"  # no backward on cpu
+                )
             )
 
             if use_flex:
