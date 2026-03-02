@@ -9,50 +9,21 @@ import time
 from collections.abc import Callable
 from typing import (
     Any,
+    TypeVar,
 )
 
 import numpy as np
 import torch
 
+from optimus_dl.core.numerical import (
+    get_item,
+    safe_round,
+)
+
 from .base import (
     BaseMeter,
     log_meter,
 )
-
-
-def safe_round(number: float | int | Any, ndigits: int | None) -> float | int:
-    """Safely round a number, handling various numeric types.
-
-    This function handles rounding for Python numbers, PyTorch tensors, and
-    NumPy arrays. It recursively handles nested types (e.g., single-element
-    tensors) until it reaches a roundable Python number.
-
-    Args:
-        number: The number to round. Can be a Python number, PyTorch tensor,
-            or NumPy array.
-        ndigits: Number of decimal places to round to. If None, returns the
-            number unchanged.
-
-    Returns:
-        Rounded number as float or int (depending on whether rounding occurred).
-
-    Example:
-        ```python
-        safe_round(3.14159, 2)  # 3.14
-        safe_round(torch.tensor(3.14159), 2)  # 3.14
-        safe_round(3.14159, None)  # 3.14159 (no rounding)
-
-        ```"""
-    if ndigits is None:
-        return number
-    if hasattr(number, "__round__"):
-        return round(number, ndigits)
-    elif torch is not None and torch.is_tensor(number) and number.numel() == 1:
-        return safe_round(number.item(), ndigits)
-    elif np is not None and np.ndim(number) == 0 and hasattr(number, "item"):
-        return safe_round(number.item(), ndigits)
-    else:
-        return number
 
 
 class AverageMeter(BaseMeter):
@@ -115,6 +86,97 @@ class AverageMeter(BaseMeter):
         """
         self.sum += other_state["sum"]
         self.count += other_state["count"]
+
+
+class MaxMeter(BaseMeter):
+    """Meter that tracks the maximum logged value.
+
+    This meter accumulates values and computes the maximum when
+    `compute()` is called. Useful for tracking peak memory, max loss, etc.
+
+    Attributes:
+        round: Number of decimal places to round the result to (None = no rounding).
+        value: Accumulated maximum value.
+
+    Example:
+        ```python
+        meter = MaxMeter()
+        meter.log(10)
+        meter.log(20)
+        meter.log(15)
+        meter.compute()  # 20
+
+        ```"""
+
+    def __init__(self, round: int | None = None):
+        """Initialize the max meter.
+
+        Args:
+            round: Number of decimal places to round results to. If None,
+                results are not rounded.
+        """
+        self.round = round
+        self.value = -float("inf")
+
+    def compute(self) -> float | int:
+        """Compute the maximum value.
+
+        Returns:
+            Maximum of all logged values, optionally rounded.
+        """
+        value = get_item(self.value)
+        if not np.isfinite(value):
+            return value
+        return safe_round(value, self.round)
+
+    def log(self, value: float | int) -> None:
+        """Log a value to be tracked for maximum.
+
+        Args:
+            value: The value to accumulate to the max.
+        """
+        self.value = max(self.value, get_item(value))
+
+    def merge(self, other_state: dict[str, Any]) -> None:
+        """Merge state from another meter instance (for distributed aggregation).
+
+        Args:
+            other_state: State dictionary from another MaxMeter instance.
+        """
+        self.value = max(self.value, get_item(other_state["value"]))
+
+
+class MinMeter(MaxMeter):
+    """Meter that tracks the minimum logged value.
+
+    This meter accumulates values and computes the minimum when
+    `compute()` is called. Useful for tracking minimum learning rate, etc.
+
+    Example:
+        ```python
+        meter = MinMeter()
+        meter.log(10)
+        meter.log(5)
+        meter.log(15)
+        meter.compute()  # 5
+
+        ```"""
+
+    def compute(self) -> float | int:
+        """Compute the minimum value.
+
+        Returns:
+            Minimum of all logged values, optionally rounded.
+        """
+        return -super().compute()
+
+    def log(self, value: float | int) -> None:
+        """Log a value to be tracked for minimum.
+
+        Args:
+            value: The value to add to the meter.
+        """
+        super().log(-value)
 
 
 class SummedMeter(BaseMeter):
@@ -424,13 +486,15 @@ class GatherMeter(BaseMeter):
         self.values = state_dict["values"]
 
 
-DelayedValue = Any | Callable[[], Any]
+T = TypeVar("T")
+DelayedValue = T | Callable[[], T]
+DelayedScalar = DelayedValue[float | int | torch.Tensor | np.ndarray]
 
 
 def log_averaged(
     name: str,
-    value: DelayedValue,
-    weight: DelayedValue = 1.0,
+    value: DelayedScalar,
+    weight: DelayedScalar = 1.0,
     round: int | None = None,
     reset: bool = True,
     priority: int = 100,
@@ -476,8 +540,8 @@ def log_averaged(
 
 def log_averaged_exponent(
     name: str,
-    value: DelayedValue,
-    weight: DelayedValue = 1.0,
+    value: DelayedScalar,
+    weight: DelayedScalar = 1.0,
     round: int | None = None,
     reset: bool = True,
     priority: int = 100,
@@ -507,7 +571,7 @@ def log_averaged_exponent(
 
 def log_summed(
     name: str,
-    value: DelayedValue,
+    value: DelayedScalar,
     round: int | None = None,
     reset: bool = True,
     priority: int = 100,
@@ -539,6 +603,62 @@ def log_summed(
     log_meter(
         name=name,
         meter_factory=lambda: SummedMeter(round=round),
+        reset=reset,
+        priority=priority,
+        value=value,
+    )
+
+
+def log_max(
+    name: str,
+    value: DelayedScalar,
+    round: int | None = None,
+    reset: bool = True,
+    priority: int = 100,
+) -> None:
+    """Log a value to a max meter.
+
+    This is a convenience function for logging values to a `MaxMeter`.
+    The value can be a callable (lambda) for lazy evaluation.
+
+    Args:
+        name: Name of the meter (e.g., "perf/max_memory").
+        value: Value to log. Can be a number or a callable.
+        round: Number of decimal places to round the result to.
+        reset: If True, the meter is reset after logging.
+        priority: Priority for meter ordering when logging.
+    """
+    log_meter(
+        name=name,
+        meter_factory=lambda: MaxMeter(round=round),
+        reset=reset,
+        priority=priority,
+        value=value,
+    )
+
+
+def log_min(
+    name: str,
+    value: DelayedScalar,
+    round: int | None = None,
+    reset: bool = True,
+    priority: int = 100,
+) -> None:
+    """Log a value to a min meter.
+
+    This is a convenience function for logging values to a `MinMeter`.
+    The value can be a callable (lambda) for lazy evaluation.
+
+    Args:
+        name: Name of the meter (e.g., "optimization/min_lr").
+        value: Value to log. Can be a number or a callable.
+        round: Number of decimal places to round the result to.
+        reset: If True, the meter is reset after logging.
+        priority: Priority for meter ordering when logging.
+    """
+    log_meter(
+        name=name,
+        meter_factory=lambda: MinMeter(round=round),
         reset=reset,
         priority=priority,
         value=value,

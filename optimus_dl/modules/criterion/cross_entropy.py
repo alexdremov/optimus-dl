@@ -10,6 +10,7 @@ from torch.distributed.tensor import (
 )
 from torch.distributed.tensor.parallel import loss_parallel
 
+from optimus_dl.core.log import warn_once
 from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.criterion import (
     BaseCriterion,
@@ -21,6 +22,7 @@ from optimus_dl.modules.metrics import (
     cached_lambda,
     log_averaged,
     log_averaged_exponent,
+    log_max,
     log_summed,
 )
 from optimus_dl.modules.metrics.source import StandardProtocols
@@ -57,6 +59,7 @@ class CrossEntropyCriterion(BaseCriterion):
     ):
         self.cfg = cfg
         self.collective = collective
+        self.tp_size = collective.tp_world_size
         self.padding_token_id = cfg.padding_token_id
         self._liger_available = False
         if self.cfg.use_liger_kernel or self.cfg.use_liger_kernel is None:
@@ -102,6 +105,8 @@ class CrossEntropyCriterion(BaseCriterion):
             assert (
                 "cu_seqlens" not in batch
             ), "If input is flat, we cannot generate labels and inputs efficiently"
+            assert input_ids.ndim == 2, "Input must be 2D for automatic causal shifting"
+
             # Perform standard causal shifting: targets = inputs[1:], inputs = inputs[:-1]
             targets = input_ids[:, 1:]
             batch["input_ids"] = input_ids[:, :-1]
@@ -112,33 +117,67 @@ class CrossEntropyCriterion(BaseCriterion):
                 if isinstance(v, torch.Tensor) and v.ndim >= 2 and v.shape[1] == T:
                     batch[k] = v[:, :-1]
 
+            if "seq_lens" in batch:
+                batch["seq_lens"] = torch.clamp(batch["seq_lens"] - 1, min=0)
+                if torch.any(batch["seq_lens"] == 0).item():
+                    warn_once(
+                        logger,
+                        "Some sequences are too short to be used for training (len = 1 -> len = 0 after shifting)",
+                    )
+
         # Log sequence statistics accurately for all schemes
         if "cu_seqlens" in batch:
             # Packed/Flat batch: metadata already adjusted for shifting
             cu = batch["cu_seqlens"]
             doc_lens = (cu[1:] - cu[:-1]).float()
-            log_averaged("input_max_seq_len", doc_lens.max().item(), round=2)
+            log_max("input_max_seq_len", doc_lens.max().item(), round=2)
             log_averaged(
                 "input_mean_seq_len",
                 lambda: doc_lens.mean().item(),
-                weight=len(doc_lens),
+                weight=len(doc_lens) / self.tp_size,
                 round=2,
             )
+            log_summed(
+                "total_samples",
+                len(doc_lens) / self.tp_size,
+                reset=False,
+            )
+            log_summed(
+                "batch_samples",
+                len(doc_lens) / self.tp_size,
+            )
         elif "seq_lens" in batch:
-            # Padded batch: lengths represent un-shifted sequences, we adjust here
-            sl = (batch["seq_lens"] - 1).float()
-            log_averaged("input_max_seq_len", sl.max().item(), round=2)
+            sl = batch["seq_lens"].float()
+            log_max("input_max_seq_len", sl.max().item(), round=2)
             log_averaged(
                 "input_mean_seq_len",
                 lambda: sl.mean().item(),
-                weight=sl.shape[0],
+                weight=sl.shape[0] / self.tp_size,
                 round=2,
+            )
+            log_summed(
+                "total_samples",
+                len(sl) / self.tp_size,
+                reset=False,
+            )
+            log_summed(
+                "batch_samples",
+                len(sl) / self.tp_size,
             )
         else:
             # Fixed-size batch
             current_T = batch["input_ids"].shape[1]
-            log_averaged("input_max_seq_len", current_T, round=2)
+            log_max("input_max_seq_len", current_T, round=2)
             log_averaged("input_mean_seq_len", current_T, weight=B, round=2)
+            log_summed(
+                "total_samples",
+                len(batch["input_ids"]) / self.tp_size,
+                reset=False,
+            )
+            log_summed(
+                "batch_samples",
+                len(batch["input_ids"]) / self.tp_size,
+            )
 
         model_out = model(**batch)
         logits = model_out["logits"]
@@ -146,7 +185,7 @@ class CrossEntropyCriterion(BaseCriterion):
 
         valid_tokens = cached_lambda(
             lambda: ((targets >= 0) & (targets != self.padding_token_id)).sum().item()
-            / self.collective.tp_world_size
+            / self.tp_size
         )
         predictions = cached_lambda(lambda: self.gather_predictions(logits))
 

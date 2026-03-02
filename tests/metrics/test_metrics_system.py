@@ -23,14 +23,21 @@ from optimus_dl.modules.metrics.base import (
     step_meters,
 )
 from optimus_dl.modules.metrics.common import (
+    AveragedExponentMeter,
     AverageMeter,
     FrequencyMeter,
+    GatherMeter,
+    MaxMeter,
+    MinMeter,
     StopwatchMeter,
     SummedMeter,
     log_averaged,
+    log_averaged_exponent,
     log_event_end,
     log_event_occurence,
     log_event_start,
+    log_max,
+    log_min,
     log_summed,
     safe_round,
 )
@@ -176,6 +183,137 @@ class TestSummedMeter:
 
         meter1.merge(meter2.state_dict())
         assert meter1.sum == 30.0
+
+
+class TestMaxMeter:
+    """Tests for MaxMeter"""
+
+    def test_max_meter_init(self):
+        meter = MaxMeter(round=2)
+        assert meter.round == 2
+        assert meter.value == -float("inf")
+
+    def test_max_meter_log(self):
+        meter = MaxMeter()
+        meter.log(10.0)
+        meter.log(20.0)
+        meter.log(15.0)
+
+        assert meter.value == 20.0
+
+    def test_max_meter_compute(self):
+        meter = MaxMeter()
+        meter.log(10.0)
+        meter.log(20.0)
+
+        assert meter.compute() == 20.0
+
+    def test_max_meter_merge(self):
+        meter1 = MaxMeter()
+        meter1.log(10.0)
+
+        meter2 = MaxMeter()
+        meter2.log(20.0)
+
+        meter1.merge(meter2.state_dict())
+        assert meter1.value == 20.0
+
+
+class TestMinMeter:
+    """Tests for MinMeter"""
+
+    def test_min_meter_init(self):
+        meter = MinMeter(round=2)
+        assert meter.round == 2
+        assert meter.compute() == float("inf")
+
+    def test_min_meter_log(self):
+        meter = MinMeter()
+        meter.log(10.0)
+        meter.log(5.0)
+        meter.log(15.0)
+
+        assert meter.compute() == 5.0
+
+    def test_min_meter_compute(self):
+        meter = MinMeter()
+        meter.log(10.0)
+        meter.log(5.0)
+
+        assert meter.compute() == 5.0
+
+    def test_min_meter_merge(self):
+        meter1 = MinMeter()
+        meter1.log(10.0)
+
+        meter2 = MinMeter()
+        meter2.log(5.0)
+
+        meter1.merge(meter2.state_dict())
+        assert meter1.compute() == 5.0
+
+
+class TestAveragedExponentMeter:
+    """Tests for AveragedExponentMeter"""
+
+    def test_averaged_exponent_meter_init(self):
+        meter = AveragedExponentMeter(round=2)
+        assert meter.round == 2
+        assert isinstance(meter._internal, AverageMeter)
+
+    def test_averaged_exponent_meter_log(self):
+        meter = AveragedExponentMeter()
+        meter.log(np.log(2.0), weight=1.0)
+        meter.log(np.log(4.0), weight=1.0)
+
+        # Average of log(2) and log(4) is (log(2)+log(4))/2 = log(sqrt(8))
+        # exp(log(sqrt(8))) = sqrt(8) approx 2.828
+        assert np.allclose(meter.compute(), np.sqrt(8.0))
+
+    def test_averaged_exponent_meter_compute(self):
+        meter = AveragedExponentMeter(round=2)
+        meter.log(np.log(10.0), weight=1.0)
+        assert meter.compute() == 10.0
+
+    def test_averaged_exponent_meter_merge(self):
+        meter1 = AveragedExponentMeter()
+        meter1.log(np.log(2.0), weight=1.0)
+
+        meter2 = AveragedExponentMeter()
+        meter2.log(np.log(4.0), weight=1.0)
+
+        meter1.merge(meter2.state_dict())
+        assert np.allclose(meter1.compute(), np.sqrt(8.0))
+
+
+class TestGatherMeter:
+    """Tests for GatherMeter"""
+
+    def test_gather_meter_init(self):
+        meter = GatherMeter()
+        assert meter.values == []
+
+    def test_gather_meter_log(self):
+        meter = GatherMeter()
+        meter.log(10)
+        meter.log("test")
+
+        assert meter.values == [10, "test"]
+
+    def test_gather_meter_compute(self):
+        meter = GatherMeter()
+        meter.log(10)
+        assert meter.compute() == [10]
+
+    def test_gather_meter_merge(self):
+        meter1 = GatherMeter()
+        meter1.log(1)
+
+        meter2 = GatherMeter()
+        meter2.log(2)
+
+        meter1.merge(meter2.state_dict())
+        assert meter1.values == [1, 2]
 
 
 class TestFrequencyMeter:
@@ -748,6 +886,41 @@ class TestLogMeterFunctions:
         assert isinstance(meter, SummedMeter)
         assert meter.round == 1
         assert meter.sum == 15.0
+
+    def test_log_max(self):
+        self.setUp()
+
+        with meters_group("test_group"):
+            log_max("test_meter", value=10.0, round=1)
+            log_max("test_meter", value=20.0, round=1)
+
+        group = _meter_groups["test_group"]
+        meter = group._meters["test_meter"].meter
+        assert isinstance(meter, MaxMeter)
+        assert meter.compute() == 20.0
+
+    def test_log_min(self):
+        self.setUp()
+
+        with meters_group("test_group"):
+            log_min("test_meter", value=10.0, round=1)
+            log_min("test_meter", value=5.0, round=1)
+
+        group = _meter_groups["test_group"]
+        meter = group._meters["test_meter"].meter
+        assert isinstance(meter, MinMeter)
+        assert meter.compute() == 5.0
+
+    def test_log_averaged_exponent(self):
+        self.setUp()
+
+        with meters_group("test_group"):
+            log_averaged_exponent("test_meter", value=np.log(10.0), weight=1.0)
+
+        group = _meter_groups["test_group"]
+        meter = group._meters["test_meter"].meter
+        assert isinstance(meter, AveragedExponentMeter)
+        assert np.allclose(meter.compute(), 10.0)
 
     def test_log_event_start(self):
         self.setUp()

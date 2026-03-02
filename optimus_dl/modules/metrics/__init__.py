@@ -16,6 +16,8 @@ from .common import (
     AveragedExponentMeter,
     AverageMeter,
     FrequencyMeter,
+    MaxMeter,
+    MinMeter,
     StopwatchMeter,
     SummedMeter,
     cached_lambda,
@@ -24,6 +26,8 @@ from .common import (
     log_event_end,
     log_event_occurence,
     log_event_start,
+    log_max,
+    log_min,
     log_summed,
 )
 from .metrics import (
