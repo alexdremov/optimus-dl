@@ -91,7 +91,7 @@ def setup_logging(
                 datefmt=date_format,
                 log_colors={
                     "DEBUG": "cyan",
-                    "INFO": "green",
+                    "INFO": "black",
                     "WARNING": "yellow",
                     "ERROR": "red",
                     "CRITICAL": "red,bg_white",
