@@ -131,12 +131,12 @@ class CrossEntropyCriterion(BaseCriterion):
                 round=2,
             )
             log_summed(
-                "total_samples_count",
+                "total_samples",
                 len(doc_lens) / self.tp_size,
                 reset=False,
             )
             log_summed(
-                "batch_samples_count",
+                "batch_samples",
                 len(doc_lens) / self.tp_size,
             )
         elif "seq_lens" in batch:
@@ -149,12 +149,12 @@ class CrossEntropyCriterion(BaseCriterion):
                 round=2,
             )
             log_summed(
-                "total_samples_count",
+                "total_samples",
                 len(sl) / self.tp_size,
                 reset=False,
             )
             log_summed(
-                "batch_samples_count",
+                "batch_samples",
                 len(sl) / self.tp_size,
             )
         else:
@@ -163,12 +163,12 @@ class CrossEntropyCriterion(BaseCriterion):
             log_max("input_max_seq_len", current_T, round=2)
             log_averaged("input_mean_seq_len", current_T, weight=B, round=2)
             log_summed(
-                "total_samples_count",
+                "total_samples",
                 len(batch["input_ids"]) / self.tp_size,
                 reset=False,
             )
             log_summed(
-                "batch_samples_count",
+                "batch_samples",
                 len(batch["input_ids"]) / self.tp_size,
             )
 
