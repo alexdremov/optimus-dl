@@ -105,8 +105,13 @@ def unique_port(worker_id):
     worker_num = int(worker_id.replace("gw", ""))
     port = 29600 + worker_num
 
+    retries = 30
     while is_port_in_use(port):
         time.sleep(1)
+        print("Port is in use, waiting ...")
+        retries -= 1
+        if retries == 0:
+            raise RuntimeError("Worker never got a port")
 
     return port
 
