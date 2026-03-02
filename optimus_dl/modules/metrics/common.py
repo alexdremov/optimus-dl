@@ -15,45 +15,15 @@ from typing import (
 import numpy as np
 import torch
 
+from optimus_dl.core.numerical import (
+    get_item,
+    safe_round,
+)
+
 from .base import (
     BaseMeter,
     log_meter,
 )
-
-
-def safe_round(number: float | int | Any, ndigits: int | None) -> float | int:
-    """Safely round a number, handling various numeric types.
-
-    This function handles rounding for Python numbers, PyTorch tensors, and
-    NumPy arrays. It recursively handles nested types (e.g., single-element
-    tensors) until it reaches a roundable Python number.
-
-    Args:
-        number: The number to round. Can be a Python number, PyTorch tensor,
-            or NumPy array.
-        ndigits: Number of decimal places to round to. If None, returns the
-            number unchanged.
-
-    Returns:
-        Rounded number as float or int (depending on whether rounding occurred).
-
-    Example:
-        ```python
-        safe_round(3.14159, 2)  # 3.14
-        safe_round(torch.tensor(3.14159), 2)  # 3.14
-        safe_round(3.14159, None)  # 3.14159 (no rounding)
-
-        ```"""
-    if ndigits is None:
-        return number
-    if hasattr(number, "__round__"):
-        return round(number, ndigits)
-    elif torch is not None and torch.is_tensor(number) and number.numel() == 1:
-        return safe_round(number.item(), ndigits)
-    elif np is not None and np.ndim(number) == 0 and hasattr(number, "item"):
-        return safe_round(number.item(), ndigits)
-    else:
-        return number
 
 
 class AverageMeter(BaseMeter):
@@ -154,9 +124,10 @@ class MaxMeter(BaseMeter):
         Returns:
             Maximum of all logged values, optionally rounded.
         """
-        if not np.isfinite(self.value):
-            return self.value
-        return safe_round(self.value, self.round)
+        value = get_item(self.value)
+        if not np.isfinite(value):
+            return value
+        return safe_round(value, self.round)
 
     def log(self, value: float | int) -> None:
         """Log a value to be tracked for maximum.
@@ -164,7 +135,7 @@ class MaxMeter(BaseMeter):
         Args:
             value: The value to accumulate to the max.
         """
-        self.value = max(self.value, value)
+        self.value = max(self.value, get_item(value))
 
     def merge(self, other_state: dict[str, Any]) -> None:
         """Merge state from another meter instance (for distributed aggregation).
@@ -172,7 +143,7 @@ class MaxMeter(BaseMeter):
         Args:
             other_state: State dictionary from another MaxMeter instance.
         """
-        self.value = max(self.value, other_state["value"])
+        self.value = max(self.value, get_item(other_state["value"]))
 
 
 class MinMeter(MaxMeter):
