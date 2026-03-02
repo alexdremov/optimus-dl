@@ -10,6 +10,7 @@ from torch.distributed.tensor import (
 )
 from torch.distributed.tensor.parallel import loss_parallel
 
+from optimus_dl.core.log import warn_once
 from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.criterion import (
     BaseCriterion,
@@ -117,7 +118,12 @@ class CrossEntropyCriterion(BaseCriterion):
                     batch[k] = v[:, :-1]
 
             if "seq_lens" in batch:
-                batch["seq_lens"] -= 1
+                batch["seq_lens"] = torch.clamp(batch["seq_lens"] - 1, min=0)
+                if torch.any(batch["seq_lens"] == 0).item():
+                    warn_once(
+                        logger,
+                        "Some sequences are too short to be used for training (len = 1 -> len = 0 after shifting)",
+                    )
 
         # Log sequence statistics accurately for all schemes
         if "cu_seqlens" in batch:
