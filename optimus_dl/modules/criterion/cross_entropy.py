@@ -124,9 +124,17 @@ class CrossEntropyCriterion(BaseCriterion):
                 weight=len(doc_lens),
                 round=2,
             )
+            log_summed(
+                "total_samples_count",
+                len(doc_lens),
+                reset=False,
+            )
+            log_summed(
+                "batch_samples_count",
+                len(doc_lens),
+            )
         elif "seq_lens" in batch:
-            # Padded batch: lengths represent un-shifted sequences, we adjust here
-            sl = (batch["seq_lens"] - 1).float()
+            sl = batch["seq_lens"].float()
             log_averaged("input_max_seq_len", sl.max().item(), round=2)
             log_averaged(
                 "input_mean_seq_len",
@@ -134,11 +142,29 @@ class CrossEntropyCriterion(BaseCriterion):
                 weight=sl.shape[0],
                 round=2,
             )
+            log_summed(
+                "total_samples_count",
+                len(sl),
+                reset=False,
+            )
+            log_summed(
+                "batch_samples_count",
+                len(sl),
+            )
         else:
             # Fixed-size batch
             current_T = batch["input_ids"].shape[1]
             log_averaged("input_max_seq_len", current_T, round=2)
             log_averaged("input_mean_seq_len", current_T, weight=B, round=2)
+            log_summed(
+                "total_samples_count",
+                len(batch["input_ids"]),
+                reset=False,
+            )
+            log_summed(
+                "batch_samples_count",
+                len(batch["input_ids"]),
+            )
 
         model_out = model(**batch)
         logits = model_out["logits"]
