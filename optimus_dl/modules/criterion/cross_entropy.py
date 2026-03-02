@@ -102,6 +102,7 @@ class CrossEntropyCriterion(BaseCriterion):
             assert (
                 "cu_seqlens" not in batch
             ), "If input is flat, we cannot generate labels and inputs efficiently"
+            assert input_ids.ndim == 2, "Input must be 2D for automatic causal shifting"
             # Perform standard causal shifting: targets = inputs[1:], inputs = inputs[:-1]
             targets = input_ids[:, 1:]
             batch["input_ids"] = input_ids[:, :-1]
@@ -111,6 +112,9 @@ class CrossEntropyCriterion(BaseCriterion):
                 v = batch[k]
                 if isinstance(v, torch.Tensor) and v.ndim >= 2 and v.shape[1] == T:
                     batch[k] = v[:, :-1]
+
+            if "seq_lens" in batch:
+                batch["seq_lens"] -= 1
 
         # Log sequence statistics accurately for all schemes
         if "cu_seqlens" in batch:
