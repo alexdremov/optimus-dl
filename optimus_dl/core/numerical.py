@@ -1,10 +1,10 @@
 import numpy as np
 import torch
 
-Sclarable = float | int | torch.Tensor | np.ndarray
+ScalarLike = float | int | torch.Tensor | np.ndarray
 
 
-def get_item(number: Sclarable) -> float | int | bool:
+def get_item(number: ScalarLike) -> float | int | bool:
     """Extract the scalar value from a tensor or array."""
     if isinstance(number, torch.Tensor):
         assert number.numel() == 1, "Tensor must be a scalar."
@@ -16,7 +16,7 @@ def get_item(number: Sclarable) -> float | int | bool:
         return number
 
 
-def safe_round(number: Sclarable, ndigits: int | None) -> float | int:
+def safe_round(number: ScalarLike, ndigits: int | None) -> float | int:
     """Safely round a number, handling various numeric types.
 
     This function handles rounding for Python numbers, PyTorch tensors, and
