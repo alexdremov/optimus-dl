@@ -16,6 +16,8 @@ from .common import (
     AveragedExponentMeter,
     AverageMeter,
     FrequencyMeter,
+    MaxMeter,
+    MinMeter,
     StopwatchMeter,
     SummedMeter,
     cached_lambda,
