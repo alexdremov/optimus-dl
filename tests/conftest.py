@@ -1,6 +1,7 @@
 import gc
 import platform
 import resource
+import time
 
 import torch
 import pytest
@@ -90,12 +91,24 @@ def device(request):
     return torch.device(request.param)
 
 
+def is_port_in_use(port: int) -> bool:
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(("localhost", port)) == 0
+
+
 @pytest.fixture
 def unique_port(worker_id):
     if worker_id == "master":
-        return 29500
+        port = 29500
     worker_num = int(worker_id.replace("gw", ""))
-    return 29500 + worker_num
+    port = 29600 + worker_num
+
+    while is_port_in_use(port):
+        time.sleep(1)
+
+    return port
 
 
 def by_slow_marker(item):

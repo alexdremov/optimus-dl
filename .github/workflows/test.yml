@@ -146,7 +146,7 @@ jobs:
 
     - name: Test with pytest
       run: |
-        export CI=1
+        export CI=true
         uv run pytest -n 4 \
           --durations=0 \
           --cov=optimus_dl \
