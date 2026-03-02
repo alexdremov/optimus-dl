@@ -40,6 +40,8 @@ def safe_round(number: Sclarable, ndigits: int | None) -> float | int:
 
         ```"""
     number = get_item(number)
+    if ndigits is None:
+        return number
     if hasattr(number, "__round__"):
         return round(number, ndigits)
     return number
