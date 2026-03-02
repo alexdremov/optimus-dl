@@ -21,6 +21,7 @@ from optimus_dl.modules.metrics import (
     cached_lambda,
     log_averaged,
     log_averaged_exponent,
+    log_max,
     log_summed,
 )
 from optimus_dl.modules.metrics.source import StandardProtocols
@@ -57,6 +58,7 @@ class CrossEntropyCriterion(BaseCriterion):
     ):
         self.cfg = cfg
         self.collective = collective
+        self.tp_size = collective.tp_world_size
         self.padding_token_id = cfg.padding_token_id
         self._liger_available = False
         if self.cfg.use_liger_kernel or self.cfg.use_liger_kernel is None:
@@ -121,53 +123,53 @@ class CrossEntropyCriterion(BaseCriterion):
             # Packed/Flat batch: metadata already adjusted for shifting
             cu = batch["cu_seqlens"]
             doc_lens = (cu[1:] - cu[:-1]).float()
-            log_averaged("input_max_seq_len", doc_lens.max().item(), round=2)
+            log_max("input_max_seq_len", doc_lens.max().item(), round=2)
             log_averaged(
                 "input_mean_seq_len",
                 lambda: doc_lens.mean().item(),
-                weight=len(doc_lens),
+                weight=len(doc_lens) / self.tp_size,
                 round=2,
             )
             log_summed(
                 "total_samples_count",
-                len(doc_lens),
+                len(doc_lens) / self.tp_size,
                 reset=False,
             )
             log_summed(
                 "batch_samples_count",
-                len(doc_lens),
+                len(doc_lens) / self.tp_size,
             )
         elif "seq_lens" in batch:
             sl = batch["seq_lens"].float()
-            log_averaged("input_max_seq_len", sl.max().item(), round=2)
+            log_max("input_max_seq_len", sl.max().item(), round=2)
             log_averaged(
                 "input_mean_seq_len",
                 lambda: sl.mean().item(),
-                weight=sl.shape[0],
+                weight=sl.shape[0] / self.tp_size,
                 round=2,
             )
             log_summed(
                 "total_samples_count",
-                len(sl),
+                len(sl) / self.tp_size,
                 reset=False,
             )
             log_summed(
                 "batch_samples_count",
-                len(sl),
+                len(sl) / self.tp_size,
             )
         else:
             # Fixed-size batch
             current_T = batch["input_ids"].shape[1]
-            log_averaged("input_max_seq_len", current_T, round=2)
+            log_max("input_max_seq_len", current_T, round=2)
             log_averaged("input_mean_seq_len", current_T, weight=B, round=2)
             log_summed(
                 "total_samples_count",
-                len(batch["input_ids"]),
+                len(batch["input_ids"]) / self.tp_size,
                 reset=False,
             )
             log_summed(
                 "batch_samples_count",
-                len(batch["input_ids"]),
+                len(batch["input_ids"]) / self.tp_size,
             )
 
         model_out = model(**batch)
@@ -176,7 +178,7 @@ class CrossEntropyCriterion(BaseCriterion):
 
         valid_tokens = cached_lambda(
             lambda: ((targets >= 0) & (targets != self.padding_token_id)).sum().item()
-            / self.collective.tp_world_size
+            / self.tp_size
         )
         predictions = cached_lambda(lambda: self.gather_predictions(logits))
 
