@@ -37,8 +37,6 @@ from typing import (
     Any,
     TypeVar,
     Union,
-    List,
-    Dict,
     get_args,
     get_origin,
     get_type_hints,
@@ -102,7 +100,7 @@ def validate_and_cast(cls: Any, cfg: Any, path: str = "") -> Any:
     res = _validate_and_cast_recursive(cls, cfg, path)
     # Only wrap in OmegaConf if it's a collection or dataclass at the top level.
     # Recursive calls return raw objects to ensure proper dataclass construction.
-    if is_dataclass(cls) or get_origin(cls) in (list, dict, List, Dict):
+    if is_dataclass(cls) or get_origin(cls) in (list, dict, list, dict):
         return omegaconf.OmegaConf.create(res)
     return res
 
@@ -151,7 +149,7 @@ def _validate_and_cast_recursive(cls: Any, cfg: Any, path: str = "") -> Any:
         raise TypeError(f"Config at {path or '<root>'} is None, but expected {cls}")
 
     # Handle List
-    if origin is list or origin is List:
+    if origin is list or origin is list:
         if not isinstance(cfg, (list, omegaconf.ListConfig)):
             raise TypeError(f"Expected list at {path}, got {type(cfg)}")
 
@@ -166,7 +164,7 @@ def _validate_and_cast_recursive(cls: Any, cfg: Any, path: str = "") -> Any:
         ]
 
     # Handle Dict
-    if origin is dict or origin is Dict:
+    if origin is dict or origin is dict:
         if not isinstance(cfg, (dict, omegaconf.DictConfig)):
             raise TypeError(f"Expected dict at {path}, got {type(cfg)}")
 
