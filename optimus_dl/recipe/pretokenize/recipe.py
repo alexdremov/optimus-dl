@@ -6,8 +6,8 @@ from typing import Any
 
 import numpy as np
 import omegaconf
-from tqdm import tqdm
 
+from optimus_dl.core.log import tqdm
 from optimus_dl.core.registry import build
 from optimus_dl.modules.tokenizer.base import BaseTokenizer
 

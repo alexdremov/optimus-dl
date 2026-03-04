@@ -8,6 +8,35 @@ from rich.console import Console
 from rich.logging import RichHandler
 
 
+def tqdm(*args, **kwargs):
+    """
+    A wrapper around tqdm.auto.tqdm that handles non-interactive environments.
+    In non-TTY environments, it sets default intervals to avoid flooding logs.
+    """
+    from tqdm.auto import tqdm as tqdm_auto
+
+    if not sys.stdout.isatty():
+        kwargs.setdefault("mininterval", 60.0)
+        kwargs.setdefault("maxinterval", 3600.0)
+        kwargs.setdefault("ascii", True)
+
+    return tqdm_auto(*args, **kwargs)
+
+
+def trange(*args, **kwargs):
+    """
+    A wrapper around tqdm.auto.trange that handles non-interactive environments.
+    """
+    from tqdm.auto import trange as trange_auto
+
+    if not sys.stdout.isatty():
+        kwargs.setdefault("mininterval", 60.0)
+        kwargs.setdefault("maxinterval", 3600.0)
+        kwargs.setdefault("ascii", True)
+
+    return trange_auto(*args, **kwargs)
+
+
 def setup_logging(
     level: int | str = logging.INFO,
     log_file: str | Path | None = None,

@@ -8,8 +8,8 @@ from dataclasses import (
 from typing import Any
 
 import torch
-from tqdm.auto import tqdm
 
+from optimus_dl.core.log import tqdm
 from optimus_dl.core.profile import measured_next
 from optimus_dl.core.registry import (
     RegistryConfig,
