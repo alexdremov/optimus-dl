@@ -48,7 +48,10 @@ class TrainRecipeConfig:
     """
 
     # Exp metadata
-    exp_name: str = field(default=MISSING, metadata={"description": "Experiment name"})
+    exp_name: str = field(
+        default="optimus-dl-run-${config_hash:}",
+        metadata={"description": "Experiment name"},
+    )
     exp_description: str | None = field(
         default=None, metadata={"description": "Experiment description"}
     )

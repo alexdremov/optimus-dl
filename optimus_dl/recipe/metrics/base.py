@@ -121,8 +121,11 @@ class MetricsRecipe:
         # 4. Setup Loggers
         if collective.is_master:
             self.logger_manager.build_loggers()
+            full_config = self.cfg
+            if OmegaConf.is_config(self.cfg):
+                full_config = OmegaConf.to_container(self.cfg, resolve=True)
             self.logger_manager.setup_loggers(
-                self.cfg.common.name, OmegaConf.to_container(self.cfg, resolve=True)
+                experiment_name=self.cfg.common.name, full_config=full_config
             )
 
         all_results = {}
