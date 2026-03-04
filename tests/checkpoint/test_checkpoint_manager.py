@@ -104,7 +104,7 @@ def test_save_checkpoint_persistent_paths(tmp_checkpoint_dir):
 
         # Verify symlink target
         assert os.readlink(tmp_checkpoint_dir / "checkpoint_latest") == str(
-            expected_checkpoint_id.absolute()
+            expected_checkpoint_id.name
         )
 
 

@@ -449,9 +449,9 @@ class CheckpointManager:
                         os.remove(future_link)
 
             if collective.is_master:
-                latest_checkpoint.symlink_to(checkpoint_id.absolute())
-                latest_metadata.symlink_to(metadata_path.absolute())
-            latest_per_rank_metadata.symlink_to(per_rank_metadata_path.absolute())
+                latest_checkpoint.symlink_to(checkpoint_id.name)
+                latest_metadata.symlink_to(metadata_path.name)
+            latest_per_rank_metadata.symlink_to(per_rank_metadata_path.name)
 
             logger.info(
                 f"Symlinked: {latest_checkpoint} -> {checkpoint_id}, {latest_metadata} -> {metadata_path}, {latest_per_rank_metadata} -> {per_rank_metadata_path}"
