@@ -26,10 +26,19 @@ Example:
 
 import functools
 import logging
-from dataclasses import dataclass
+from dataclasses import (
+    MISSING,
+    dataclass,
+    fields,
+    is_dataclass,
+)
 from typing import (
     Any,
     TypeVar,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
     overload,
 )
 
@@ -73,6 +82,119 @@ class RegistryConfig(dict[str, Any]):
 C = TypeVar("C", bound=type)
 T = TypeVar("T")
 CorrectCfg = RegistryConfig | RegistryConfigStrict | omegaconf.DictConfig | dict
+
+
+def validate_and_cast(cls: Any, cfg: Any, path: str = "") -> Any:
+    """Recursively validates and casts config based on cls typings.
+
+    Args:
+        cls: The class or type to validate against.
+        cfg: The configuration object to validate and cast.
+        path: Internal path for error reporting.
+
+    Returns:
+        The casted and validated configuration.
+    """
+    if cfg is None:
+        return None
+
+    # Handle OmegaConf configs by converting to container
+    if omegaconf.OmegaConf.is_config(cfg):
+        cfg = omegaconf.OmegaConf.to_container(cfg, resolve=True)
+
+    origin = get_origin(cls)
+    args = get_args(cls)
+
+    # Handle Union / Optional
+    if origin is Union:
+        for arg in args:
+            if arg is type(None):
+                continue
+            try:
+                # Try to validate against each type in Union
+                return validate_and_cast(arg, cfg, path)
+            except (TypeError, ValueError, AttributeError, AssertionError):
+                continue
+        if type(None) in args:
+            return None
+        raise TypeError(f"Config at {path} does not match any type in {cls}: {cfg}")
+
+    # Handle List
+    if origin in (list, list):
+        if not isinstance(cfg, list):
+            raise TypeError(f"Expected list at {path}, got {type(cfg)}")
+        item_type = args[0]
+        return [
+            validate_and_cast(item_type, item, f"{path}[{i}]")
+            for i, item in enumerate(cfg)
+        ]
+
+    # Handle Dict
+    if origin in (dict, dict):
+        if not isinstance(cfg, dict):
+            raise TypeError(f"Expected dict at {path}, got {type(cfg)}")
+        key_type, val_type = args
+        return {
+            validate_and_cast(key_type, k, f"{path}.<key>"): validate_and_cast(
+                val_type, v, f"{path}.{k}"
+            )
+            for k, v in cfg.items()
+        }
+
+    # Handle Dataclasses
+    if is_dataclass(cls):
+        if not isinstance(cfg, dict):
+            raise TypeError(
+                f"Expected dict for dataclass {cls.__name__} at {path}, got {type(cfg)}"
+            )
+
+        field_hints = get_type_hints(cls)
+        # RegistryConfig inherits from dict, so it's flexible
+        is_flexible = isinstance(cls, type) and issubclass(cls, dict)
+        is_strict = isinstance(cls, type) and issubclass(cls, RegistryConfigStrict)
+
+        if is_strict and not is_flexible:
+            actual_keys = set(cfg.keys())
+            expected_keys = set(field_hints.keys())
+            if not actual_keys.issubset(expected_keys):
+                raise ValueError(
+                    f"Unknown keys at {path} for {cls.__name__}: {actual_keys - expected_keys}"
+                )
+
+        init_kwargs = {}
+        extra_kwargs = {}
+        for f in fields(cls):
+            if f.name in cfg:
+                init_kwargs[f.name] = validate_and_cast(
+                    field_hints[f.name],
+                    cfg[f.name],
+                    f"{path}.{f.name}" if path else f.name,
+                )
+            elif f.default is not MISSING:
+                init_kwargs[f.name] = f.default
+            elif f.default_factory is not MISSING:
+                init_kwargs[f.name] = f.default_factory()
+
+        if is_flexible:
+            for k, v in cfg.items():
+                if k not in init_kwargs:
+                    extra_kwargs[k] = v
+
+        obj = cls(**init_kwargs)
+        if is_flexible:
+            obj.update(extra_kwargs)
+        return obj
+
+    # Handle primitives
+    if cls in (int, float, str, bool):
+        try:
+            if cls is bool and isinstance(cfg, str):
+                return cfg.lower() in ("true", "1", "yes")
+            return cls(cfg)
+        except (ValueError, TypeError) as err:
+            raise TypeError(f"Cannot cast {cfg} to {cls} at {path}") from err
+
+    return cfg
 
 
 def _get_cfg_path(cfg: CorrectCfg) -> list[str] | None:
@@ -338,6 +460,8 @@ def make_registry(registry_name: str, base_class: type | type[Any] | None = None
                     structured_cfg,
                     omegaconf.OmegaConf.to_container(cfg=cfg, resolve=True),
                 )
+                if is_strict:
+                    cfg = validate_and_cast(structured_cfg_original, cfg)
             except omegaconf.errors.ConfigTypeError:
                 logger.error(f"{structured_cfg = }\n====\n{cfg = }")
                 raise
