@@ -91,7 +91,8 @@ def validate_and_cast(cls: Any, cfg: Any, path: str = "") -> Any:
     Args:
         cls: The class or type to validate against.
         cfg: The configuration object to validate and cast.
-        path: Internal path for error reporting.
+        path: Path prefix to use in error messages, indicating the logical
+            location of this config within a larger configuration structure.
 
     Returns:
         The casted and validated configuration, as an OmegaConf object if applicable.
@@ -105,7 +106,9 @@ def validate_and_cast(cls: Any, cfg: Any, path: str = "") -> Any:
 
 
 def _validate_and_cast_recursive(cls: Any, cfg: Any, path: str = "") -> Any:
-    if cfg is None:
+    # Only return early for explicit NoneType. Optional/Union[..., None] cases
+    # are handled in the Union branch below.
+    if cfg is None and cls is type(None):
         return None
 
     origin = get_origin(cls)
@@ -141,10 +144,19 @@ def _validate_and_cast_recursive(cls: Any, cfg: Any, path: str = "") -> Any:
             raise TypeError(msg) from last_error
         raise TypeError(msg)
 
+    # If cfg is None but the type is not Optional (checked above), it's an error
+    if cfg is None:
+        raise TypeError(f"Config at {path or '<root>'} is None, but expected {cls}")
+
     # Handle List
     if origin is list:
         if not isinstance(cfg, (list, omegaconf.ListConfig)):
             raise TypeError(f"Expected list at {path}, got {type(cfg)}")
+
+        # If cls is a bare list, we pass items through as-is
+        if not args:
+            return list(cfg)
+
         item_type = args[0]
         return [
             _validate_and_cast_recursive(item_type, item, f"{path}[{i}]")
@@ -155,6 +167,11 @@ def _validate_and_cast_recursive(cls: Any, cfg: Any, path: str = "") -> Any:
     if origin is dict:
         if not isinstance(cfg, (dict, omegaconf.DictConfig)):
             raise TypeError(f"Expected dict at {path}, got {type(cfg)}")
+
+        # If cls is a bare dict, we pass items through as-is
+        if not args:
+            return dict(cfg)
+
         key_type, val_type = args
         return {
             _validate_and_cast_recursive(

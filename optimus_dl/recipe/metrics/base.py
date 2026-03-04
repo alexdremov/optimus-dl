@@ -1,6 +1,10 @@
 """Metrics evaluation recipe using the internal MetricEngine."""
 
 import logging
+from dataclasses import (
+    asdict,
+    is_dataclass,
+)
 from typing import (
     Any,
 )
@@ -124,6 +128,9 @@ class MetricsRecipe:
             full_config = self.cfg
             if OmegaConf.is_config(self.cfg):
                 full_config = OmegaConf.to_container(self.cfg, resolve=True)
+            elif is_dataclass(self.cfg):
+                full_config = asdict(self.cfg)
+
             self.logger_manager.setup_loggers(
                 experiment_name=self.cfg.common.name, full_config=full_config
             )
