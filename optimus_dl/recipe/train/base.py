@@ -1,8 +1,6 @@
 import logging
-import time
 
 import torch
-from omegaconf import OmegaConf
 from torch.optim import Optimizer
 from tqdm.auto import trange
 
@@ -144,8 +142,6 @@ class TrainRecipe(
             cfg.common.output_path,
             self.save_checkpoint,  # Pass the checkpoint method as callback
         )
-
-        self.set_exp_name()
         self.validate_config()
 
     # Delegate methods
@@ -233,14 +229,6 @@ class TrainRecipe(
     def run_evaluation_if_needed(self, *args, **kwargs):
         """Check eval frequency and run evaluation via Evaluator."""
         return self.evaluator.run_evaluation_if_needed(*args, **kwargs)
-
-    def set_exp_name(self):
-        """Set experiment name based on config or environment variables."""
-        if not OmegaConf.is_missing(self.cfg.common, "exp_name"):
-            return
-        exp_name = f"run-{self.cfg.model._name}-{time.strftime('%Y-%m-%d-%H-%M-%S')}"
-        self.cfg.common.exp_name = exp_name
-        logger.info(f"Experiment name set to: {self.cfg.common.exp_name}")
 
     def validate_config(self) -> None:
         """Validate configuration before training starts."""

@@ -26,10 +26,20 @@ Example:
 
 import functools
 import logging
-from dataclasses import dataclass
+import types
+from dataclasses import (
+    MISSING,
+    dataclass,
+    fields,
+    is_dataclass,
+)
 from typing import (
     Any,
     TypeVar,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
     overload,
 )
 
@@ -73,6 +83,160 @@ class RegistryConfig(dict[str, Any]):
 C = TypeVar("C", bound=type)
 T = TypeVar("T")
 CorrectCfg = RegistryConfig | RegistryConfigStrict | omegaconf.DictConfig | dict
+
+
+def validate_and_cast(cls: Any, cfg: Any, path: str = "") -> Any:
+    """Recursively validates and casts config based on cls typings.
+
+    Args:
+        cls: The class or type to validate against.
+        cfg: The configuration object to validate and cast.
+        path: Path prefix to use in error messages, indicating the logical
+            location of this config within a larger configuration structure.
+
+    Returns:
+        The casted and validated configuration, as an OmegaConf object if applicable.
+    """
+    res = _validate_and_cast_recursive(cls, cfg, path)
+    # Only wrap in OmegaConf if it's a collection or dataclass at the top level.
+    # Recursive calls return raw objects to ensure proper dataclass construction.
+    if is_dataclass(cls) or get_origin(cls) in (list, dict, list, dict):
+        return omegaconf.OmegaConf.create(res)
+    return res
+
+
+def _validate_and_cast_recursive(cls: Any, cfg: Any, path: str = "") -> Any:
+    # Only return early for explicit NoneType. Optional/Union[..., None] cases
+    # are handled in the Union branch below.
+    if cfg is None and cls is type(None):
+        return None
+
+    origin = get_origin(cls)
+    args = get_args(cls)
+
+    # Handle Union / Optional
+    is_union = origin is Union or (
+        hasattr(types, "UnionType") and origin is types.UnionType
+    )
+    if is_union:
+        # If NoneType is part of the union and the actual value is None,
+        # treat it as a valid match for Optional[...] / Union[..., None].
+        if type(None) in args and cfg is None:
+            return None
+
+        non_none_args = tuple(arg for arg in args if arg is not type(None))
+        last_error: Exception | None = None
+        for arg in non_none_args:
+            try:
+                return _validate_and_cast_recursive(arg, cfg, path)
+            except (TypeError, ValueError, AttributeError, AssertionError) as e:
+                last_error = e
+                continue
+
+        # No union member matched: raise a meaningful error instead of
+        # silently converting an invalid value to None.
+        type_list = " | ".join(getattr(a, "__name__", str(a)) for a in args)
+        msg = (
+            f"Config at {path or '<root>'} does not match any type in {type_list}: "
+            f"{cfg!r}"
+        )
+        if last_error is not None:
+            raise TypeError(msg) from last_error
+        raise TypeError(msg)
+
+    # If cfg is None but the type is not Optional (checked above), it's an error
+    if cfg is None:
+        raise TypeError(f"Config at {path or '<root>'} is None, but expected {cls}")
+
+    # Handle List
+    if origin is list or origin is list:
+        if not isinstance(cfg, (list, omegaconf.ListConfig)):
+            raise TypeError(f"Expected list at {path}, got {type(cfg)}")
+
+        # If cls is a bare list, we pass items through as-is
+        if not args:
+            return cfg
+
+        item_type = args[0]
+        return [
+            _validate_and_cast_recursive(item_type, item, f"{path}[{i}]")
+            for i, item in enumerate(cfg)
+        ]
+
+    # Handle Dict
+    if origin is dict or origin is dict:
+        if not isinstance(cfg, (dict, omegaconf.DictConfig)):
+            raise TypeError(f"Expected dict at {path}, got {type(cfg)}")
+
+        # If cls is a bare dict, we pass items through as-is
+        if not args:
+            return cfg
+
+        key_type, val_type = args
+        return {
+            _validate_and_cast_recursive(
+                key_type, k, f"{path}.<key>"
+            ): _validate_and_cast_recursive(val_type, v, f"{path}.{k}")
+            for k, v in cfg.items()
+        }
+
+    # Handle Dataclasses
+    if is_dataclass(cls):
+        if not isinstance(cfg, (dict, omegaconf.DictConfig)):
+            raise TypeError(
+                f"Expected dict for dataclass {cls.__name__} at {path}, got {type(cfg)}"
+            )
+
+        field_hints = get_type_hints(cls)
+        is_flexible = isinstance(cls, type) and issubclass(cls, dict)
+        is_strict = isinstance(cls, type) and issubclass(cls, RegistryConfigStrict)
+
+        if is_strict and not is_flexible:
+            actual_keys = set(cfg.keys())
+            expected_keys = set(field_hints.keys())
+            if not actual_keys.issubset(expected_keys):
+                raise ValueError(
+                    f"Unknown keys at {path} for {cls.__name__}: {actual_keys - expected_keys}"
+                )
+
+        init_kwargs = {}
+        extra_kwargs = {}
+        for f in fields(cls):
+            if f.name in cfg:
+                init_kwargs[f.name] = _validate_and_cast_recursive(
+                    field_hints[f.name],
+                    cfg[f.name],
+                    f"{path}.{f.name}" if path else f.name,
+                )
+            elif f.default is not MISSING:
+                init_kwargs[f.name] = f.default
+            elif f.default_factory is not MISSING:
+                init_kwargs[f.name] = f.default_factory()
+
+        if is_flexible:
+            for k, v in cfg.items():
+                if k not in init_kwargs:
+                    extra_kwargs[k] = v
+
+        obj = cls(**init_kwargs)
+        if is_flexible:
+            obj.update(extra_kwargs)
+        return obj
+
+    # Handle primitives
+    if cls in (int, float, str, bool):
+        value = cfg
+        if omegaconf.OmegaConf.is_config(cfg):
+            value = omegaconf.OmegaConf.to_container(cfg, resolve=True)
+
+        try:
+            if cls is bool and isinstance(value, str):
+                return value.lower() in ("true", "1", "yes")
+            return cls(value)
+        except (ValueError, TypeError) as err:
+            raise TypeError(f"Cannot cast {value} to {cls} at {path}") from err
+
+    return cfg
 
 
 def _get_cfg_path(cfg: CorrectCfg) -> list[str] | None:
@@ -338,6 +502,8 @@ def make_registry(registry_name: str, base_class: type | type[Any] | None = None
                     structured_cfg,
                     omegaconf.OmegaConf.to_container(cfg=cfg, resolve=True),
                 )
+                if is_strict:
+                    cfg = validate_and_cast(structured_cfg_original, cfg)
             except omegaconf.errors.ConfigTypeError:
                 logger.error(f"{structured_cfg = }\n====\n{cfg = }")
                 raise
