@@ -331,7 +331,7 @@ class CheckpointManager:
         metadata_path_tmp = None
         per_rank_metadata_tmp = None
 
-        if checkpoint_id.exists():
+        if checkpoint_id.exists() and collective.is_master:
             checkpoint_id_tmp = Path(str(checkpoint_id) + ".tmp")
             if checkpoint_id_tmp.exists():
                 if checkpoint_id_tmp.is_dir():
@@ -341,7 +341,7 @@ class CheckpointManager:
 
             shutil.move(checkpoint_id, checkpoint_id_tmp)
 
-        if metadata_path.exists():
+        if metadata_path.exists() and collective.is_master:
             metadata_path_tmp = Path(str(metadata_path) + ".tmp")
             if metadata_path_tmp.exists():
                 os.remove(metadata_path_tmp)
@@ -353,6 +353,36 @@ class CheckpointManager:
                 os.remove(per_rank_metadata_tmp)
             shutil.move(per_rank_metadata_path, per_rank_metadata_tmp)
 
+        tmp_mappings = [(per_rank_metadata_path, per_rank_metadata_tmp)]
+        if collective.is_master:
+            tmp_mappings.extend(
+                [
+                    (metadata_path, metadata_path_tmp),
+                    (checkpoint_id, checkpoint_id_tmp),
+                ]
+            )
+
+        def restore_from_failure():
+            for dst, src in tmp_mappings:
+                if src is None or not src.exists():
+                    continue
+                if dst.exists():
+                    if dst.is_dir():
+                        shutil.rmtree(dst)
+                    else:
+                        os.remove(dst)
+                logger.warning(f"Checkpoint failed, restoring {dst} from {src}")
+                shutil.move(src, dst)
+
+        def clean_all_tmp():
+            for _, src in tmp_mappings:
+                if src is None or not src.exists():
+                    continue
+                if src.is_dir():
+                    shutil.rmtree(src)
+                else:
+                    os.remove(src)
+
         try:
             dcp_save(
                 state_dict=state_dict,
@@ -360,38 +390,20 @@ class CheckpointManager:
                 process_group=collective.process_group,
             )
         except Exception:
-            if checkpoint_id_tmp is not None:
-                logger.warning(f"Checkpoint failed, restoring from {checkpoint_id_tmp}")
-                if checkpoint_id.exists():
-                    if checkpoint_id.is_dir():
-                        shutil.rmtree(checkpoint_id)
-                    else:
-                        os.remove(checkpoint_id)
-                shutil.move(checkpoint_id_tmp, checkpoint_id)
+            restore_from_failure()
             raise
         finally:
-            if checkpoint_id_tmp is not None and checkpoint_id_tmp.exists():
-                if checkpoint_id_tmp.is_dir():
-                    shutil.rmtree(checkpoint_id_tmp)
-                else:
-                    os.remove(checkpoint_id_tmp)
+            clean_all_tmp()
 
         if collective.is_master:
             # Save metadata separately
             try:
                 torch.save(metadata, metadata_path)
             except Exception:
-                if metadata_path_tmp is not None:
-                    logger.warning(
-                        f"Metadata save failed, restoring from {metadata_path_tmp}"
-                    )
-                    if metadata_path.exists():
-                        os.remove(metadata_path)
-                    shutil.move(metadata_path_tmp, metadata_path)
+                restore_from_failure()
                 raise
             finally:
-                if metadata_path_tmp is not None and metadata_path_tmp.exists():
-                    os.remove(metadata_path_tmp)
+                clean_all_tmp()
 
         logger.info(f"Checkpoint saved to {checkpoint_id} / {metadata_path}")
         assert (
@@ -416,17 +428,10 @@ class CheckpointManager:
         try:
             torch.save(per_rank_metadata, per_rank_metadata_path)
         except Exception:
-            if per_rank_metadata_tmp is not None:
-                logger.warning(
-                    f"Metadata save failed, restoring from {metadata_path_tmp}"
-                )
-                if per_rank_metadata_path.exists():
-                    os.remove(per_rank_metadata_path)
-                shutil.move(per_rank_metadata_tmp, per_rank_metadata_path)
+            restore_from_failure()
             raise
         finally:
-            if per_rank_metadata_tmp is not None and per_rank_metadata_tmp.exists():
-                os.remove(per_rank_metadata_tmp)
+            clean_all_tmp()
 
         # Create symlink to latest
         if should_symlink_last:
