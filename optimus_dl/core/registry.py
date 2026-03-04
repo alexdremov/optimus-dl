@@ -96,6 +96,15 @@ def validate_and_cast(cls: Any, cfg: Any, path: str = "") -> Any:
     Returns:
         The casted and validated configuration, as an OmegaConf object if applicable.
     """
+    res = _validate_and_cast_recursive(cls, cfg, path)
+    # Only wrap in OmegaConf if it's a collection or dataclass at the top level.
+    # Recursive calls return raw objects to ensure proper dataclass construction.
+    if is_dataclass(cls) or get_origin(cls) in (list, dict, list, dict):
+        return omegaconf.OmegaConf.create(res)
+    return res
+
+
+def _validate_and_cast_recursive(cls: Any, cfg: Any, path: str = "") -> Any:
     if cfg is None:
         return None
 
@@ -107,38 +116,52 @@ def validate_and_cast(cls: Any, cfg: Any, path: str = "") -> Any:
         hasattr(types, "UnionType") and origin is types.UnionType
     )
     if is_union:
-        for arg in args:
-            if arg is type(None):
-                continue
+        # If NoneType is part of the union and the actual value is None,
+        # treat it as a valid match for Optional[...] / Union[..., None].
+        if type(None) in args and cfg is None:
+            return None
+
+        non_none_args = tuple(arg for arg in args if arg is not type(None))
+        last_error: Exception | None = None
+        for arg in non_none_args:
             try:
-                return validate_and_cast(arg, cfg, path)
-            except (TypeError, ValueError, AttributeError, AssertionError):
+                return _validate_and_cast_recursive(arg, cfg, path)
+            except (TypeError, ValueError, AttributeError, AssertionError) as e:
+                last_error = e
                 continue
-        raise TypeError(f"Config at {path} does not match any type in {cls}: {cfg}")
+
+        # No union member matched: raise a meaningful error instead of
+        # silently converting an invalid value to None.
+        type_list = " | ".join(getattr(a, "__name__", str(a)) for a in args)
+        msg = (
+            f"Config at {path or '<root>'} does not match any type in {type_list}: "
+            f"{cfg!r}"
+        )
+        if last_error is not None:
+            raise TypeError(msg) from last_error
+        raise TypeError(msg)
 
     # Handle List
     if origin is list:
         if not isinstance(cfg, (list, omegaconf.ListConfig)):
             raise TypeError(f"Expected list at {path}, got {type(cfg)}")
         item_type = args[0]
-        res = [
-            validate_and_cast(item_type, item, f"{path}[{i}]")
+        return [
+            _validate_and_cast_recursive(item_type, item, f"{path}[{i}]")
             for i, item in enumerate(cfg)
         ]
-        return omegaconf.OmegaConf.create(res)
 
     # Handle Dict
     if origin is dict:
         if not isinstance(cfg, (dict, omegaconf.DictConfig)):
             raise TypeError(f"Expected dict at {path}, got {type(cfg)}")
         key_type, val_type = args
-        res = {
-            validate_and_cast(key_type, k, f"{path}.<key>"): validate_and_cast(
-                val_type, v, f"{path}.{k}"
-            )
+        return {
+            _validate_and_cast_recursive(
+                key_type, k, f"{path}.<key>"
+            ): _validate_and_cast_recursive(val_type, v, f"{path}.{k}")
             for k, v in cfg.items()
         }
-        return omegaconf.OmegaConf.create(res)
 
     # Handle Dataclasses
     if is_dataclass(cls):
@@ -163,7 +186,7 @@ def validate_and_cast(cls: Any, cfg: Any, path: str = "") -> Any:
         extra_kwargs = {}
         for f in fields(cls):
             if f.name in cfg:
-                init_kwargs[f.name] = validate_and_cast(
+                init_kwargs[f.name] = _validate_and_cast_recursive(
                     field_hints[f.name],
                     cfg[f.name],
                     f"{path}.{f.name}" if path else f.name,
@@ -181,7 +204,7 @@ def validate_and_cast(cls: Any, cfg: Any, path: str = "") -> Any:
         obj = cls(**init_kwargs)
         if is_flexible:
             obj.update(extra_kwargs)
-        return omegaconf.OmegaConf.structured(obj)
+        return obj
 
     # Handle primitives
     if cls in (int, float, str, bool):

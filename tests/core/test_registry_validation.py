@@ -75,6 +75,20 @@ def test_nested_strict_validation():
     assert "simple" in str(excinfo.value)
 
 
+def test_nested_success_casting():
+    """Test that a directly nested dataclass field is successfully cast."""
+    cfg = {"simple": {"param_int": 5}}
+    casted = validate_and_cast(NestedConfig, cfg)
+    # Ensure that the nested SimpleConfig is correctly constructed.
+    # When validate_and_cast returns an OmegaConf object, nested dataclasses
+    # are wrapped in DictConfigs, but they still provide attribute access.
+    assert casted.simple.param_int == 5
+    # Other fields should take their default values.
+    assert casted.simple.param_float == 1.0
+    assert casted.simple.param_str == "default"
+    assert casted.simple.param_bool is False
+
+
 def test_flexible_registry_config():
     """Test that RegistryConfig (dict subclass) allows and preserves extra keys."""
     cfg = {
@@ -84,8 +98,8 @@ def test_flexible_registry_config():
         "nested_extra": {"a": 1},
     }
     casted = validate_and_cast(FlexibleConfig, cfg)
-    # FlexibleConfig inherits from dict, so it stays as FlexibleConfig even if wrapped?
-    # Actually validate_and_cast returns omegaconf.OmegaConf.structured(obj)
+    # validate_and_cast should return a config object that preserves extra keys
+    # and supports attribute access for known fields alongside dict-style access.
     assert casted.known_param == 20
     assert casted["extra_param"] == "precious_data"
     assert casted["nested_extra"] == {"a": 1}
@@ -103,10 +117,6 @@ def test_recursive_collections():
     assert casted.simple_list[1].param_float == 5.5
     assert casted.simple_dict["a"].param_str == "hello"
     assert casted.simple_dict["b"].param_bool is True
-
-    # Nested items are validated and allow attribute access
-    assert casted.simple_list[0].param_int == 10
-    assert casted.simple_dict["a"].param_str == "hello"
 
 
 def test_unions_and_optionals():
