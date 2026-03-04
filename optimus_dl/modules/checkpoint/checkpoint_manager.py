@@ -339,22 +339,19 @@ class CheckpointManager:
                 else:
                     os.remove(checkpoint_id_tmp)
 
-            if checkpoint_id.is_dir():
-                shutil.copytree(checkpoint_id, checkpoint_id_tmp)
-            else:
-                shutil.copy(checkpoint_id, checkpoint_id_tmp)
+            shutil.move(checkpoint_id, checkpoint_id_tmp)
 
         if metadata_path.exists():
             metadata_path_tmp = Path(str(metadata_path) + ".tmp")
             if metadata_path_tmp.exists():
                 os.remove(metadata_path_tmp)
-            shutil.copy(metadata_path, metadata_path_tmp)
+            shutil.move(metadata_path, metadata_path_tmp)
 
         if per_rank_metadata_path.exists():
             per_rank_metadata_tmp = Path(str(per_rank_metadata_path) + ".tmp")
             if per_rank_metadata_tmp.exists():
                 os.remove(per_rank_metadata_tmp)
-            shutil.copy(per_rank_metadata_path, per_rank_metadata_tmp)
+            shutil.move(per_rank_metadata_path, per_rank_metadata_tmp)
 
         try:
             dcp_save(
@@ -375,7 +372,7 @@ class CheckpointManager:
         finally:
             if checkpoint_id_tmp is not None and checkpoint_id_tmp.exists():
                 if checkpoint_id_tmp.is_dir():
-                    shutil.rmtree(checkpoint_id)
+                    shutil.rmtree(checkpoint_id_tmp)
                 else:
                     os.remove(checkpoint_id_tmp)
 
@@ -388,7 +385,7 @@ class CheckpointManager:
                     logger.warning(
                         f"Metadata save failed, restoring from {metadata_path_tmp}"
                     )
-                    if Path(metadata_path).exists():
+                    if metadata_path.exists():
                         os.remove(metadata_path)
                     shutil.move(metadata_path_tmp, metadata_path)
                 raise
@@ -423,8 +420,8 @@ class CheckpointManager:
                 logger.warning(
                     f"Metadata save failed, restoring from {metadata_path_tmp}"
                 )
-                if Path(metadata_path).exists():
-                    os.remove(metadata_path)
+                if per_rank_metadata_path.exists():
+                    os.remove(per_rank_metadata_path)
                 shutil.move(per_rank_metadata_tmp, per_rank_metadata_path)
             raise
         finally:
@@ -435,7 +432,9 @@ class CheckpointManager:
         if should_symlink_last:
             latest_checkpoint = checkpoint_path / "checkpoint_latest"
             latest_metadata = checkpoint_path / "metadata_latest.pt"
-            latest_per_rank_metadata = checkpoint_path / "per_rank_metadata_latest.pt"
+            latest_per_rank_metadata = (
+                checkpoint_path / f"per_rank_metadata_{rank}_latest.pt"
+            )
 
             to_delete = (latest_checkpoint, latest_metadata, latest_per_rank_metadata)
             if not collective.is_master:
