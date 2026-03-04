@@ -150,7 +150,7 @@ class Evaluator:
         all_metrics_configs = all_metrics_configs or {}
 
         for eval_name, eval_data in eval_data_dict.items():
-            max_iterations_local = eval_data.eval_iterations or max_iterations
+            max_iterations_local = eval_data.eval_iterations if eval_data.eval_iterations is not None else max_iterations
             logger.info(f"Running evaluation {eval_name}")
 
             # Handle both raw dataloader and DataPipeline object
