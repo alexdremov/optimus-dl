@@ -190,6 +190,7 @@ class Evaluator:
                 try:
                     while (
                         max_iterations_local is None
+                        or max_iterations_local < 0
                         or iterations < max_iterations_local
                     ):
                         log_event_occurence("perf/full_iteration")
