@@ -14,6 +14,7 @@ from optimus_dl.core.registry import (
 from optimus_dl.modules.data import (
     DataConfig,
     DataPipeline,
+    EvalDataPipeline,
     build_data_pipeline,
     build_data_pipeline_dict,
 )
@@ -89,7 +90,7 @@ class DataBuilder:
 
     def build_eval_data(
         self, collective: Collective, **kwargs: Any
-    ) -> dict[str, DataPipeline | None]:
+    ) -> dict[str, EvalDataPipeline | None]:
         """Build evaluation data pipelines.
 
         Constructs a dictionary of pipelines for multiple evaluation datasets.
@@ -111,12 +112,14 @@ class DataBuilder:
         eval_data = build_data_pipeline_dict(self.data_config.eval_datasets, **kwargs)
         eval_data = {
             k: (
-                DataPipeline(
+                EvalDataPipeline(
                     datasets=v.datasets,
                     dataloader=LoaderIterResettable(
                         root=v.dataloader,
                         restart_on_stop_iteration=False,
                     ),
+                    eval_freq=v.eval_freq,
+                    eval_iterations=v.eval_iterations,
                 )
                 if v is not None
                 else None

@@ -11,13 +11,55 @@ from optimus_dl.core.registry import RegistryConfig
 
 @dataclass
 class DataPipelineConfig:
-    source: RegistryConfig
-    transform: RegistryConfig | None = None
+    source: RegistryConfig = field(
+        default=MISSING,
+        metadata={"description": "Config for the dataset source"},
+    )
+    transform: RegistryConfig | None = field(
+        default=None,
+        metadata={"description": "Config for the dataset transforms"},
+    )
+
+
+@dataclass
+class EvalDataPipelineConfig(DataPipelineConfig):
+    eval_freq: int | None = field(
+        default=None,
+        metadata={
+            "description": "Frequency of evaluation in number of training steps specifically for this dataset. If None, use the global eval_freq."
+        },
+    )
+
+    eval_iterations: int | None = field(
+        default=None,
+        metadata={
+            "description": "Max number of iterations of validation data for this dataset. If None, use the global eval_iterations."
+        },
+    )
 
 
 @dataclass
 class DataConfig:
-    train_datasets: DataPipelineConfig = MISSING
-    eval_datasets: dict[str, DataPipelineConfig] = field(default_factory=dict)
+    train_datasets: DataPipelineConfig = field(
+        default=MISSING,
+        metadata={
+            "description": "Config for the training batches: dataset and transforms"
+        },
+    )
+    eval_datasets: dict[str, EvalDataPipelineConfig] = field(
+        default_factory=dict,
+        metadata={
+            "description": (
+                "Config for the evaluation batches: dataset and transforms. "
+                "The key is the name of the dataset, which will be used to identify the dataset in the metrics. "
+                "The value is the config for the dataset and transforms."
+            )
+        },
+    )
 
-    scratch: Any = None
+    scratch: Any = field(
+        default=None,
+        metadata={
+            "description": "Any data whatsoever to be used in dataset configs with config interpolations like ${data.scratch.my_config} to reduce duplication"
+        },
+    )

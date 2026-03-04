@@ -16,6 +16,7 @@ from optimus_dl.core.registry import (
     make_registry,
 )
 from optimus_dl.modules.criterion import BaseCriterion
+from optimus_dl.modules.data import EvalDataPipeline
 from optimus_dl.modules.metrics import (
     compute_meters,
     log_averaged,
@@ -67,7 +68,7 @@ class Evaluator:
         iteration: int,
         model: BaseModel,
         criterion: BaseCriterion,
-        eval_data: dict[str, Any],
+        eval_data: dict[str, EvalDataPipeline],
         collective: Any = None,
         all_metrics_configs: dict[str, list[dict]] | None = None,
     ) -> None | dict:
@@ -84,21 +85,32 @@ class Evaluator:
         Returns:
             Dictionary of computed metrics if evaluation ran, else None.
         """
-        if self.eval_freq <= 0 or iteration % self.eval_freq != 0:
-            return None
-
-        try:
-            return self.run_evaluation(
-                model=model,
-                criterion=criterion,
-                eval_data_dict=eval_data,
-                max_iterations=self.eval_iterations,
-                collective=collective,
-                all_metrics_configs=all_metrics_configs,
+        result = {}
+        for k, v in eval_data.items():
+            max_iterations = (
+                v.eval_iterations
+                if v.eval_iterations is not None
+                else self.eval_iterations
             )
-        except Exception as e:
-            logger.error(f"Evaluation failed: {e}")
+            eval_freq = v.eval_freq if v.eval_freq is not None else self.eval_freq
+            if eval_freq <= 0 or iteration % eval_freq != 0:
+                continue
+
+            try:
+                result |= self.run_evaluation(
+                    model=model,
+                    criterion=criterion,
+                    eval_data_dict={k: v},
+                    max_iterations=max_iterations,
+                    collective=collective,
+                    all_metrics_configs=all_metrics_configs,
+                )
+            except Exception:
+                logger.exception(f"Evaluation for {k} failed.")
+
+        if len(result) == 0:
             return None
+        return result
 
     def run_evaluation(
         self,
@@ -134,6 +146,11 @@ class Evaluator:
         all_metrics_configs = all_metrics_configs or {}
 
         for eval_name, eval_data in eval_data_dict.items():
+            max_iterations_local = (
+                eval_data.eval_iterations
+                if eval_data.eval_iterations is not None
+                else max_iterations
+            )
             logger.info(f"Running evaluation {eval_name}")
 
             # Handle both raw dataloader and DataPipeline object
@@ -167,11 +184,15 @@ class Evaluator:
                         disable=collective is not None
                         and not collective.is_local_master,
                         unit="batch",
-                        total=max_iterations,
+                        total=max_iterations_local,
                     )
 
                 try:
-                    while max_iterations is None or iterations < max_iterations:
+                    while (
+                        max_iterations_local is None
+                        or max_iterations_local < 0
+                        or iterations < max_iterations_local
+                    ):
                         log_event_occurence("perf/full_iteration")
 
                         elapsed_batch_get, batch = measured_next(eval_iter)
