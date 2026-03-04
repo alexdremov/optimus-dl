@@ -48,8 +48,8 @@ def build_data_pipeline(
         return EvalDataPipeline(
             datasets=dataset,
             dataloader=pipeline,
-            eval_freq=cfg.get("eval_freq"),
-            eval_iterations=cfg.get("eval_iterations"),
+            eval_freq=getattr(cfg, "eval_freq", None),
+            eval_iterations=getattr(cfg, "eval_iterations", None),
         )
     else:
         return DataPipeline(datasets=dataset, dataloader=pipeline)
