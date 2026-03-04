@@ -92,11 +92,7 @@ class Evaluator:
                 if v.eval_iterations is not None
                 else self.eval_iterations
             )
-            eval_freq = (
-                v.eval_freq
-                if v.eval_freq is not None
-                else self.eval_freq
-            )
+            eval_freq = v.eval_freq if v.eval_freq is not None else self.eval_freq
             if eval_freq <= 0 or iteration % eval_freq != 0:
                 continue
 
@@ -150,7 +146,11 @@ class Evaluator:
         all_metrics_configs = all_metrics_configs or {}
 
         for eval_name, eval_data in eval_data_dict.items():
-            max_iterations_local = eval_data.eval_iterations if eval_data.eval_iterations is not None else max_iterations
+            max_iterations_local = (
+                eval_data.eval_iterations
+                if eval_data.eval_iterations is not None
+                else max_iterations
+            )
             logger.info(f"Running evaluation {eval_name}")
 
             # Handle both raw dataloader and DataPipeline object
