@@ -26,6 +26,7 @@ Example:
 
 import functools
 import logging
+import types
 from dataclasses import (
     MISSING,
     dataclass,
@@ -93,25 +94,23 @@ def validate_and_cast(cls: Any, cfg: Any, path: str = "") -> Any:
         path: Internal path for error reporting.
 
     Returns:
-        The casted and validated configuration.
+        The casted and validated configuration, as an OmegaConf object if applicable.
     """
     if cfg is None:
         return None
-
-    # Handle OmegaConf configs by converting to container
-    if omegaconf.OmegaConf.is_config(cfg):
-        cfg = omegaconf.OmegaConf.to_container(cfg, resolve=True)
 
     origin = get_origin(cls)
     args = get_args(cls)
 
     # Handle Union / Optional
-    if origin is Union:
+    is_union = origin is Union or (
+        hasattr(types, "UnionType") and origin is types.UnionType
+    )
+    if is_union:
         for arg in args:
             if arg is type(None):
                 continue
             try:
-                # Try to validate against each type in Union
                 return validate_and_cast(arg, cfg, path)
             except (TypeError, ValueError, AttributeError, AssertionError):
                 continue
@@ -121,35 +120,36 @@ def validate_and_cast(cls: Any, cfg: Any, path: str = "") -> Any:
 
     # Handle List
     if origin in (list, list):
-        if not isinstance(cfg, list):
+        if not isinstance(cfg, (list, omegaconf.ListConfig)):
             raise TypeError(f"Expected list at {path}, got {type(cfg)}")
         item_type = args[0]
-        return [
+        res = [
             validate_and_cast(item_type, item, f"{path}[{i}]")
             for i, item in enumerate(cfg)
         ]
+        return omegaconf.OmegaConf.create(res)
 
     # Handle Dict
     if origin in (dict, dict):
-        if not isinstance(cfg, dict):
+        if not isinstance(cfg, (dict, omegaconf.DictConfig)):
             raise TypeError(f"Expected dict at {path}, got {type(cfg)}")
         key_type, val_type = args
-        return {
+        res = {
             validate_and_cast(key_type, k, f"{path}.<key>"): validate_and_cast(
                 val_type, v, f"{path}.{k}"
             )
             for k, v in cfg.items()
         }
+        return omegaconf.OmegaConf.create(res)
 
     # Handle Dataclasses
     if is_dataclass(cls):
-        if not isinstance(cfg, dict):
+        if not isinstance(cfg, (dict, omegaconf.DictConfig)):
             raise TypeError(
                 f"Expected dict for dataclass {cls.__name__} at {path}, got {type(cfg)}"
             )
 
         field_hints = get_type_hints(cls)
-        # RegistryConfig inherits from dict, so it's flexible
         is_flexible = isinstance(cls, type) and issubclass(cls, dict)
         is_strict = isinstance(cls, type) and issubclass(cls, RegistryConfigStrict)
 
@@ -183,16 +183,20 @@ def validate_and_cast(cls: Any, cfg: Any, path: str = "") -> Any:
         obj = cls(**init_kwargs)
         if is_flexible:
             obj.update(extra_kwargs)
-        return obj
+        return omegaconf.OmegaConf.structured(obj)
 
     # Handle primitives
     if cls in (int, float, str, bool):
+        value = cfg
+        if omegaconf.OmegaConf.is_config(cfg):
+            value = omegaconf.OmegaConf.to_container(cfg, resolve=True)
+
         try:
-            if cls is bool and isinstance(cfg, str):
-                return cfg.lower() in ("true", "1", "yes")
-            return cls(cfg)
+            if cls is bool and isinstance(value, str):
+                return value.lower() in ("true", "1", "yes")
+            return cls(value)
         except (ValueError, TypeError) as err:
-            raise TypeError(f"Cannot cast {cfg} to {cls} at {path}") from err
+            raise TypeError(f"Cannot cast {value} to {cls} at {path}") from err
 
     return cfg
 
