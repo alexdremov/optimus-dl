@@ -180,6 +180,7 @@ class CrossEntropyCriterion(BaseCriterion):
             )
 
         model_out = model(**batch)
+        input_ids = batch["input_ids"]
         logits = model_out["logits"]
         is_dtensor = isinstance(logits, DTensor)
 
@@ -263,6 +264,8 @@ class CrossEntropyCriterion(BaseCriterion):
         exposed = {}
         if (
             StandardProtocols.LOGITS in requested_protocols
+            or StandardProtocols.LOGITS_TARGETS in requested_protocols
+            or StandardProtocols.LOGITS_MASK in requested_protocols
             or StandardProtocols.CLASSIFICATION in requested_protocols
             or StandardProtocols.LOSS in requested_protocols
         ):
@@ -287,6 +290,45 @@ class CrossEntropyCriterion(BaseCriterion):
                         )
                     exposed[StandardProtocols.LOGITS] = res_logits
 
+                if StandardProtocols.LOGITS_TARGETS in requested_protocols:
+                    targets_exposed = targets
+                    if is_flat:
+                        targets_exposed = self._unflatten_flat(
+                            targets,
+                            batch["cu_seqlens"],
+                            batch["max_seqlen"],
+                            pad_val=self.padding_token_id,
+                        )
+                    exposed[StandardProtocols.LOGITS_TARGETS] = targets_exposed
+
+                if StandardProtocols.INPUT_TOKENS in requested_protocols:
+                    input_tokens = input_ids
+                    if is_flat:
+                        input_tokens = self._unflatten_flat(
+                            input_ids,
+                            batch["cu_seqlens"],
+                            batch["max_seqlen"],
+                            pad_val=self.padding_token_id,
+                        )
+                    exposed[StandardProtocols.INPUT_TOKENS] = input_tokens
+
+                if StandardProtocols.LOGITS_MASK in requested_protocols:
+                    mask = targets != self.padding_token_id
+                    if is_flat:
+                        mask = self._unflatten_flat(
+                            mask,
+                            batch["cu_seqlens"],
+                            batch["max_seqlen"],
+                            pad_val=False,
+                        )
+                    elif current_seq_lens is not None:
+                        mask = mask & (
+                            torch.arange(mask.shape[1], device=mask.device)
+                            < current_seq_lens[:, None]
+                        )
+
+                    exposed[StandardProtocols.LOGITS_MASK] = mask
+
                 if StandardProtocols.CLASSIFICATION in requested_protocols:
                     res_preds = predictions()  # Already gathered by cached_lambda
                     res_targets = targets
@@ -294,12 +336,6 @@ class CrossEntropyCriterion(BaseCriterion):
                     # Base mask for valid tokens
                     res_mask = res_targets != self.padding_token_id
                     # Refine mask for padded batches if current_seq_lens is available
-                    if not is_flat and current_seq_lens is not None:
-                        res_mask = res_mask & (
-                            torch.arange(res_mask.shape[1], device=res_mask.device)
-                            < current_seq_lens[:, None]
-                        )
-
                     if is_flat:
                         cu = batch["cu_seqlens"]
                         ms = batch["max_seqlen"]
@@ -308,6 +344,11 @@ class CrossEntropyCriterion(BaseCriterion):
                             res_targets, cu, ms, pad_val=self.padding_token_id
                         )
                         res_mask = self._unflatten_flat(res_mask, cu, ms, pad_val=False)
+                    elif current_seq_lens is not None:
+                        res_mask = res_mask & (
+                            torch.arange(res_mask.shape[1], device=res_mask.device)
+                            < current_seq_lens[:, None]
+                        )
 
                     exposed[StandardProtocols.CLASSIFICATION] = dict(
                         predictions=res_preds,

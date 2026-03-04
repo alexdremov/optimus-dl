@@ -91,6 +91,12 @@ class TrainRecipeConfig:
             "description": "Frequency of checkpoint savings. As eval_freq by default"
         },
     )
+    last_save_freq: int | None = field(
+        default=None,
+        metadata={
+            "description": "Frequency of saving last checkpoint. As save_freq by default"
+        },
+    )
     output_path: str = field(
         default="${oc.env:PERSISTENT_PATH,'./outputs'}/${.exp_name}",
         metadata={"description": "Directory to dump checkpoints to"},

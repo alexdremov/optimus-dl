@@ -14,6 +14,8 @@ from optimus_dl.modules.metrics.common import (
     AveragedExponentMeter,
     AverageMeter,
     GatherMeter,
+    MaxMeter,
+    MinMeter,
     SummedMeter,
 )
 from optimus_dl.modules.metrics.metrics import (
@@ -321,7 +323,7 @@ class MetricEngine:
                         )
 
     def _get_accumulator_factory(self, acc_type: str) -> Callable[[], BaseMeter]:
-        if acc_type == "average":
+        if acc_type == "average" or acc_type == "mean":
             return lambda: AverageMeter()
         if acc_type == "sum":
             return lambda: SummedMeter()
@@ -329,6 +331,10 @@ class MetricEngine:
             return lambda: GatherMeter()
         if acc_type == "perplexity":
             return lambda: AveragedExponentMeter()
+        if acc_type == "max":
+            return lambda: MaxMeter()
+        if acc_type == "min":
+            return lambda: MinMeter()
         raise ValueError(f"Unknown accumulator type: {acc_type}")
 
     def compute(self, raw_results: dict[str, Any]) -> dict[str, Any]:

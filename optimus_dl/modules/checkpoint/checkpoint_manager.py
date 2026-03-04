@@ -6,7 +6,9 @@ It also manages metadata, learning rate scheduler states, and data loader positi
 """
 
 import logging
+import os
 import pathlib
+import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -210,10 +212,17 @@ class CheckpointManager:
         collective: Collective,
         checkpoint_path: str | Path,
         save_freq: int,
+        last_save_freq: int | None,
         **kwargs: Any,
     ) -> bool:
         """Save checkpoint if iteration matches save_freq."""
-        if save_freq <= 0 or iteration % save_freq != 0:
+        is_save_persistent = save_freq > 0 and iteration % save_freq == 0
+        if last_save_freq is None:
+            is_save_last = is_save_persistent
+        else:
+            is_save_last = last_save_freq > 0 and iteration % last_save_freq == 0
+
+        if not (is_save_persistent or is_save_last):
             return False
 
         try:
@@ -221,6 +230,8 @@ class CheckpointManager:
                 checkpoint_path=checkpoint_path,
                 iteration=iteration,
                 collective=collective,
+                is_save_persistent=is_save_persistent,
+                is_save_last=is_save_last,
                 **kwargs,
             )
             return True
@@ -235,6 +246,8 @@ class CheckpointManager:
         optimizer: Optimizer | None,
         collective: Collective,
         full_config: Any,
+        is_save_persistent: bool,
+        is_save_last: bool,
         lr_scheduler=None,
         iteration: int = 0,
         data_loaders: dict | None = None,
@@ -292,20 +305,98 @@ class CheckpointManager:
             metadata["lr_scheduler"] = lr_scheduler.state_dict()
 
         # Save using distributed checkpoint API
-        checkpoint_id = str(checkpoint_path / f"checkpoint_{iteration:09d}")
-        dcp_save(
-            state_dict=state_dict,
-            storage_writer=FileSystemWriter(checkpoint_id),
-            process_group=collective.process_group,
-        )
+        should_symlink_last = True
+        rank = collective.rank
+        if is_save_persistent:
+            # Symlink to last checkpoint
+            checkpoint_id = checkpoint_path / f"checkpoint_{iteration:09d}"
+            metadata_path = checkpoint_path / f"metadata_{iteration:09d}.pt"
+            per_rank_metadata_path = (
+                checkpoint_path / f"per_rank_metadata_{rank}_{iteration:09d}.pt"
+            )
+        elif is_save_last:
+            # Write to the last location directly
+            should_symlink_last = False
+            checkpoint_id = checkpoint_path / "checkpoint_latest"
+            metadata_path = checkpoint_path / "metadata_latest.pt"
+            per_rank_metadata_path = (
+                checkpoint_path / f"per_rank_metadata_{rank}_latest.pt"
+            )
+        else:
+            raise ValueError(
+                f"Calling save checkpoint with both {is_save_persistent = } and {is_save_last = }"
+            )
 
-        metadata_path = None
+        checkpoint_id_tmp = None
+        metadata_path_tmp = None
+        per_rank_metadata_tmp = None
+
+        if checkpoint_id.exists():
+            checkpoint_id_tmp = Path(str(checkpoint_id) + ".tmp")
+            if checkpoint_id_tmp.exists():
+                if checkpoint_id_tmp.is_dir():
+                    shutil.rmtree(checkpoint_id_tmp)
+                else:
+                    os.remove(checkpoint_id_tmp)
+
+            if checkpoint_id.is_dir():
+                shutil.copytree(checkpoint_id, checkpoint_id_tmp)
+            else:
+                shutil.copy(checkpoint_id, checkpoint_id_tmp)
+
+        if metadata_path.exists():
+            metadata_path_tmp = Path(str(metadata_path) + ".tmp")
+            if metadata_path_tmp.exists():
+                os.remove(metadata_path_tmp)
+            shutil.copy(metadata_path, metadata_path_tmp)
+
+        if per_rank_metadata_path.exists():
+            per_rank_metadata_tmp = Path(str(per_rank_metadata_path) + ".tmp")
+            if per_rank_metadata_tmp.exists():
+                os.remove(per_rank_metadata_tmp)
+            shutil.copy(per_rank_metadata_path, per_rank_metadata_tmp)
+
+        try:
+            dcp_save(
+                state_dict=state_dict,
+                storage_writer=FileSystemWriter(checkpoint_id),
+                process_group=collective.process_group,
+            )
+        except Exception:
+            if checkpoint_id_tmp is not None:
+                logger.warning(f"Checkpoint failed, restoring from {checkpoint_id_tmp}")
+                if checkpoint_id.exists():
+                    if checkpoint_id.is_dir():
+                        shutil.rmtree(checkpoint_id)
+                    else:
+                        os.remove(checkpoint_id)
+                shutil.move(checkpoint_id_tmp, checkpoint_id)
+            raise
+        finally:
+            if checkpoint_id_tmp is not None and checkpoint_id_tmp.exists():
+                if checkpoint_id_tmp.is_dir():
+                    shutil.rmtree(checkpoint_id)
+                else:
+                    os.remove(checkpoint_id_tmp)
+
         if collective.is_master:
             # Save metadata separately
-            metadata_path = checkpoint_path / f"metadata_{iteration:09d}.pt"
-            torch.save(metadata, metadata_path)
-            logger.info(f"Checkpoint saved to {checkpoint_id} / {metadata_path}")
+            try:
+                torch.save(metadata, metadata_path)
+            except Exception:
+                if metadata_path_tmp is not None:
+                    logger.warning(
+                        f"Metadata save failed, restoring from {metadata_path_tmp}"
+                    )
+                    if Path(metadata_path).exists():
+                        os.remove(metadata_path)
+                    shutil.move(metadata_path_tmp, metadata_path)
+                raise
+            finally:
+                if metadata_path_tmp is not None and metadata_path_tmp.exists():
+                    os.remove(metadata_path_tmp)
 
+        logger.info(f"Checkpoint saved to {checkpoint_id} / {metadata_path}")
         assert (
             "data_loaders" not in kwargs_states
         ), "Data loaders should be passed separately"
@@ -325,24 +416,48 @@ class CheckpointManager:
         }
 
         # Save per-rank metadata
-        rank = collective.rank
-        per_rank_metadata_path = (
-            checkpoint_path / f"per_rank_metadata_{rank}_{iteration:09d}.pt"
-        )
-        torch.save(per_rank_metadata, per_rank_metadata_path)
+        try:
+            torch.save(per_rank_metadata, per_rank_metadata_path)
+        except Exception:
+            if per_rank_metadata_tmp is not None:
+                logger.warning(
+                    f"Metadata save failed, restoring from {metadata_path_tmp}"
+                )
+                if Path(metadata_path).exists():
+                    os.remove(metadata_path)
+                shutil.move(per_rank_metadata_tmp, per_rank_metadata_path)
+            raise
+        finally:
+            if per_rank_metadata_tmp is not None and per_rank_metadata_tmp.exists():
+                os.remove(per_rank_metadata_tmp)
 
         # Create symlink to latest
-        if collective.is_master:
+        if should_symlink_last:
             latest_checkpoint = checkpoint_path / "checkpoint_latest"
             latest_metadata = checkpoint_path / "metadata_latest.pt"
+            latest_per_rank_metadata = checkpoint_path / "per_rank_metadata_latest.pt"
 
-            if latest_checkpoint.exists() or latest_checkpoint.is_symlink():
-                latest_checkpoint.unlink()
-            if latest_metadata.exists():
-                latest_metadata.unlink()
+            to_delete = (latest_checkpoint, latest_metadata, latest_per_rank_metadata)
+            if not collective.is_master:
+                to_delete = (latest_per_rank_metadata,)
 
-            latest_checkpoint.symlink_to(f"checkpoint_{iteration:09d}")
-            latest_metadata.symlink_to(f"metadata_{iteration:09d}.pt")
+            for future_link in to_delete:
+                if future_link.is_symlink():
+                    future_link.unlink()
+                elif future_link.exists():
+                    if future_link.is_dir():
+                        shutil.rmtree(future_link)
+                    else:
+                        os.remove(future_link)
+
+            if collective.is_master:
+                latest_checkpoint.symlink_to(checkpoint_id.absolute())
+                latest_metadata.symlink_to(metadata_path.absolute())
+            latest_per_rank_metadata.symlink_to(per_rank_metadata_path.absolute())
+
+            logger.info(
+                f"Symlinked: {latest_checkpoint} -> {checkpoint_id}, {latest_metadata} -> {metadata_path}, {latest_per_rank_metadata} -> {per_rank_metadata_path}"
+            )
 
         logger.info(
             f"Checkpoint saved successfully, {checkpoint_id}, {per_rank_metadata_path}, {metadata_path}"

@@ -20,7 +20,11 @@ from optimus_dl.core.registry import (
 class StandardProtocols:
     """Standardized string constants for common metric data protocols."""
 
+    MODEL_PARAMETERS_COUNT = "model_parameters_count"
     LOGITS = "logits"
+    LOGITS_TARGETS = "logits_targets"
+    LOGITS_MASK = "logits_mask"
+    INPUT_TOKENS = "input_tokens"
     LOSS = "loss"
     GENERATED_TOKENS = "generated_tokens"
     CLASSIFICATION = "classification"

@@ -202,6 +202,7 @@ class RotarySelfAttention(nn.Module):
         # Flex attention block mask
         self._block_mask = None
 
+    @torch.compiler.disable(recursive=False)
     def _varlen_attn_fallback(
         self,
         q: torch.Tensor,
@@ -240,7 +241,7 @@ class RotarySelfAttention(nn.Module):
         )
 
         for i in range(num_docs):
-            start, end = cu_seqlens[i].item(), cu_seqlens[i + 1].item()
+            start, end = cu_seqlens[i], cu_seqlens[i + 1]
             length = end - start
             q_padded[i, :length] = q[0, start:end]
             k_padded[i, :length] = k[0, start:end]

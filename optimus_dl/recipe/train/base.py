@@ -202,6 +202,7 @@ class TrainRecipe(
         kwargs["full_config"] = config_dict
         kwargs["checkpoint_path"] = self.cfg.common.output_path
         kwargs["save_freq"] = self.cfg.common.save_freq
+        kwargs["last_save_freq"] = self.cfg.common.last_save_freq
         kwargs["logger_manager"] = self.logger_manager
         return self.checkpoint_manager.save_checkpoint_if_needed(*args, **kwargs)
 
