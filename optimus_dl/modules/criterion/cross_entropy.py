@@ -268,6 +268,7 @@ class CrossEntropyCriterion(BaseCriterion):
             or StandardProtocols.LOGITS_MASK in requested_protocols
             or StandardProtocols.CLASSIFICATION in requested_protocols
             or StandardProtocols.LOSS in requested_protocols
+            or StandardProtocols.INPUT_TOKENS in requested_protocols
         ):
             with torch.no_grad():
                 is_flat = B == 1 and "cu_seqlens" in batch

@@ -13,7 +13,7 @@ from optimus_dl.modules.metrics.source import (
 
 @dataclass
 class ModelInfoSourceConfig(MetricSourceConfig):
-    """Configuration for CausalLMSource."""
+    """Configuration for ModelInfoSource."""
 
 
 @register_metric_source("model_info", ModelInfoSourceConfig)
