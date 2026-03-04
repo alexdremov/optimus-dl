@@ -392,8 +392,6 @@ class CheckpointManager:
         except Exception:
             restore_from_failure()
             raise
-        finally:
-            clean_all_tmp()
 
         if collective.is_master:
             # Save metadata separately
@@ -402,8 +400,6 @@ class CheckpointManager:
             except Exception:
                 restore_from_failure()
                 raise
-            finally:
-                clean_all_tmp()
 
         logger.info(f"Checkpoint saved to {checkpoint_id} / {metadata_path}")
         assert (
@@ -430,8 +426,6 @@ class CheckpointManager:
         except Exception:
             restore_from_failure()
             raise
-        finally:
-            clean_all_tmp()
 
         # Create symlink to latest
         if should_symlink_last:
@@ -469,6 +463,7 @@ class CheckpointManager:
         logger.info(
             f"{per_rank_metadata.keys() = } {metadata.keys() = } {state_dict.keys() = }"
         )
+        clean_all_tmp()
 
     def load_checkpoint(
         self,
