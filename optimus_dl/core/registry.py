@@ -114,12 +114,10 @@ def validate_and_cast(cls: Any, cfg: Any, path: str = "") -> Any:
                 return validate_and_cast(arg, cfg, path)
             except (TypeError, ValueError, AttributeError, AssertionError):
                 continue
-        if type(None) in args:
-            return None
         raise TypeError(f"Config at {path} does not match any type in {cls}: {cfg}")
 
     # Handle List
-    if origin in (list, list):
+    if origin is list:
         if not isinstance(cfg, (list, omegaconf.ListConfig)):
             raise TypeError(f"Expected list at {path}, got {type(cfg)}")
         item_type = args[0]
@@ -130,7 +128,7 @@ def validate_and_cast(cls: Any, cfg: Any, path: str = "") -> Any:
         return omegaconf.OmegaConf.create(res)
 
     # Handle Dict
-    if origin in (dict, dict):
+    if origin is dict:
         if not isinstance(cfg, (dict, omegaconf.DictConfig)):
             raise TypeError(f"Expected dict at {path}, got {type(cfg)}")
         key_type, val_type = args

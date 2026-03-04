@@ -138,7 +138,10 @@ def test_omegaconf_integration():
 
 def test_integration_with_build():
     """Test that the build function correctly triggers validation and casting."""
-    registry, register, build = make_registry("test_build_validation")
+    import uuid
+
+    registry_name = f"test_build_validation_{uuid.uuid4()}"
+    registry, register, build = make_registry(registry_name)
 
     @register("my_component", SimpleConfig)
     class MyComponent:
