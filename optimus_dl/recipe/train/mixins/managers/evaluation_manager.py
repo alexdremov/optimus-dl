@@ -87,8 +87,16 @@ class Evaluator:
         """
         result = {}
         for k, v in eval_data.items():
-            max_iterations = v.eval_iterations or self.eval_iterations
-            eval_freq = v.eval_freq or self.eval_freq
+            max_iterations = (
+                v.eval_iterations
+                if v.eval_iterations is not None
+                else self.eval_iterations
+            )
+            eval_freq = (
+                v.eval_freq
+                if v.eval_freq is not None
+                else self.eval_freq
+            )
             if eval_freq <= 0 or iteration % eval_freq != 0:
                 continue
 
