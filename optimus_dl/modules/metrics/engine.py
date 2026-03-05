@@ -83,6 +83,10 @@ class MetricEngine:
             if cfg.get("_name") == "source_group":
                 prefix = cfg.get("prefix", f"group_{idx}")
                 sources_dict = cfg.get("sources", {})
+                if "metrics" not in cfg:
+                    raise ValueError(
+                        f"source_group config at index {idx} is missing required 'metrics' key\n\n{cfg = }"
+                    )
                 metrics_list = cfg["metrics"]
             else:
                 prefix = ""
