@@ -10,6 +10,7 @@ from torchdata.nodes.base_node import BaseNode
 from optimus_dl.core.registry import RegistryConfigStrict
 from optimus_dl.modules.data.transforms import (
     BaseTransform,
+    MapperConfig,
     ProcessMapperConfig,
     register_transform,
 )
@@ -32,7 +33,7 @@ class FlatTokensBatcherConfig(RegistryConfigStrict):
     batch_size: int | None = None
     seq_len: int | None = None
     max_tokens: int | None = None
-    worker_cfg: ProcessMapperConfig = field(
+    worker_cfg: MapperConfig = field(
         default_factory=ProcessMapperConfig,
     )
     field: str = "input_ids"

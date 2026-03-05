@@ -81,11 +81,12 @@ class MetricEngine:
         """Parses configurations, builds sources/metrics, and performs handshakes."""
         for idx, cfg in enumerate(configs):
             if cfg.get("_name") == "source_group":
-                prefix = cfg.get("prefix")
-                if len(configs) > 1 and prefix is None:
-                    prefix = f"group_{idx}"
-                else:
-                    prefix = ""
+                prefix = cfg.get("prefix", None)
+                if prefix is None:
+                    if len(configs) > 1:
+                        prefix = f"group_{idx}"
+                    else:
+                        prefix = ""
 
                 sources_dict = cfg.get("sources", {})
                 if "metrics" not in cfg:
