@@ -83,7 +83,7 @@ class MetricEngine:
             if cfg.get("_name") == "source_group":
                 prefix = cfg.get("prefix", f"group_{idx}")
                 sources_dict = cfg.get("sources", {})
-                metrics_list = cfg.get("metrics", [])
+                metrics_list = cfg["metrics"]
             else:
                 prefix = ""
                 sources_dict = {}
