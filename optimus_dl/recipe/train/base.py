@@ -2,10 +2,12 @@ import logging
 
 import torch
 from torch.optim import Optimizer
-from tqdm.auto import trange
 
 from optimus_dl.core.device import setup_device_and_collective
-from optimus_dl.core.log import setup_logging
+from optimus_dl.core.log import (
+    setup_logging,
+    trange,
+)
 from optimus_dl.core.registry import build as build_component
 from optimus_dl.core.seed import set_seed
 from optimus_dl.modules.checkpoint import CheckpointManager

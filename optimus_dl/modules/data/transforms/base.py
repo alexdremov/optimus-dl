@@ -90,5 +90,19 @@ class MapperConfig:
     num_workers: int = 4
     in_order: bool = True
     method: str = "thread"
-    snapshot_frequency: int = 32
+    snapshot_frequency: int = 1
     prebatch: int = 32
+
+
+@dataclass
+class ThreadedMapperConfig(MapperConfig):
+    """Config with thread-based parallelism by default."""
+
+    method: str = "thread"
+
+
+@dataclass
+class ProcessMapperConfig(MapperConfig):
+    """Config with process-based parallelism by default."""
+
+    method: str = "process"

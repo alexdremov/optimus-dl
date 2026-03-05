@@ -35,6 +35,9 @@ class ModelInfoSource(MetricSource):
         **kwargs: Any,
     ) -> dict[str, Any]:
         model_parameters_count = sum(p.numel() for p in model.parameters())
+        model_parameters_bytes = sum(
+            p.numel() * p.element_size() for p in model.parameters()
+        )
         model_trainable_parameters_count = sum(
             p.numel() for p in model.parameters() if p.requires_grad
         )
@@ -42,6 +45,7 @@ class ModelInfoSource(MetricSource):
         return {
             StandardProtocols.MODEL_PARAMETERS_COUNT: dict(
                 parameters_count=model_parameters_count,
+                parameters_bytes=model_parameters_bytes,
                 trainable_parameters_count=model_trainable_parameters_count,
             )
         }

@@ -4,8 +4,8 @@ import torch
 import torch.nn.functional as F
 from lm_eval.api.instance import Instance
 from lm_eval.api.model import LM
-from tqdm.auto import tqdm
 
+from optimus_dl.core.log import tqdm
 from optimus_dl.modules.model.base import BaseModel
 
 logger = logging.getLogger(__name__)

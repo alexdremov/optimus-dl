@@ -3,6 +3,8 @@ from optimus_dl.core.registry import make_registry
 from optimus_dl.modules.data.transforms.base import (
     BaseTransform,
     MapperConfig,
+    ProcessMapperConfig,
+    ThreadedMapperConfig,
 )
 
 _TRANSFORMS_REGISTRY, register_transform, build_transform = make_registry(

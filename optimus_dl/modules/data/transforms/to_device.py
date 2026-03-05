@@ -27,6 +27,8 @@ class ToDeviceTransformConfig(RegistryConfigStrict):
     """
 
     properties: list[str] | None = field(default_factory=lambda: None)
+    pin_memory: bool = True
+    pin_prefetch_factor: int = 2
 
 
 @register_transform("to_device", ToDeviceTransformConfig)
@@ -49,6 +51,8 @@ class ToDeviceTransform(BaseTransform):
         super().__init__(**kwargs)
         self.properties = cfg.properties
         self.device = device
+        self.pin_memory = cfg.pin_memory
+        self.pin_prefetch_factor = cfg.pin_prefetch_factor
 
         assert isinstance(device, torch.device)
 
@@ -70,14 +74,14 @@ class ToDeviceTransform(BaseTransform):
 
     def build(self, source: BaseNode) -> BaseNode:
         """Wrap the source node with pinning, prefetching, and the device map."""
-        if self.device.type == "cuda":
+        if self.device.type == "cuda" and self.pin_memory:
             source = torchdata.nodes.PinMemory(
                 source=source,
                 pin_memory_device="cuda",
             )
             source = torchdata.nodes.Prefetcher(
                 source=source,
-                prefetch_factor=2,
+                prefetch_factor=self.pin_prefetch_factor,
             )
         return torchdata.nodes.Mapper(
             source=source,
