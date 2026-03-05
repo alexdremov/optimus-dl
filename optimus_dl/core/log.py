@@ -13,12 +13,14 @@ def tqdm(*args, **kwargs):
     A wrapper around tqdm.auto.tqdm that handles non-interactive environments.
     In non-TTY environments, it sets default intervals to avoid flooding logs.
     """
+    from tqdm import tqdm as tqdm_std
     from tqdm.auto import tqdm as tqdm_auto
 
-    if not sys.stdout.isatty():
+    if not sys.stdout.isatty() or not sys.stderr.isatty():
         kwargs.setdefault("mininterval", 60.0)
         kwargs.setdefault("maxinterval", 3600.0)
         kwargs.setdefault("ascii", True)
+        return tqdm_std(*args, **kwargs)
 
     return tqdm_auto(*args, **kwargs)
 
@@ -27,12 +29,14 @@ def trange(*args, **kwargs):
     """
     A wrapper around tqdm.auto.trange that handles non-interactive environments.
     """
+    from tqdm import trange as trange_std
     from tqdm.auto import trange as trange_auto
 
-    if not sys.stdout.isatty():
+    if not sys.stdout.isatty() or not sys.stderr.isatty():
         kwargs.setdefault("mininterval", 60.0)
         kwargs.setdefault("maxinterval", 3600.0)
         kwargs.setdefault("ascii", True)
+        return trange_std(*args, **kwargs)
 
     return trange_auto(*args, **kwargs)
 
