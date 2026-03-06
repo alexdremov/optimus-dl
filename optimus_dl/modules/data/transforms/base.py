@@ -36,6 +36,39 @@ class BaseTransform:
 
         ```"""
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if "build" in cls.__dict__:
+            original_build = cls.build
+
+            def wrapped_build(self, *args, **kwargs) -> torchdata.nodes.BaseNode:
+                from optimus_dl.modules.data.profiling import (
+                    ProfilingProxyNode,
+                    get_active_profiler,
+                )
+
+                profiler = get_active_profiler()
+                if not profiler:
+                    return original_build(self, *args, **kwargs)
+
+                if not hasattr(profiler, "_build_stack"):
+                    profiler._build_stack = []
+                stack = profiler._build_stack
+                is_outermost = len(stack) == 0
+
+                stack.append(self)
+                try:
+                    node = original_build(self, *args, **kwargs)
+                finally:
+                    stack.pop()
+
+                proxy = ProfilingProxyNode(node, name=repr(self), profiler=profiler)
+                if is_outermost:
+                    profiler.root_nodes.append(proxy)
+                return proxy
+
+            cls.build = wrapped_build
+
     def __init__(self, *args, **kwargs) -> None:
         """Initialize the transform.
 
@@ -70,6 +103,9 @@ class BaseTransform:
             ```"""
         raise NotImplementedError
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}()"
+
 
 @dataclass
 class MapperConfig:
@@ -90,7 +126,7 @@ class MapperConfig:
     num_workers: int = 4
     in_order: bool = True
     method: str = "thread"
-    snapshot_frequency: int = 1
+    snapshot_frequency: int = 128
     prebatch: int = 32
 
 

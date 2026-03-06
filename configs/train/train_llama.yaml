@@ -68,6 +68,8 @@ data:
         - _name: to_device
 
   train_datasets:
+    report_freq: 100
+    profile: false
     source:
       _name: loop
       inner:

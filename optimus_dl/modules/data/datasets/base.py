@@ -45,6 +45,9 @@ class BaseDataset(torchdata.nodes.BaseNode):
         super().__init__()
         self.cfg = cfg
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}()"
+
     def load_state_dict(self, state_dict: dict) -> None:
         """Load dataset state from checkpoint.
 

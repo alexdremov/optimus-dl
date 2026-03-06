@@ -29,6 +29,7 @@ class ToDeviceTransformConfig(RegistryConfigStrict):
     properties: list[str] | None = field(default_factory=lambda: None)
     pin_memory: bool = True
     pin_prefetch_factor: int = 2
+    pin_snapshot_frequency: int = 128
 
 
 @register_transform("to_device", ToDeviceTransformConfig)
@@ -40,7 +41,7 @@ class ToDeviceTransform(BaseTransform):
 
     - **Memory Pinning**: Automatically uses `PinMemory` to speed up CPU-to-GPU transfers.
     - **Asynchronous Transfers**: Uses `non_blocking=True` for CUDA devices.
-    - **Prefetching**: Adds an additional prefetch layer after pinning.
+    - **Prefetching**: Adds an additional prefetch layer to overlap device transfers with computation.
 
     Args:
         cfg: Device transfer configuration.
@@ -53,6 +54,7 @@ class ToDeviceTransform(BaseTransform):
         self.device = device
         self.pin_memory = cfg.pin_memory
         self.pin_prefetch_factor = cfg.pin_prefetch_factor
+        self.pin_snapshot_frequency = cfg.pin_snapshot_frequency
 
         assert isinstance(device, torch.device)
 
@@ -67,6 +69,7 @@ class ToDeviceTransform(BaseTransform):
             if self.device.type != "cuda":
                 value = torch.as_tensor(sample[property], device=self.device)
             else:
+                # For CUDA, we expect memory to be pinned for maximum async performance
                 value = torch.as_tensor(sample[property])
                 value = value.to(self.device, non_blocking=True)
             sample[property] = value
@@ -75,14 +78,27 @@ class ToDeviceTransform(BaseTransform):
     def build(self, source: BaseNode) -> BaseNode:
         """Wrap the source node with pinning, prefetching, and the device map."""
         if self.device.type == "cuda" and self.pin_memory:
+            # 1. Pin CPU memory
             source = torchdata.nodes.PinMemory(
                 source=source,
                 pin_memory_device="cuda",
+                snapshot_frequency=self.pin_snapshot_frequency,
             )
-            source = torchdata.nodes.Prefetcher(
+            # 2. Map to device (starts async transfer)
+            source = torchdata.nodes.Mapper(
                 source=source,
-                prefetch_factor=self.pin_prefetch_factor,
+                map_fn=self._map,
             )
+            # 3. Prefetch the async transfers so they overlap with training
+            if self.pin_prefetch_factor > 0:
+                source = torchdata.nodes.Prefetcher(
+                    source=source,
+                    prefetch_factor=self.pin_prefetch_factor,
+                    snapshot_frequency=self.pin_snapshot_frequency,
+                )
+            return source
+
+        # For non-CUDA or no-pinning, just apply the map
         return torchdata.nodes.Mapper(
             source=source,
             map_fn=self._map,
