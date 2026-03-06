@@ -46,7 +46,7 @@ class BaseDataset(torchdata.nodes.BaseNode):
         self.cfg = cfg
 
     def __repr__(self):
-        cfg_inline = ", ".join(f"{k}={v}" for k, v in self.cfg.items())
+        cfg_inline = ", ".join(f"{k}={v!r}" for k, v in self.cfg.items())
         return f"{self.__class__.__name__}({cfg_inline})"
 
     def load_state_dict(self, state_dict: dict) -> None:
