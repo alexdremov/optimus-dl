@@ -19,6 +19,7 @@ class PrefetchTransformConfig(RegistryConfigStrict):
     """
 
     prefetch_factor: int = 8
+    snapshot_frequency: int = 128
 
 
 @register_transform("prefetch", PrefetchTransformConfig)
@@ -39,5 +40,7 @@ class PrefetchTransform(BaseTransform):
     def build(self, source: BaseNode) -> BaseNode:
         """Wrap the source node with a Prefetcher."""
         return torchdata.nodes.Prefetcher(
-            source, prefetch_factor=self.cfg.prefetch_factor
+            source,
+            prefetch_factor=self.cfg.prefetch_factor,
+            snapshot_frequency=self.cfg.snapshot_frequency,
         )

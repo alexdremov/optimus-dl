@@ -114,7 +114,7 @@ class MapperConfig:
     num_workers: int = 4
     in_order: bool = True
     method: str = "thread"
-    snapshot_frequency: int = 1
+    snapshot_frequency: int = 128
     prebatch: int = 32
 
 
