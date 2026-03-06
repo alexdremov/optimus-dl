@@ -50,7 +50,10 @@ def build_data_pipeline(
     if cfg.profile and cfg.report_freq > 0:
         profiler = PipelineProfiler(name=profile_name, report_freq=cfg.report_freq)
         pipeline = ProfilingProxyNode(pipeline, name=repr(dataset), profiler=profiler)
-        profiler.root_nodes.append(pipeline)
+        # Only add the dataset as a root if no transforms will be applied.
+        # If transforms exist, the outermost transform will register itself as the root.
+        if cfg.transform is None:
+            profiler.root_nodes.append(pipeline)
 
     with scope_profiler(profiler):
         if cfg.transform is not None:
