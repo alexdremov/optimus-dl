@@ -1,4 +1,3 @@
-from contextlib import nullcontext
 from typing import NamedTuple
 
 import torchdata
@@ -13,7 +12,7 @@ from optimus_dl.modules.data.datasets import (
 from optimus_dl.modules.data.profiling import (
     PipelineProfiler,
     ProfilingProxyNode,
-    _active_profiler,
+    scope_profiler,
 )
 from optimus_dl.modules.data.transforms.composite import (
     build_transform,
@@ -53,9 +52,7 @@ def build_data_pipeline(
         pipeline = ProfilingProxyNode(pipeline, name=repr(dataset), profiler=profiler)
         profiler.root_nodes.append(pipeline)
 
-    profiler_token = _active_profiler.set(profiler)
-    try:
-
+    with scope_profiler(profiler):
         if cfg.transform is not None:
             transform = build_transform(cfg.transform, **kwargs)
             pipeline = transform.build(pipeline)
@@ -63,8 +60,6 @@ def build_data_pipeline(
         # Mark the final node as root for periodic reporting
         if isinstance(pipeline, ProfilingProxyNode):
             pipeline._is_root = True
-    finally:
-        _active_profiler.reset(profiler_token)
 
     assert isinstance(pipeline, torchdata.nodes.BaseNode)
     if hasattr(cfg, "eval_freq") or hasattr(cfg, "eval_iterations"):

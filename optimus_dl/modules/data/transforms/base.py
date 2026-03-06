@@ -47,13 +47,25 @@ class BaseTransform:
                     get_active_profiler,
                 )
 
-                node = original_build(self, *args, **kwargs)
                 profiler = get_active_profiler()
-                if profiler:
-                    proxy = ProfilingProxyNode(node, name=repr(self), profiler=profiler)
+                if not profiler:
+                    return original_build(self, *args, **kwargs)
+
+                if not hasattr(profiler, "_build_stack"):
+                    profiler._build_stack = []
+                stack = profiler._build_stack
+                is_outermost = len(stack) == 0
+
+                stack.append(self)
+                try:
+                    node = original_build(self, *args, **kwargs)
+                finally:
+                    stack.pop()
+
+                proxy = ProfilingProxyNode(node, name=repr(self), profiler=profiler)
+                if is_outermost:
                     profiler.root_nodes.append(proxy)
-                    return proxy
-                return node
+                return proxy
 
             cls.build = wrapped_build
 

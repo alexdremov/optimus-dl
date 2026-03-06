@@ -1,6 +1,8 @@
 import logging
 import sys
+import threading
 import time
+from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import (
     Any,
@@ -30,25 +32,32 @@ class PipelineProfiler:
         self.report_freq = report_freq
         self.stats: dict[str, ProfilingStats] = {}
         self.iteration = 0
-        self.stack: list[float] = []
+        self._local = threading.local()
         self.root_nodes: list[Any] = []
+
+    @property
+    def _stack(self) -> list[float]:
+        if not hasattr(self._local, "stack"):
+            self._local.stack = []
+        return self._local.stack
 
     def record_call(self, stage_name: str, func):
         start = time.perf_counter()
-        self.stack.append(0.0)
+        stack = self._stack
+        stack.append(0.0)
         try:
             return func()
         finally:
             duration = time.perf_counter() - start
-            children_time = self.stack.pop()
+            children_time = stack.pop()
             self_time = max(0.0, duration - children_time)
 
             if stage_name not in self.stats:
                 self.stats[stage_name] = ProfilingStats(stage_name)
             self.stats[stage_name].record(duration, self_time)
 
-            if self.stack:
-                self.stack[-1] += duration
+            if stack:
+                stack[-1] += duration
 
     def step(self):
         self.iteration += 1
@@ -201,6 +210,16 @@ def get_active_profiler() -> PipelineProfiler | None:
     return _active_profiler.get()
 
 
+@contextmanager
+def scope_profiler(profiler: PipelineProfiler | None):
+    """Context manager to set the active profiler for the current context."""
+    token = _active_profiler.set(profiler)
+    try:
+        yield
+    finally:
+        _active_profiler.reset(token)
+
+
 class ProfilingProxyNode(torchdata.nodes.BaseNode):
     def __init__(
         self,
@@ -216,7 +235,7 @@ class ProfilingProxyNode(torchdata.nodes.BaseNode):
         self._is_root = is_root
 
     def next(self):
-        # Required for BaseNode inheritance, but we override __next__ for better timing
+        # Required for BaseNode inheritance; this override wraps next() for profiling
         result = self._profiler.record_call(self._name, self._inner_node.next)
         if self._is_root:
             self._profiler.step()
@@ -240,12 +259,13 @@ class PipelineTracer:
 
     def __init__(self, name: str = "manual", report_freq: int | None = None):
         self.profiler = PipelineProfiler(name, report_freq)
-        self.token = None
+        self._scope = None
 
     def __enter__(self):
-        self.token = _active_profiler.set(self.profiler)
+        self._scope = scope_profiler(self.profiler)
+        self._scope.__enter__()
         return self.profiler
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.token:
-            _active_profiler.reset(self.token)
+        if self._scope:
+            self._scope.__exit__(exc_type, exc_val, exc_tb)
