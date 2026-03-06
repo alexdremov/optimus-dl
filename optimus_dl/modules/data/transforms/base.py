@@ -36,6 +36,27 @@ class BaseTransform:
 
         ```"""
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if "build" in cls.__dict__:
+            original_build = cls.build
+
+            def wrapped_build(self, *args, **kwargs) -> torchdata.nodes.BaseNode:
+                from optimus_dl.modules.data.profiling import (
+                    ProfilingProxyNode,
+                    get_active_profiler,
+                )
+
+                node = original_build(self, *args, **kwargs)
+                profiler = get_active_profiler()
+                if profiler:
+                    proxy = ProfilingProxyNode(node, name=repr(self), profiler=profiler)
+                    profiler.root_nodes.append(proxy)
+                    return proxy
+                return node
+
+            cls.build = wrapped_build
+
     def __init__(self, *args, **kwargs) -> None:
         """Initialize the transform.
 
@@ -69,6 +90,9 @@ class BaseTransform:
 
             ```"""
         raise NotImplementedError
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}()"
 
 
 @dataclass

@@ -19,6 +19,16 @@ class DataPipelineConfig:
         default=None,
         metadata={"description": "Config for the dataset transforms"},
     )
+    profile: bool = field(
+        default=False,
+        metadata={"description": "Whether to profile this data pipeline"},
+    )
+    report_freq: int = field(
+        default=100,
+        metadata={
+            "description": "Frequency of profiling report in number of iterations"
+        },
+    )
 
 
 @dataclass

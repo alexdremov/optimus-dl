@@ -76,7 +76,9 @@ class DataBuilder:
         kwargs["seed"] = self._get_rank_seed(
             self.data_seed, collective.dp_rank, collective.dp_world_size
         )
-        train_data = build_data_pipeline(self.data_config.train_datasets, **kwargs)
+        train_data = build_data_pipeline(
+            self.data_config.train_datasets, profile_name="train", **kwargs
+        )
         if train_data is None:
             return None
         dataloader = torchdata.nodes.Loader(
@@ -109,7 +111,9 @@ class DataBuilder:
         kwargs["seed"] = self._get_rank_seed(
             self.data_seed, collective.dp_rank, collective.dp_world_size
         )
-        eval_data = build_data_pipeline_dict(self.data_config.eval_datasets, **kwargs)
+        eval_data = build_data_pipeline_dict(
+            self.data_config.eval_datasets, profile_name="eval", **kwargs
+        )
         eval_data = {
             k: (
                 EvalDataPipeline(
