@@ -232,7 +232,7 @@ class TestBasicBatcher:
         """Test get_state and reset logic for checkpointing."""
         data = [{"input_ids": [1]}, {"input_ids": [2]}, {"input_ids": [3]}]
         source = MockSourceNode(data)
-        config = BasicBatcherConfig(batch_size=1)
+        config = BasicBatcherConfig(batch_size=1, pad_token_id=0)
         batcher_node = BasicBatcherNode(source, config)
 
         # Consume first item
@@ -251,3 +251,48 @@ class TestBasicBatcher:
         # Next item should be 2 (skipping 1)
         batch = next(new_batcher_node)
         np.testing.assert_array_equal(batch["input_ids"], np.array([[2]]))
+
+    def test_vectorized_metadata_correctness(self):
+        """Specifically verify that optimized vectorized metadata matches expected logic."""
+        # Mix of lengths to test masking
+        data = [
+            {"input_ids": torch.tensor([1, 2, 3])},
+            {"input_ids": torch.tensor([4, 5])},
+            {"input_ids": torch.tensor([6])},
+        ]
+        source = MockSourceNode(data)
+        config = BasicBatcherConfig(batch_size=3, pad_token_id=0)
+        batcher_node = BasicBatcherNode(source, config)
+
+        batch = next(batcher_node)
+
+        # Expected position_ids (padded with 0)
+        # L=3: [0, 1, 2]
+        # L=2: [0, 1, 0]
+        # L=1: [0, 0, 0]
+        expected_pos = torch.tensor([[0, 1, 2], [0, 1, 0], [0, 0, 0]])
+        torch.testing.assert_close(batch["position_ids"], expected_pos)
+
+        # Expected document_ids
+        expected_docs = torch.tensor([[0, 0, 0], [1, 1, 1], [2, 2, 2]])
+        torch.testing.assert_close(batch["document_ids"], expected_docs)
+
+    def test_flatten_vectorized_metadata(self):
+        """Verify vectorized metadata in flatten=True mode."""
+        data = [
+            {"input_ids": torch.tensor([1, 2, 3, 4])},  # Shifted len 3
+            {"input_ids": torch.tensor([5, 6])},  # Shifted len 1
+        ]
+        source = MockSourceNode(data)
+        config = BasicBatcherConfig(batch_size=2, flatten=True)
+        batcher_node = BasicBatcherNode(source, config)
+
+        batch = next(batcher_node)
+
+        # position_ids: [0, 1, 2] + [0] -> [0, 1, 2, 0]
+        expected_pos = torch.tensor([[0, 1, 2, 0]])
+        torch.testing.assert_close(batch["position_ids"], expected_pos)
+
+        # document_ids: [0, 0, 0] + [1] -> [0, 0, 0, 1]
+        expected_docs = torch.tensor([[0, 0, 0, 1]])
+        torch.testing.assert_close(batch["document_ids"], expected_docs)

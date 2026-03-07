@@ -3,7 +3,6 @@ from typing import Any
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from omegaconf import MISSING
 from torchdata.nodes.base_node import BaseNode
 
@@ -74,6 +73,7 @@ class BasicBatcherNode(BaseNode):
     def next(self) -> dict[str, Any]:
         """Yield the next complete batch of padded tokens and their original lengths."""
         batch_items = []
+        lengths = []
         current_tokens = 0
         current_count = 0
 
@@ -95,7 +95,8 @@ class BasicBatcherNode(BaseNode):
                     raise
                 break
 
-            seq_len = len(item[self.cfg.field])
+            seq = item[self.cfg.field]
+            seq_len = len(seq)
 
             # Check if we reached max_tokens limit
             if self.cfg.max_tokens is not None:
@@ -105,46 +106,35 @@ class BasicBatcherNode(BaseNode):
                     if batch_items:
                         self._peeked_item = item
                         break
-                    else:
-                        # Single item exceeds max_tokens, yield it anyway as a single-item batch
-                        # (standard behavior for token-based batchers to avoid deadlocks)
-                        batch_items.append(item)
-                        break
+                    # else: Single item exceeds max_tokens, yield it anyway (standard behavior)
 
             batch_items.append(item)
+            lengths.append(seq_len)
             current_tokens += seq_len
             current_count += 1
 
         # Extract sequence data
         seqs = [item[self.cfg.field] for item in batch_items]
-
-        # Record original lengths before padding
-        lengths = [len(seq) for seq in seqs]
+        batch_size = len(seqs)
 
         if self.cfg.flatten:
             # Pack all sequences into one flat 1D sequence with causal shifting
-            # Each document s produces:
-            # - Input segment: s[:-1]
-            # - Target segment: s[1:]
-
             if isinstance(seqs[0], torch.Tensor):
                 device = seqs[0].device
                 input_ids = torch.cat([s[:-1] for s in seqs])
                 labels = torch.cat([s[1:] for s in seqs])
 
                 # Align metadata with input_ids
+                shifted_lengths = [length - 1 for length in lengths]
                 position_ids = torch.cat(
-                    [torch.arange(len(s) - 1, device=device) for s in seqs]
+                    [torch.arange(length, device=device) for length in shifted_lengths]
                 )
                 document_ids = torch.cat(
                     [
-                        torch.full((len(s) - 1,), i, device=device, dtype=torch.long)
-                        for i, s in enumerate(seqs)
+                        torch.full((length,), i, device=device, dtype=torch.long)
+                        for i, length in enumerate(shifted_lengths)
                     ]
                 )
-
-                # Adjusted lengths for cu_seqlens
-                shifted_lengths = [len(s) - 1 for s in seqs]
 
                 return {
                     self.cfg.field: input_ids[None, :],
@@ -161,12 +151,13 @@ class BasicBatcherNode(BaseNode):
                 input_ids = np.concatenate([s[:-1] for s in seqs])
                 labels = np.concatenate([s[1:] for s in seqs])
 
-                position_ids = np.concatenate([np.arange(len(s) - 1) for s in seqs])
-                document_ids = np.concatenate(
-                    [np.full(len(s) - 1, i) for i, s in enumerate(seqs)]
+                shifted_lengths = [length - 1 for length in lengths]
+                position_ids = np.concatenate(
+                    [np.arange(length) for length in shifted_lengths]
                 )
-
-                shifted_lengths = [len(s) - 1 for s in seqs]
+                document_ids = np.concatenate(
+                    [np.full(length, i) for i, length in enumerate(shifted_lengths)]
+                )
 
                 return {
                     self.cfg.field: input_ids[None, :].astype(np.int64),
@@ -181,45 +172,56 @@ class BasicBatcherNode(BaseNode):
         # Determine the maximum sequence length in this specific batch
         max_len = max(lengths)
 
-        # Pad sequences and generate position_ids/document_ids
-        padded_seqs = []
-        position_ids = []
-        document_ids = []
+        # Optimization: Pre-allocate and fill instead of list-and-stack
+        if isinstance(seqs[0], torch.Tensor):
+            device = seqs[0].device
+            dtype = seqs[0].dtype
 
-        for i, (seq, seq_len) in enumerate(zip(seqs, lengths, strict=True)):
-            pad_len = max_len - seq_len
+            batched_seqs = torch.full(
+                (batch_size, max_len), self.cfg.pad_token_id, device=device, dtype=dtype
+            )
+            for i, (seq, seq_len) in enumerate(zip(seqs, lengths, strict=True)):
+                batched_seqs[i, :seq_len] = seq
 
-            # Pad tokens
-            if isinstance(seq, torch.Tensor):
-                padded_seq = F.pad(seq, (0, pad_len), value=self.cfg.pad_token_id)
-            elif isinstance(seq, np.ndarray):
-                padded_seq = np.pad(
-                    seq, (0, pad_len), constant_values=self.cfg.pad_token_id
-                )
-            else:
-                padded_seq = list(seq) + [self.cfg.pad_token_id] * pad_len
-            padded_seqs.append(padded_seq)
+            batched_lens = torch.tensor(lengths, dtype=torch.long, device=device)
 
-            # Generate position IDs (0..seq_len-1 then padded with 0 for safety with RoPE)
-            pos_ids = np.zeros(max_len, dtype=np.int64)
-            pos_ids[:seq_len] = np.arange(seq_len)
-            position_ids.append(pos_ids)
+            # Vectorized metadata creation
+            # position_ids: [0, 1, 2, ..., max_len-1] expanded to (B, max_len)
+            batched_pos = (
+                torch.arange(max_len, device=device)
+                .unsqueeze(0)
+                .expand(batch_size, -1)
+                .clone()
+            )
+            # Mask out positions beyond seq_len (pad with 0 for safety with RoPE)
+            pos_mask = torch.arange(max_len, device=device).unsqueeze(
+                0
+            ) >= batched_lens.unsqueeze(1)
+            batched_pos[pos_mask] = 0
 
-            # Generate document IDs (each row is its own document)
-            doc_ids = np.full(max_len, i, dtype=np.int64)
-            document_ids.append(doc_ids)
+            # document_ids: [0, 0, ...], [1, 1, ...], [B-1, B-1, ...]
+            batched_docs = (
+                torch.arange(batch_size, device=device).unsqueeze(1).expand(-1, max_len)
+            )
 
-        # Build final batched outputs depending on the input type
-        if isinstance(padded_seqs[0], torch.Tensor):
-            batched_seqs = torch.stack(padded_seqs)
-            batched_lens = torch.tensor(lengths, dtype=torch.long)
-            batched_pos = torch.from_numpy(np.stack(position_ids))
-            batched_docs = torch.from_numpy(np.stack(document_ids))
         else:
-            batched_seqs = np.array(padded_seqs, dtype=np.int64)
+            # Fallback for NumPy/Lists
+            batched_seqs = np.full(
+                (batch_size, max_len), self.cfg.pad_token_id, dtype=np.int64
+            )
+            for i, (seq, seq_len) in enumerate(zip(seqs, lengths, strict=True)):
+                batched_seqs[i, :seq_len] = seq
+
             batched_lens = np.array(lengths, dtype=np.int64)
-            batched_pos = np.stack(position_ids)
-            batched_docs = np.stack(document_ids)
+
+            # Vectorized metadata creation (NumPy)
+            batched_pos = np.tile(np.arange(max_len), (batch_size, 1))
+            pos_mask = np.arange(max_len)[None, :] >= batched_lens[:, None]
+            batched_pos[pos_mask] = 0
+
+            batched_docs = np.arange(batch_size)[:, None] * np.ones(
+                (1, max_len), dtype=np.int64
+            )
 
         return {
             self.cfg.field: batched_seqs,
