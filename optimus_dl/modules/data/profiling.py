@@ -26,14 +26,64 @@ class ProfilingStats:
         self.calls += 1
 
 
+class StageAnalysis:
+    def __init__(self, name: str):
+        self.name = name
+        self.calls = 0
+        self.compute_time = 0.0
+        self.blocked_time = 0.0
+        self.total_time = 0.0
+
+
+def _get_upstream_proxies(node) -> list["ProfilingProxyNode"]:
+    upstreams = []
+    visited = set()
+
+    def traverse(n):
+        if id(n) in visited:
+            return
+        visited.add(id(n))
+
+        if isinstance(n, ProfilingProxyNode):
+            upstreams.append(n)
+            return
+
+        if hasattr(n, "node"):
+            traverse(n.node)
+        elif hasattr(n, "source"):
+            traverse(n.source)
+        elif hasattr(n, "inner_node"):
+            traverse(n.inner_node)
+        elif hasattr(n, "inner_dataset"):
+            traverse(n.inner_dataset)
+        elif hasattr(n, "inner"):
+            traverse(n.inner)
+        elif hasattr(n, "datasets") and isinstance(n.datasets, dict):
+            for d in n.datasets.values():
+                traverse(d)
+        elif hasattr(n, "datasets") and isinstance(n.datasets, list):
+            for d in n.datasets:
+                traverse(d)
+
+    if hasattr(node, "_inner_node"):
+        traverse(node._inner_node)
+
+    return upstreams
+
+
 class PipelineProfiler:
     def __init__(self, name: str, report_freq: int | None = None):
         self.name = name
         self.report_freq = report_freq
-        self.stats: dict[str, ProfilingStats] = {}
+        self.node_stats: dict[int, ProfilingStats] = {}
+        self._stats_lock = threading.Lock()
         self.iteration = 0
         self._local = threading.local()
         self.root_nodes: list[Any] = []
+        self.all_proxies: list[ProfilingProxyNode] = []
+
+    def add_proxy(self, proxy: "ProfilingProxyNode"):
+        self.all_proxies.append(proxy)
 
     @property
     def _stack(self) -> list[float]:
@@ -41,7 +91,7 @@ class PipelineProfiler:
             self._local.stack = []
         return self._local.stack
 
-    def record_call(self, stage_name: str, func):
+    def record_call(self, proxy_node: "ProfilingProxyNode", func):
         start = time.perf_counter()
         stack = self._stack
         stack.append(0.0)
@@ -52,9 +102,11 @@ class PipelineProfiler:
             children_time = stack.pop()
             self_time = max(0.0, duration - children_time)
 
-            if stage_name not in self.stats:
-                self.stats[stage_name] = ProfilingStats(stage_name)
-            self.stats[stage_name].record(duration, self_time)
+            node_id = id(proxy_node)
+            with self._stats_lock:
+                if node_id not in self.node_stats:
+                    self.node_stats[node_id] = ProfilingStats(proxy_node._name)
+                self.node_stats[node_id].record(duration, self_time)
 
             if stack:
                 stack[-1] += duration
@@ -64,43 +116,103 @@ class PipelineProfiler:
         if self.report_freq and self.iteration % self.report_freq == 0:
             self.print_report()
 
+    def _analyze_bottlenecks(self) -> dict[str, StageAnalysis]:
+        analysis_by_stage: dict[str, StageAnalysis] = {}
+
+        for proxy in self.all_proxies:
+            node_stat = self.node_stats.get(id(proxy))
+            if not node_stat or node_stat.calls == 0:
+                continue
+
+            upstreams = _get_upstream_proxies(proxy)
+            upstream_total_time = sum(
+                self.node_stats[id(u)].total_time
+                for u in upstreams
+                if id(u) in self.node_stats
+            )
+
+            children_time_recorded = node_stat.total_time - node_stat.self_time
+
+            # Detect async boundary: upstream did work, but it wasn't recorded in this thread's stack
+            is_async = False
+            if upstreams and upstream_total_time > 0:
+                if children_time_recorded < 0.1 * upstream_total_time:
+                    is_async = True
+
+            if is_async:
+                compute_time = 0.0
+                blocked_time = node_stat.self_time
+            else:
+                compute_time = node_stat.self_time
+                blocked_time = 0.0
+
+            name = proxy._name
+            if name not in analysis_by_stage:
+                analysis_by_stage[name] = StageAnalysis(name)
+
+            analysis_by_stage[name].calls += node_stat.calls
+            analysis_by_stage[name].total_time += node_stat.total_time
+            analysis_by_stage[name].compute_time += compute_time
+            analysis_by_stage[name].blocked_time += blocked_time
+
+        return analysis_by_stage
+
     def print_report(self):
-        if not self.stats:
+        if not self.node_stats:
             logger.info(f"No profiling data collected for pipeline: {self.name}")
             return
 
-        sorted_stats = sorted(
-            self.stats.values(), key=lambda x: x.self_time, reverse=True
+        analysis_by_stage = self._analyze_bottlenecks()
+        sorted_stages = sorted(
+            analysis_by_stage.values(), key=lambda x: x.compute_time, reverse=True
         )
-        total_pipeline_time = sum(s.self_time for s in sorted_stats)
-        if total_pipeline_time == 0:
-            total_pipeline_time = 1e-9
+        total_pipeline_compute = sum(s.compute_time for s in sorted_stages)
+        if total_pipeline_compute == 0:
+            total_pipeline_compute = 1e-9
+
+        bottleneck = (
+            sorted_stages[0]
+            if sorted_stages and sorted_stages[0].compute_time > 0
+            else None
+        )
 
         if sys.stdout.isatty():
             try:
                 from rich.console import Console
+                from rich.panel import Panel
                 from rich.table import Table
 
                 console = Console()
                 table = Table(title=f"Data Pipeline Profiling Report: {self.name}")
                 table.add_column("Stage Name", style="cyan")
                 table.add_column("Calls", justify="right")
-                table.add_column("Self Time (ms)", justify="right")
-                table.add_column("% Total", justify="right", style="magenta")
+                table.add_column("Compute (ms)", justify="right", style="green")
+                table.add_column("Blocked (ms)", justify="right", style="red")
+                table.add_column("% Compute", justify="right", style="magenta")
                 table.add_column("Total Time (ms)", justify="right")
 
-                for stat in sorted_stats:
-                    self_ms = stat.self_time * 1000
+                for stat in sorted_stages:
+                    compute_ms = stat.compute_time * 1000
+                    blocked_ms = stat.blocked_time * 1000
                     total_ms = stat.total_time * 1000
-                    percent = (stat.self_time / total_pipeline_time) * 100
+                    percent = (stat.compute_time / total_pipeline_compute) * 100
                     table.add_row(
                         stat.name,
                         str(stat.calls),
-                        f"{self_ms:.2f}",
+                        f"{compute_ms:.2f}",
+                        f"{blocked_ms:.2f}",
                         f"{percent:.1f}%",
                         f"{total_ms:.2f}",
                     )
+
                 console.print(table)
+                if bottleneck:
+                    console.print(
+                        Panel(
+                            f"[bold red]🔥 Bottleneck Detected:[/bold red] [cyan]{bottleneck.name}[/cyan] is responsible for [bold]{(bottleneck.compute_time / total_pipeline_compute)*100:.1f}%[/bold] of total compute time.",
+                            expand=False,
+                        )
+                    )
                 return
             except ImportError:
                 pass
@@ -109,16 +221,19 @@ class PipelineProfiler:
         result += f"Data Pipeline Profiling Report: {self.name}\n"
         result += "=" * 85 + "\n"
 
-        result += f"{'Stage Name':<30} | {'Calls':<8} | {'Self Time (ms)':<15} | {'% Total':<8} | {'Total Time (ms)':<15}\n"
+        result += f"{'Stage Name':<30} | {'Calls':<8} | {'Compute (ms)':<15} | {'Blocked (ms)':<15} | {'% Compute':<10} | {'Total (ms)':<15}\n"
         result += "-" * 85 + "\n"
-        for stat in sorted_stats:
-            self_ms = stat.self_time * 1000
+        for stat in sorted_stages:
+            compute_ms = stat.compute_time * 1000
+            blocked_ms = stat.blocked_time * 1000
             total_ms = stat.total_time * 1000
-            percent = (stat.self_time / total_pipeline_time) * 100
+            percent = (stat.compute_time / total_pipeline_compute) * 100
 
-            result += f"{stat.name:<30} | {stat.calls:<8} | {self_ms:<15.2f} | {percent:<8.1f} | {total_ms:<15.2f}\n"
+            result += f"{stat.name:<30} | {stat.calls:<8} | {compute_ms:<15.2f} | {blocked_ms:<15.2f} | {percent:<10.1f} | {total_ms:<15.2f}\n"
 
         result += "=" * 85
+        if bottleneck:
+            result += f"\n🔥 Bottleneck Detected: {bottleneck.name} is responsible for {(bottleneck.compute_time / total_pipeline_compute)*100:.1f}% of total compute time."
 
         logger.info("\n" + result.strip())
 
@@ -234,9 +349,12 @@ class ProfilingProxyNode(torchdata.nodes.BaseNode):
         self._profiler = profiler
         self._is_root = is_root
 
+        if profiler:
+            profiler.add_proxy(self)
+
     def next(self):
         # Required for BaseNode inheritance; this override wraps next() for profiling
-        result = self._profiler.record_call(self._name, self._inner_node.next)
+        result = self._profiler.record_call(self, self._inner_node.next)
         if self._is_root:
             self._profiler.step()
         return result

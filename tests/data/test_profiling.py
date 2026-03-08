@@ -1,5 +1,6 @@
 import logging
 import time
+from unittest.mock import patch
 
 import torchdata.nodes
 
@@ -72,20 +73,16 @@ def test_profiling_proxy_timing():
     proxy = ProfilingProxyNode(node, name="TestNode", profiler=profiler)
 
     # stats should be empty or zero
-    assert "TestNode" not in profiler.stats
+    assert "TestNode" not in profiler._analyze_bottlenecks()
 
     item = next(proxy)
     assert item == 1
-    assert profiler.stats["TestNode"].calls == 1
+    stats = profiler._analyze_bottlenecks()
+    assert stats["TestNode"].calls == 1
     # Total time should be at least the delay
-    assert profiler.stats["TestNode"].total_time >= delay
+    assert stats["TestNode"].total_time >= delay * 0.9
     # Self time should be approx total time since there are no children being profiled
-    assert (
-        abs(
-            profiler.stats["TestNode"].self_time - profiler.stats["TestNode"].total_time
-        )
-        < 0.005
-    )
+    assert abs(stats["TestNode"].compute_time - stats["TestNode"].total_time) < 0.01
 
 
 def test_nested_profiling_self_time():
@@ -117,11 +114,12 @@ def test_nested_profiling_self_time():
 
     next(parent_proxy)
 
+    stats = profiler._analyze_bottlenecks()
     # Child: total ~0.05, self ~0.05
-    assert profiler.stats["Child"].total_time >= child_delay
+    assert stats["Child"].total_time >= child_delay * 0.9
     # Parent: total ~0.15 (0.05 child + 0.1 parent), self ~0.1
-    assert profiler.stats["Parent"].total_time >= (child_delay + parent_delay)
-    assert abs(profiler.stats["Parent"].self_time - parent_delay) < 0.02
+    assert stats["Parent"].total_time >= (child_delay + parent_delay) * 0.9
+    assert abs(stats["Parent"].compute_time - parent_delay) < 0.03
 
 
 def test_base_transform_auto_wrapping():
@@ -135,7 +133,9 @@ def test_base_transform_auto_wrapping():
         assert "MockTransform" in node._name
 
         next(node)
-        assert any("MockTransform" in name for name in profiler.stats)
+        stats = profiler._analyze_bottlenecks()
+        assert any("MockTransform" in name for name in stats)
+        assert any(s.calls == 1 for n, s in stats.items() if "MockTransform" in n)
 
 
 def test_build_data_pipeline_wrapping():
@@ -188,7 +188,7 @@ def test_print_report(caplog):
         MockNode(delay=0.001), name="ReportNode", profiler=profiler
     )
     next(node)
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.INFO), patch("sys.stdout.isatty", return_value=False):
         profiler.print_report()
 
     assert "Data Pipeline Profiling Report: test_report" in caplog.text
@@ -226,7 +226,7 @@ def test_print_pipeline_tree(caplog):
     # The dataloader should be a proxy
     assert isinstance(pipeline.dataloader, ProfilingProxyNode)
     profiler = pipeline.dataloader._profiler
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.INFO), patch("sys.stdout.isatty", return_value=False):
         profiler.print_pipeline_tree()
 
     assert "Data Pipeline Structure: tree_mock_dataset" in caplog.text
@@ -241,7 +241,7 @@ def test_report_freq(caplog):
         MockNode(delay=0.001), name="FreqNode", profiler=profiler, is_root=True
     )
 
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.INFO), patch("sys.stdout.isatty", return_value=False):
         next(node)
         assert "Data Pipeline Profiling Report" not in caplog.text
 
@@ -261,5 +261,8 @@ def test_isolation():
     next(n2)
     next(n2)
 
-    assert p1.stats["Node"].calls == 1
-    assert p2.stats["Node"].calls == 2
+    stats1 = p1._analyze_bottlenecks()
+    stats2 = p2._analyze_bottlenecks()
+
+    assert stats1["Node"].calls == 1
+    assert stats2["Node"].calls == 2

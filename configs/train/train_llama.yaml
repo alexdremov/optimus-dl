@@ -68,7 +68,7 @@ data:
         - _name: to_device
 
   train_datasets:
-    report_freq: 100
+    report_freq: 500
     profile: false
     source:
       _name: loop

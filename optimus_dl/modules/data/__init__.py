@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from typing import NamedTuple
 
 import torchdata
@@ -39,7 +40,9 @@ class EvalDataPipeline(NamedTuple):
 
 
 def build_data_pipeline(
-    cfg: DataPipelineConfig | EvalDataPipelineConfig, profile_name: str, **kwargs
+    cfg: DataPipelineConfig | EvalDataPipelineConfig,
+    profile_name: str | None = None,
+    **kwargs,
 ) -> DataPipeline | EvalDataPipeline | None:
     if cfg is None:
         return None
@@ -47,8 +50,10 @@ def build_data_pipeline(
     pipeline = dataset
 
     profiler = None
-    if cfg.profile and cfg.report_freq > 0:
-        profiler = PipelineProfiler(name=profile_name, report_freq=cfg.report_freq)
+    if cfg.profile:
+        profiler = PipelineProfiler(
+            name=profile_name or repr(dataset), report_freq=cfg.report_freq
+        )
         pipeline = ProfilingProxyNode(pipeline, name=repr(dataset), profiler=profiler)
         # Only add the dataset as a root if no transforms will be applied.
         # If transforms exist, the outermost transform will register itself as the root.

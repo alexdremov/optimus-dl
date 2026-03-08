@@ -16,6 +16,8 @@ class PrefetchTransformConfig(RegistryConfigStrict):
 
     Attributes:
         prefetch_factor: Number of items to fetch ahead of request.
+        snapshot_frequency: Frequency of iterator state snapshots for checkpointing.
+            Higher values reduce overhead but may increase recovery time.
     """
 
     prefetch_factor: int = 8
