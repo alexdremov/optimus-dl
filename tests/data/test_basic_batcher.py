@@ -284,7 +284,7 @@ class TestBasicBatcher:
             {"input_ids": torch.tensor([5, 6])},  # Shifted len 1
         ]
         source = MockSourceNode(data)
-        config = BasicBatcherConfig(batch_size=2, flatten=True)
+        config = BasicBatcherConfig(batch_size=2, flatten=True, pad_token_id=0)
         batcher_node = BasicBatcherNode(source, config)
 
         batch = next(batcher_node)

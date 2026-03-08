@@ -76,6 +76,7 @@ class PipelineProfiler:
         self.name = name
         self.report_freq = report_freq
         self.node_stats: dict[int, ProfilingStats] = {}
+        self._stats_lock = threading.Lock()
         self.iteration = 0
         self._local = threading.local()
         self.root_nodes: list[Any] = []
@@ -102,9 +103,10 @@ class PipelineProfiler:
             self_time = max(0.0, duration - children_time)
 
             node_id = id(proxy_node)
-            if node_id not in self.node_stats:
-                self.node_stats[node_id] = ProfilingStats(proxy_node._name)
-            self.node_stats[node_id].record(duration, self_time)
+            with self._stats_lock:
+                if node_id not in self.node_stats:
+                    self.node_stats[node_id] = ProfilingStats(proxy_node._name)
+                self.node_stats[node_id].record(duration, self_time)
 
             if stack:
                 stack[-1] += duration

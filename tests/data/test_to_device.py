@@ -19,10 +19,8 @@ class TestToDeviceTransform:
         transform = ToDeviceTransform(cfg, device)
 
         sample = {"input_ids": torch.tensor([1, 2, 3]), "other": "string"}
-        # For CPU, it should handle tensors and skip others if properties is None (well, as_tensor will fail on string if we are not careful)
-        # Wait, the current implementation iterates over ALL keys if properties is None.
-        # This might fail on strings. Let's check.
 
+        # When properties is set, only the listed tensor fields should be moved to the device and other fields left unchanged.
         transform.properties = ["input_ids"]
         result = transform._map(sample)
         assert result["input_ids"].device == device

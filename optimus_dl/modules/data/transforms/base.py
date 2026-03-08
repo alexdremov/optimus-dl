@@ -39,8 +39,11 @@ class BaseTransform:
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         if "build" in cls.__dict__:
+            import functools
+
             original_build = cls.build
 
+            @functools.wraps(original_build)
             def wrapped_build(self, *args, **kwargs) -> torchdata.nodes.BaseNode:
                 from optimus_dl.modules.data.profiling import (
                     ProfilingProxyNode,

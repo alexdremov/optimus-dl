@@ -4,6 +4,7 @@ from dataclasses import (
     field,
 )
 
+import numpy as np
 import torch
 import torchdata.nodes
 from torchdata.nodes.base_node import BaseNode
@@ -66,11 +67,24 @@ class ToDeviceTransform(BaseTransform):
             properties = self.properties
 
         for property in properties:
+            val = sample[property]
+            # Skip non-numeric values (like strings) if we are in "all values" mode
+            if self.properties is None:
+                if not (
+                    torch.is_tensor(val)
+                    or isinstance(val, (np.ndarray, int, float, list))
+                ):
+                    continue
+                # If it's a list, check if it's numeric (at least the first element)
+                if isinstance(val, list) and len(val) > 0:
+                    if not isinstance(val[0], (int, float, np.number)):
+                        continue
+
             if self.device.type != "cuda":
-                value = torch.as_tensor(sample[property], device=self.device)
+                value = torch.as_tensor(val, device=self.device)
             else:
                 # For CUDA, we expect memory to be pinned for maximum async performance
-                value = torch.as_tensor(sample[property])
+                value = torch.as_tensor(val)
                 value = value.to(self.device, non_blocking=True)
             sample[property] = value
         return sample
