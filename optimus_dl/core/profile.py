@@ -26,8 +26,6 @@ except ImportError:
     dcgm_agent = None
     dcgm_fields = None
 
-    logger.warning("DCGM not installed. GPU SM statistics will not be available.")
-
 T = TypeVar("T")
 
 
