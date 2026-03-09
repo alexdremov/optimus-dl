@@ -22,7 +22,7 @@ class SkipInterleavedTransformConfig(RegistryConfigStrict):
     skip_count: int = 1
 
 
-class SkipInterleavedTransformNonde(BaseNode):
+class SkipInterleavedTransformNode(BaseNode):
     def __init__(
         self, node: BaseNode, cfg: SkipInterleavedTransformConfig, *args, **kwargs
     ):
@@ -62,13 +62,14 @@ class SkipInterleavedTransformNonde(BaseNode):
 
 @register_transform("skip_interleaved", SkipInterleavedTransformConfig)
 class SkipInterleavedTransform(BaseTransform):
-    """Transform that pre-fetches data items in a background thread.
+    """Transform that deterministically skips a fixed number of data items.
 
-    This helps hide data loading and transformation latency by keeping a buffer
-    of items ready for the training loop.
+    This is useful for downsampling a dataset or creating interleaved subsets.
+    It guarantees that the first item is always produced, followed by skipping
+    exactly `skip_count` items before producing the next one.
 
     Args:
-        cfg: Prefetching configuration.
+        cfg: Configuration containing the `skip_count` parameter.
     """
 
     def __init__(self, cfg: SkipInterleavedTransformConfig, *args, **kwargs):
@@ -76,8 +77,8 @@ class SkipInterleavedTransform(BaseTransform):
         self.cfg = cfg
 
     def build(self, source: BaseNode) -> BaseNode:
-        """Wrap the source node with a Prefetcher."""
-        return SkipInterleavedTransformNonde(source, self.cfg)
+        """Wrap the source node with a SkipInterleavedTransformNode."""
+        return SkipInterleavedTransformNode(source, self.cfg)
 
 
 @dataclass
