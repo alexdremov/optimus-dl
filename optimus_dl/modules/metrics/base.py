@@ -651,11 +651,15 @@ def log_meter(
         force_log: If True, the metric will be logged even if the current
                    `MeterGroup`'s `should_log()` method returns False. This is
                    useful for critical events or debugging that need to be logged
-                   regardless of frequency settings. Defaults to False.
+                   regardless of frequency settings. Defaults to False. This is set to
+                   True if reset=False is passed as when data is accumulated across resets,
+                   all logs should be forced.
         **kwargs: Arbitrary keyword arguments that will be passed directly
                   to the `log()` method of the `BaseMeter` instance. These
                   typically represent the actual data points (e.g., `value`, `weight`).
     """
+    force_log |= not reset
+
     for group_name in _active_meter_groups:
         group = _meter_groups[group_name]
 
