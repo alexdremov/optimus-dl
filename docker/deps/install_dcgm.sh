@@ -27,3 +27,9 @@ apt-get update
 apt-get install -y --no-install-recommends datacenter-gpu-manager
 
 rm -rf /var/lib/apt/lists/*
+
+SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
+
+# Create a .pth file pointing to the DCGM bindings
+echo "/usr/local/dcgm/bindings/python3" > "$SITE_PACKAGES/dcgm.pth"
+echo "Added DCGM bindings to site-packages via dcgm.pth"
