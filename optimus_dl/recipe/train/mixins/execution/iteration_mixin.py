@@ -1,5 +1,7 @@
 """Training iteration mixin for orchestrating complete training iterations."""
 
+import atexit
+import functools
 import logging
 from collections.abc import Iterator
 from contextlib import nullcontext
@@ -15,8 +17,11 @@ from torch.optim import Optimizer
 
 from optimus_dl.core.log import warn_once
 from optimus_dl.core.profile import (
+    get_sm_metrics,
     measured_lambda,
     measured_next,
+    setup_dcgm,
+    teardown_dcgm,
 )
 from optimus_dl.modules.criterion import BaseCriterion
 from optimus_dl.modules.metrics import (
@@ -61,11 +66,30 @@ class TrainingIterationMixin:
         self.optimization_config = optimization_config
         self.log_freq = log_freq
 
+        self.dcgm_handle = None
+        if torch.cuda.is_available():
+            self.dcgm_device = torch.cuda.current_device()
+            self.dcgm_handle = setup_dcgm(self.dcgm_device)
+            atexit.register(functools.partial(teardown_dcgm, handle=self.dcgm_handle))
+
     def log_memory_usage(self):
         """Log GPU memory usage statistics."""
         if torch.cuda.is_available():
             log_summed("gpu_gb_allocated", torch.cuda.memory_allocated() / (1024**3))
             log_summed("gpu_gb_used", torch.cuda.max_memory_allocated() / (1024**3))
+
+    def log_sm_utilization(self):
+        """Log GPU SM utilization statistics."""
+        if self.dcgm_handle is not None:
+            sm_utilization = get_sm_metrics(
+                handle=self.dcgm_handle, gpu_id=self.dcgm_device
+            )
+            if sm_utilization is None:
+                warn_once(logger, "Failed to get SM utilization metrics.")
+                return
+
+            for k, v in sm_utilization.items():
+                log_averaged(k, v, 1, round=2)
 
     def execute_forward_pass(
         self,
@@ -301,6 +325,7 @@ class TrainingIterationMixin:
                 optimizer,
             )
             self.log_memory_usage()
+            self.log_sm_utilization()
             optimizer.zero_grad()
 
             if lr_scheduler is not None:

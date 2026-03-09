@@ -39,7 +39,11 @@ RUN --mount=type=cache,target=/root/.cache/uv cd /setup/optimus_dl/ && \
         --no-build-isolation \
     && chmod -R 777 /usr/local/lib/python3.12/dist-packages && rm -rf /setup
 
+COPY docker/deps/install_dcgm.sh /setup/install_dcgm.sh
+RUN chmod +x /setup/install_dcgm.sh && /setup/install_dcgm.sh
+
 # Basic env
+ENV PYTHONPATH=/usr/local/dcgm/bindings/python3${PYTHONPATH:+:${PYTHONPATH}}
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="usr/local/cuda/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
