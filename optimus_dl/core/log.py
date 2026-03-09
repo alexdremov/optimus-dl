@@ -20,6 +20,7 @@ def tqdm(*args, **kwargs):
         kwargs.setdefault("mininterval", 60.0)
         kwargs.setdefault("maxinterval", 3600.0)
         kwargs.setdefault("ascii", True)
+        kwargs.setdefault("desc", "\n")
         return tqdm_std(*args, **kwargs)
 
     return tqdm_auto(*args, **kwargs)
@@ -36,6 +37,7 @@ def trange(*args, **kwargs):
         kwargs.setdefault("mininterval", 60.0)
         kwargs.setdefault("maxinterval", 3600.0)
         kwargs.setdefault("ascii", True)
+        kwargs.setdefault("desc", "\n")
         return trange_std(*args, **kwargs)
 
     return trange_auto(*args, **kwargs)
