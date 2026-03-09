@@ -43,7 +43,7 @@ COPY docker/deps/install_dcgm.sh /setup/install_dcgm.sh
 RUN chmod +x /setup/install_dcgm.sh && /setup/install_dcgm.sh
 
 # Basic env
-ENV PYTHONPATH=/usr/local/dcgm/bindings/python3:${PYTHONPATH}
+ENV PYTHONPATH=/usr/local/dcgm/bindings/python3${PYTHONPATH:+:${PYTHONPATH}}
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="usr/local/cuda/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"

@@ -85,7 +85,7 @@ class TrainingIterationMixin:
                 handle=self.dcgm_handle, gpu_id=self.dcgm_device
             )
             if sm_utilization is None:
-                logger.warning("Failed to get SM utilization metrics.")
+                warn_once(logger, "Failed to get SM utilization metrics.")
                 return
 
             for k, v in sm_utilization.items():

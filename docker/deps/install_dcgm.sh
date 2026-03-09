@@ -15,7 +15,7 @@ else
 fi
 
 # 2. Install prerequisites
-apt-get update && apt-get install -y wget software-properties-common
+apt-get update && apt-get install -y --no-install-recommends wget software-properties-common
 
 # 3. Add the NVIDIA CUDA network repository for the detected architecture
 # (Example is for Ubuntu 22.04. Change 'ubuntu2204' to 'ubuntu2004' if needed)
@@ -24,4 +24,6 @@ dpkg -i cuda-keyring_1.0-1_all.deb
 apt-get update
 
 # 4. Install DCGM
-apt-get install -y datacenter-gpu-manager
+apt-get install -y --no-install-recommends datacenter-gpu-manager
+
+rm -rf /var/lib/apt/lists/*
