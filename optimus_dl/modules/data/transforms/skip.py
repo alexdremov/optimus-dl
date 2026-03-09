@@ -143,7 +143,7 @@ class SkipRandomTransform(BaseTransform):
     unless exactly replicated with the same random seed.
 
     Args:
-        cfg: Configuration with the skip probability and seed.
+        cfg: Configuration with the skip probability.
     """
 
     def __init__(self, cfg: SkipRandomTransformConfig, seed: int, *args, **kwargs):
