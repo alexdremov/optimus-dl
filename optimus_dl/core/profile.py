@@ -15,6 +15,8 @@ from typing import TypeVar
 
 import torch
 
+from optimus_dl.core.log import warn_once
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -142,31 +144,35 @@ def setup_dcgm(gpu_id=0):
     """Initializes DCGM, starts the engine, and watches the SM metrics."""
     if dcgm_structs is None:
         return None
+    try:
 
-    # 1. Load the underlying C-library
-    dcgm_structs._dcgmInit()
+        # 1. Load the underlying C-library
+        dcgm_structs._dcgmInit()
 
-    # 2. Initialize the agent and start the embedded engine
-    dcgm_agent.dcgmInit()
-    handle = dcgm_agent.dcgmStartEmbedded(dcgm_structs.DCGM_OPERATION_MODE_AUTO)
+        # 2. Initialize the agent and start the embedded engine
+        dcgm_agent.dcgmInit()
+        handle = dcgm_agent.dcgmStartEmbedded(dcgm_structs.DCGM_OPERATION_MODE_AUTO)
 
-    # 3. Create a tracking group for our specific GPU
-    group_id = dcgm_agent.dcgmGroupCreate(
-        handle, dcgm_structs.DCGM_GROUP_EMPTY, "sm_group"
-    )
-    dcgm_agent.dcgmGroupAddDevice(handle, group_id, gpu_id)
+        # 3. Create a tracking group for our specific GPU
+        group_id = dcgm_agent.dcgmGroupCreate(
+            handle, dcgm_structs.DCGM_GROUP_EMPTY, "sm_group"
+        )
+        dcgm_agent.dcgmGroupAddDevice(handle, group_id, gpu_id)
 
-    # 4. Create a field group with our specific metrics
-    field_ids = [
-        dcgm_fields.DCGM_FI_PROF_SM_ACTIVE,
-        dcgm_fields.DCGM_FI_PROF_SM_OCCUPANCY,
-    ]
-    field_group_id = dcgm_agent.dcgmFieldGroupCreate(handle, field_ids, "sm_fields")
+        # 4. Create a field group with our specific metrics
+        field_ids = [
+            dcgm_fields.DCGM_FI_PROF_SM_ACTIVE,
+            dcgm_fields.DCGM_FI_PROF_SM_OCCUPANCY,
+        ]
+        field_group_id = dcgm_agent.dcgmFieldGroupCreate(handle, field_ids, "sm_fields")
 
-    # 5. Start watching (Update every 1 second = 1,000,000 microseconds)
-    dcgm_agent.dcgmWatchFields(handle, group_id, field_group_id, 1000000, 3600.0, 0)
+        # 5. Start watching (Update every 1 second = 1,000,000 microseconds)
+        dcgm_agent.dcgmWatchFields(handle, group_id, field_group_id, 1000000, 3600.0, 0)
 
-    return handle
+        return handle
+    except Exception as e:
+        warn_once(logger, f"Unnable to initialize DCGM: {e}")
+        return None
 
 
 def get_sm_metrics(handle, gpu_id=0):
@@ -201,7 +207,7 @@ def get_sm_metrics(handle, gpu_id=0):
         }
     except Exception as e:
         # Actually print the error so it doesn't fail silently
-        logger.warning(f"DEBUG ERROR: {e}")
+        logger.warning(f"Unnable to get SM metrics: {e}")
         return None
 
 
@@ -209,5 +215,9 @@ def teardown_dcgm(handle):
     """Cleans up the DCGM engine."""
     if handle is None or dcgm_agent is None:
         return None
-    dcgm_agent.dcgmStopEmbedded(handle)
-    dcgm_agent.dcgmShutdown()
+    try:
+        dcgm_agent.dcgmStopEmbedded(handle)
+        dcgm_agent.dcgmShutdown()
+    except Exception as e:
+        warn_once(logger, f"Unnable to deinitialize DCGM: {e}")
+        return None
