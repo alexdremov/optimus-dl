@@ -171,7 +171,7 @@ def setup_dcgm(gpu_id=0):
 
         return handle
     except Exception as e:
-        warn_once(logger, f"Unnable to initialize DCGM: {e}")
+        warn_once(logger, f"Unable to initialize DCGM: {e}")
         return None
 
 
@@ -207,7 +207,7 @@ def get_sm_metrics(handle, gpu_id=0):
         }
     except Exception as e:
         # Actually print the error so it doesn't fail silently
-        logger.warning(f"Unnable to get SM metrics: {e}")
+        warn_once(logger, f"Unable to get SM metrics: {e}")
         return None
 
 
@@ -219,5 +219,5 @@ def teardown_dcgm(handle):
         dcgm_agent.dcgmStopEmbedded(handle)
         dcgm_agent.dcgmShutdown()
     except Exception as e:
-        warn_once(logger, f"Unnable to deinitialize DCGM: {e}")
+        warn_once(logger, f"Unable to deinitialize DCGM: {e}")
         return None
