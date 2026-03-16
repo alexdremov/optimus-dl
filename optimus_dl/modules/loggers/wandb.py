@@ -122,6 +122,7 @@ class WandbLogger(BaseMetricsLogger):
                 save_code=self.cfg.save_code,
                 config=config,
                 id=self.run_id,
+                resume="allow",
             )
             self.logs_parent_path = logs_parent_path
             logger.info(f"WandB run initialized: {self.run.name} ({self.run.id})")
