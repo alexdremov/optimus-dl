@@ -105,6 +105,7 @@ class JsonlLogger(BaseMetricsLogger):
         experiment_name: str,
         config: dict[str, Any],
         logs_parent_path: str | None = None,
+        start_iteration: int | None = None,
     ) -> None:
         """Setup JSONL logger and export the experiment configuration.
 

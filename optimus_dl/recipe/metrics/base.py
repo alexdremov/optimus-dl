@@ -132,7 +132,8 @@ class MetricsRecipe:
                 full_config = asdict(self.cfg)
 
             self.logger_manager.setup_loggers(
-                experiment_name=self.cfg.common.name, full_config=full_config
+                experiment_name=self.cfg.common.name,
+                full_config=full_config,
             )
 
         all_results = {}

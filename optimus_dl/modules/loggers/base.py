@@ -47,6 +47,7 @@ class BaseMetricsLogger(ABC):
         experiment_name: str,
         config: dict[str, Any],
         logs_parent_path: str | None = None,
+        start_iteration: int | None = None,
     ) -> None:
         """Setup the logger with experiment metadata and config.
 
@@ -55,6 +56,8 @@ class BaseMetricsLogger(ABC):
         Args:
             experiment_name: A unique name for the experiment.
             config: The full training configuration (as a dictionary).
+            logs_parent_path: Directory where stdout/stderr logs are written
+            start_iteration: The starting iteration number for logging.
         """
         pass
 

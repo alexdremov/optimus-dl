@@ -82,6 +82,7 @@ class LoggerManager:
         experiment_name: str,
         full_config: dict,
         logs_parent_path: str | None = None,
+        start_iteration: int | None = None,
     ):
         """Initialize all loggers with experiment context.
 
@@ -91,6 +92,7 @@ class LoggerManager:
             logs_parent_path: Optional filesystem path as a string under which
                 logger-specific log files or run directories are created.
                 Use this to log stdout / stderr if applicable
+            start_iteration: Starting iteration number for the logging.
         """
         for logger_instance in self.loggers or []:
             try:
@@ -98,6 +100,7 @@ class LoggerManager:
                     experiment_name=experiment_name,
                     config=full_config,
                     logs_parent_path=logs_parent_path,
+                    start_iteration=start_iteration,
                 )
             except Exception as e:
                 logger.error(
