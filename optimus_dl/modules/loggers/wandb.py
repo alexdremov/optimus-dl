@@ -93,7 +93,10 @@ class WandbLogger(BaseMetricsLogger):
         self.logs_parent_path = None
 
     def setup(
-        self, experiment_name: str, config: dict[str, Any], logs_parent_path: str | None
+        self,
+        experiment_name: str,
+        config: dict[str, Any],
+        logs_parent_path: str | None = None,
     ) -> None:
         """Initialize a WandB run with experiment metadata and configuration.
 

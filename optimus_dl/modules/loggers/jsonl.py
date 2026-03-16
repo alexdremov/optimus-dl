@@ -101,7 +101,10 @@ class JsonlLogger(BaseMetricsLogger):
             logger.info(f"JSONL logger will write to: {self.output_dir}")
 
     def setup(
-        self, experiment_name: str, config: dict[str, Any], logs_parent_path: str | None
+        self,
+        experiment_name: str,
+        config: dict[str, Any],
+        logs_parent_path: str | None = None,
     ) -> None:
         """Setup JSONL logger and export the experiment configuration.
 

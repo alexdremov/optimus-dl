@@ -88,6 +88,9 @@ class LoggerManager:
         Args:
             experiment_name: Name of the experiment.
             full_config: Complete training configuration dictionary.
+            logs_parent_path: Optional filesystem path as a string under which
+                logger-specific log files or run directories are created.
+                Use this to log stdout / stderr if applicable
         """
         for logger_instance in self.loggers or []:
             try:

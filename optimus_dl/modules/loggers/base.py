@@ -43,7 +43,10 @@ class BaseMetricsLogger(ABC):
 
     @abstractmethod
     def setup(
-        self, experiment_name: str, config: dict[str, Any], logs_parent_path: str | None
+        self,
+        experiment_name: str,
+        config: dict[str, Any],
+        logs_parent_path: str | None = None,
     ) -> None:
         """Setup the logger with experiment metadata and config.
 
