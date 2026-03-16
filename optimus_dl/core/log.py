@@ -45,18 +45,21 @@ def trange(*args, **kwargs):
 
 def setup_logging(
     level: int | str = logging.INFO,
-    log_file: str | Path | None = None,
+    log_path: str | Path | None = None,
     use_rich: bool = True,
     use_colors: bool = True,
     format_string: str | None = None,
     date_format: str = "%Y-%m-%d %H:%M:%S",
+    clear_existing=True,
 ) -> logging.Logger:
     """
-    Set up beautiful Python logging with colors and optional file output.
+    Set up beautiful Python logging with colors to console or file output.
+    If file is specified, will be logging to it. Otherwise, will log to the console.
+    Can be called multiple times.
 
     Args:
         level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        log_file: Optional path to log file for persistent logging
+        log_path: Path to log for persistent logging
         use_rich: Use Rich library for enhanced console output
         use_colors: Enable colored output (ignored if use_rich=True)
         format_string: Custom format string (uses default if None)
@@ -67,7 +70,7 @@ def setup_logging(
 
     Example:
         ```python
-        logger = setup_logging(level="DEBUG", log_file="app.log")
+        logger = setup_logging(level="DEBUG")
         logger.info("Application started")
         logger.error("Something went wrong!")
         ```
@@ -83,82 +86,80 @@ def setup_logging(
 
     # Clear any existing handlers
     root_logger = logging.getLogger()
-    root_logger.handlers.clear()
+    if clear_existing:
+        root_logger.handlers.clear()
 
-    # Set the logging level
-    if isinstance(level, str):
-        level = getattr(logging, level.upper())
-    root_logger.setLevel(level)
+    # Will be further filtered by specific handlers
+    root_logger.setLevel(logging.DEBUG)
 
     handlers = []
 
-    is_interactive = sys.stdout.isatty()
-
-    # Override use_rich if we are not in a real terminal
-    if not is_interactive:
-        use_rich = False
-
     # Console handler setup
-    if use_rich:
-        # Rich handler for beautiful console output
-        console = Console()
-        rich_handler = RichHandler(
-            console=console,
-            show_time=True,
-            show_level=True,
-            show_path=True,
-            markup=True,
-            rich_tracebacks=True,
-        )
-        rich_handler.setLevel(level)
-        handlers.append(rich_handler)
+    if not log_path:
+        is_interactive = sys.stdout.isatty()
 
-    else:
-        # Standard console handler with optional colors
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(level)
-
-        if use_colors:
-            # Colorlog for colored output
-            color_formatter = colorlog.ColoredFormatter(
-                format_string
-                or "%(log_color)s%(asctime)s | %(name)s | %(levelname)-8s | %(message)s",
-                datefmt=date_format,
-                log_colors={
-                    "DEBUG": "cyan",
-                    # "INFO": "",  # No color for INFO
-                    "WARNING": "yellow",
-                    "ERROR": "red",
-                    "CRITICAL": "red,bg_white",
-                },
+        # Override use_rich if we are not in a real terminal
+        if not is_interactive:
+            use_rich = False
+        if use_rich:
+            # Rich handler for beautiful console output
+            console = Console()
+            rich_handler = RichHandler(
+                console=console,
+                show_time=True,
+                show_level=True,
+                show_path=True,
+                markup=True,
+                rich_tracebacks=True,
             )
-            console_handler.setFormatter(color_formatter)
+            rich_handler.setLevel(level)
+            handlers.append(rich_handler)
+
         else:
-            # Standard formatter
-            formatter = logging.Formatter(
-                format_string
-                or "%(asctime)s | %(name)s | %(levelname)-8s | %(message)s",
+            # Standard console handler with optional colors
+            console_handler = logging.StreamHandler(sys.stdout)
+            console_handler.setLevel(level)
+
+            if use_colors:
+                # Colorlog for colored output
+                color_formatter = colorlog.ColoredFormatter(
+                    format_string
+                    or "%(log_color)s%(asctime)s | %(name)s | %(levelname)-8s | %(message)s",
+                    datefmt=date_format,
+                    log_colors={
+                        "DEBUG": "cyan",
+                        # "INFO": "",  # No color for INFO
+                        "WARNING": "yellow",
+                        "ERROR": "red",
+                        "CRITICAL": "red,bg_white",
+                    },
+                )
+                console_handler.setFormatter(color_formatter)
+            else:
+                # Standard formatter
+                formatter = logging.Formatter(
+                    format_string
+                    or "%(asctime)s | %(name)s | %(levelname)-8s | %(message)s",
+                    datefmt=date_format,
+                )
+                console_handler.setFormatter(formatter)
+
+            handlers.append(console_handler)
+    else:
+        log_path = Path(str(log_path)).expanduser()
+        log_path.mkdir(parents=True, exist_ok=True)
+
+        for level in ("debug", "info", "error"):
+            file_handler = logging.FileHandler(log_path / f"{level}.log")
+            file_handler.setLevel(getattr(logging, level.upper()))
+
+            # File output doesn't need colors
+            file_formatter = logging.Formatter(
+                "%(asctime)s | %(name)s | %(levelname)-8s | %(funcName)s:%(lineno)d | %(message)s",
                 datefmt=date_format,
             )
-            console_handler.setFormatter(formatter)
-
-        handlers.append(console_handler)
-
-    # File handler setup (if specified)
-    if log_file:
-        log_path = Path(log_file)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-
-        file_handler = logging.FileHandler(log_path)
-        file_handler.setLevel(level)
-
-        # File output doesn't need colors
-        file_formatter = logging.Formatter(
-            "%(asctime)s | %(name)s | %(levelname)-8s | %(funcName)s:%(lineno)d | %(message)s",
-            datefmt=date_format,
-        )
-        file_handler.setFormatter(file_formatter)
-        handlers.append(file_handler)
+            file_handler.setFormatter(file_formatter)
+            handlers.append(file_handler)
 
     # Add all handlers to the root logger
     for handler in handlers:

@@ -90,8 +90,11 @@ class WandbLogger(BaseMetricsLogger):
 
         self.run_id = (state_dict or {}).get("run_id")
         self.run = None
+        self.logs_parent_path = None
 
-    def setup(self, experiment_name: str, config: dict[str, Any]) -> None:
+    def setup(
+        self, experiment_name: str, config: dict[str, Any], logs_parent_path: str | None
+    ) -> None:
         """Initialize a WandB run with experiment metadata and configuration.
 
         If `self.run_id` is present, attempts to resume the existing run.
@@ -117,7 +120,7 @@ class WandbLogger(BaseMetricsLogger):
                 id=self.run_id,  # Resume from preemption etc
                 resume="allow",  # Allow resuming if run exists
             )
-
+            self.logs_parent_path = logs_parent_path
             logger.info(f"WandB run initialized: {self.run.name} ({self.run.id})")
 
         except Exception as e:
@@ -165,6 +168,13 @@ class WandbLogger(BaseMetricsLogger):
     def close(self) -> None:
         """Finalize and close the WandB run."""
         if self.run is not None:
+            try:
+                if self.logs_parent_path is not None:
+                    self.run.log_artifact(
+                        artifact_or_path=self.logs_parent_path, type="logs"
+                    )
+            except Exception as e:
+                logger.error(f"Error saving logs as artifacts: {e}")
             try:
                 self.run.finish()
                 logger.info("WandB run finished successfully")

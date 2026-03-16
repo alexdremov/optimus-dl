@@ -77,7 +77,12 @@ class LoggerManager:
 
         self.loggers = loggers
 
-    def setup_loggers(self, experiment_name: str, full_config: dict):
+    def setup_loggers(
+        self,
+        experiment_name: str,
+        full_config: dict,
+        logs_parent_path: str | None = None,
+    ):
         """Initialize all loggers with experiment context.
 
         Args:
@@ -86,7 +91,11 @@ class LoggerManager:
         """
         for logger_instance in self.loggers or []:
             try:
-                logger_instance.setup(experiment_name, full_config)
+                logger_instance.setup(
+                    experiment_name=experiment_name,
+                    config=full_config,
+                    logs_parent_path=logs_parent_path,
+                )
             except Exception as e:
                 logger.error(
                     f"Failed to setup logger {logger_instance.__class__.__name__}: {e}"
