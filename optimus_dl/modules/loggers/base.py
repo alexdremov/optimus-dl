@@ -42,7 +42,12 @@ class BaseMetricsLogger(ABC):
             logger.info(f"{self.__class__.__name__} disabled via configuration")
 
     @abstractmethod
-    def setup(self, experiment_name: str, config: dict[str, Any]) -> None:
+    def setup(
+        self,
+        experiment_name: str,
+        config: dict[str, Any],
+        logs_parent_path: str | None = None,
+    ) -> None:
         """Setup the logger with experiment metadata and config.
 
         This is typically called once at the start of a training run.

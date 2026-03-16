@@ -1,4 +1,5 @@
 import logging
+import pathlib
 
 import torch
 from torch.optim import Optimizer
@@ -175,7 +176,12 @@ class TrainRecipe(
         """Delegate to LoggerManager for building loggers."""
         return self.logger_manager.build_loggers(*args, **kwargs)
 
-    def setup_loggers(self, experiment_name: str, full_config: dict | None = None):
+    def setup_loggers(
+        self,
+        experiment_name: str,
+        full_config: dict | None = None,
+        logs_parent_path: str | None = None,
+    ):
         """Setup logging with experiment configuration.
 
         Args:
@@ -184,7 +190,11 @@ class TrainRecipe(
         """
         if full_config is None:
             full_config = self.cfg if hasattr(self.cfg, "__dict__") else dict(self.cfg)
-        return self.logger_manager.setup_loggers(experiment_name, full_config)
+        return self.logger_manager.setup_loggers(
+            experiment_name=experiment_name,
+            full_config=full_config,
+            logs_parent_path=logs_parent_path,
+        )
 
     def log_metrics_to_loggers(self, *args, **kwargs):
         """Delegate metrics logging to LoggerManager."""
@@ -281,8 +291,22 @@ class TrainRecipe(
             logger.info(
                 "Setting up console logging. Will log from master only from now."
             )
+            logs_parent_path = pathlib.Path(self.cfg.common.output_path) / "logging"
+            rank = collective.rank if collective is not None else 0
+            log_path = logs_parent_path / f"rank_{rank}"
             if not collective.is_master:
-                setup_logging(logging.WARNING)
+                setup_logging(
+                    logging.WARNING,
+                )
+                setup_logging(
+                    log_path=log_path,
+                    clear_existing=False,
+                )
+            else:
+                setup_logging(
+                    log_path=log_path,
+                    clear_existing=False,
+                )
 
             model: BaseModel = self.build_model(
                 model_config=self.cfg.model,
@@ -359,7 +383,10 @@ class TrainRecipe(
 
             if collective.is_master:
                 self.build_loggers()
-                self.setup_loggers(self.cfg.common.exp_name)
+                self.setup_loggers(
+                    experiment_name=self.cfg.common.exp_name,
+                    logs_parent_path=logs_parent_path,
+                )
 
         init_metrics = compute_meters(
             group_name="init",

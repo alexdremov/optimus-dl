@@ -77,16 +77,28 @@ class LoggerManager:
 
         self.loggers = loggers
 
-    def setup_loggers(self, experiment_name: str, full_config: dict):
+    def setup_loggers(
+        self,
+        experiment_name: str,
+        full_config: dict,
+        logs_parent_path: str | None = None,
+    ):
         """Initialize all loggers with experiment context.
 
         Args:
             experiment_name: Name of the experiment.
             full_config: Complete training configuration dictionary.
+            logs_parent_path: Optional filesystem path as a string under which
+                logger-specific log files or run directories are created.
+                Use this to log stdout / stderr if applicable
         """
         for logger_instance in self.loggers or []:
             try:
-                logger_instance.setup(experiment_name, full_config)
+                logger_instance.setup(
+                    experiment_name=experiment_name,
+                    config=full_config,
+                    logs_parent_path=logs_parent_path,
+                )
             except Exception as e:
                 logger.error(
                     f"Failed to setup logger {logger_instance.__class__.__name__}: {e}"

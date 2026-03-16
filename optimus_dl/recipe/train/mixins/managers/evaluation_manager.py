@@ -104,6 +104,7 @@ class Evaluator:
                     max_iterations=max_iterations,
                     collective=collective,
                     all_metrics_configs=all_metrics_configs,
+                    show_progress=True,
                 )
             except Exception:
                 logger.exception(f"Evaluation for {k} failed.")
