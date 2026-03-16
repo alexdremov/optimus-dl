@@ -150,7 +150,7 @@ def setup_logging(
         log_path.mkdir(parents=True, exist_ok=True)
 
         for file_level in ("debug", "info", "error"):
-            file_handler = logging.FileHandler(log_path / f"{level}.log")
+            file_handler = logging.FileHandler(log_path / f"{file_level}.log")
             file_handler.setLevel(getattr(logging, file_level.upper()))
 
             # File output doesn't need colors
