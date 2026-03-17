@@ -125,6 +125,15 @@ class WandbLogger(BaseMetricsLogger):
                 resume="allow",
             )
             self.logs_parent_path = logs_parent_path
+
+            # Configure "iteration" as the global step metric so it is used as the x-axis.
+            try:
+                wandb.define_metric("iteration")
+                wandb.define_metric("*", step_metric="iteration")
+            except Exception:
+                # Older wandb versions or unexpected errors: fall back without breaking logging.
+                logger.debug("Failed to define WandB step metric 'iteration'", exc_info=True)
+
             logger.info(f"WandB run initialized: {self.run.name} ({self.run.id})")
 
         except Exception as e:
