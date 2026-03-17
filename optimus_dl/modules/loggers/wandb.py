@@ -132,7 +132,9 @@ class WandbLogger(BaseMetricsLogger):
                 wandb.define_metric("*", step_metric="iteration")
             except Exception:
                 # Older wandb versions or unexpected errors: fall back without breaking logging.
-                logger.debug("Failed to define WandB step metric 'iteration'", exc_info=True)
+                logger.debug(
+                    "Failed to define WandB step metric 'iteration'", exc_info=True
+                )
 
             logger.info(f"WandB run initialized: {self.run.name} ({self.run.id})")
 
