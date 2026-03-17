@@ -411,8 +411,10 @@ class TrainRecipe(
                 start_iteration = self.cfg.optimization.iterations
                 finished_run = True
                 logger.info(
-                    "This run resumed for checkpoint where self.cfg.optimization.iterations <= start_iteration. "
-                    "So, the run is already finished. Considering this run only for final evaluations"
+                    "This run resumed from a checkpoint at iteration "
+                    f"{start_iteration}, but the configured max iterations is "
+                    f"{self.cfg.optimization.iterations}. Treating the run as already "
+                    "finished and performing only final evaluations."
                 )
 
             if collective.is_master:
