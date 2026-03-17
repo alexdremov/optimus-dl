@@ -181,12 +181,14 @@ class TrainRecipe(
         experiment_name: str,
         full_config: dict | None = None,
         logs_parent_path: str | None = None,
+        start_iteration: int | None = None,
     ):
         """Setup logging with experiment configuration.
 
         Args:
             experiment_name: Name of the current experiment.
             full_config: Full configuration dictionary. If None, uses self.cfg.
+            start_iteration: Starting iteration number for logging.
         """
         if full_config is None:
             full_config = self.cfg if hasattr(self.cfg, "__dict__") else dict(self.cfg)
@@ -194,6 +196,7 @@ class TrainRecipe(
             experiment_name=experiment_name,
             full_config=full_config,
             logs_parent_path=logs_parent_path,
+            start_iteration=start_iteration,
         )
 
     def log_metrics_to_loggers(self, *args, **kwargs):
@@ -273,10 +276,33 @@ class TrainRecipe(
             if hasattr(torch.backends.cudnn, "conv"):
                 torch.backends.cudnn.conv.fp32_precision = "ieee"
 
+    def evaluate_and_log(
+        self,
+        training_context,
+        iteration,
+        model,
+        criterion,
+        eval_datapipeline,
+        collective,
+    ):
+        with training_context["amp_ctx"]:
+            metrics = self.run_evaluation_if_needed(
+                iteration=iteration,
+                model=model,
+                criterion=criterion,
+                eval_data={k: v for k, v in eval_datapipeline.items() if v is not None},
+                collective=collective,
+                all_metrics_configs=self.cfg.metrics,
+            )
+        if metrics and collective.is_master:
+            for eval_name, eval_metrics in metrics.items():
+                self.log_metrics_to_loggers(eval_metrics, iteration, eval_name)
+
     def run(self):
         """Run the complete training pipeline."""
         self.setup_context()
         is_restart = self.checkpoint_manager.is_restart(self.cfg.common.output_path)
+        finished_run = False
 
         with meters_group("init"):
             log_event_start("perf/init")
@@ -381,11 +407,22 @@ class TrainRecipe(
                     f"with {start_iteration = }"
                 )
 
+            if self.cfg.optimization.iterations <= start_iteration:
+                start_iteration = self.cfg.optimization.iterations
+                finished_run = True
+                logger.info(
+                    "This run resumed from a checkpoint at iteration "
+                    f"{start_iteration}, but the configured max iterations is "
+                    f"{self.cfg.optimization.iterations}. Treating the run as already "
+                    "finished and performing only final evaluations."
+                )
+
             if collective.is_master:
                 self.build_loggers()
                 self.setup_loggers(
                     experiment_name=self.cfg.common.exp_name,
                     logs_parent_path=logs_parent_path,
+                    start_iteration=start_iteration,
                 )
 
         init_metrics = compute_meters(
@@ -418,84 +455,89 @@ class TrainRecipe(
         collective.barrier()
         logger.info("All ranks are ready")
 
-        pbar = trange(
-            start_iteration,
-            self.cfg.optimization.iterations + 1,
-            initial=start_iteration,
-            total=self.cfg.optimization.iterations,
-            miniters=self.cfg.common.log_freq,
-            maxinterval=1000000,
-            disable=not collective.is_local_master,
-            smoothing=0,
-        )
-        for iteration in pbar:
-            try:
-                # Execute one training iteration using recipe mixin
-                self.run_training_iteration(
-                    model=model,
-                    optimizer=optimizer,
-                    criterion=criterion,
-                    train_data_iter=train_data_iter,
-                    training_context=training_context,
-                    lr_scheduler=lr_scheduler,
-                    metric_engine=train_metric_engine,
-                )
+        if not finished_run:
+            pbar = trange(
+                start_iteration,
+                self.cfg.optimization.iterations + 1,
+                initial=start_iteration,
+                total=self.cfg.optimization.iterations,
+                miniters=self.cfg.common.log_freq,
+                maxinterval=1000000,
+                disable=not collective.is_local_master,
+                smoothing=0,
+            )
+            for iteration in pbar:
+                try:
+                    # Execute one training iteration using recipe mixin
+                    self.run_training_iteration(
+                        model=model,
+                        optimizer=optimizer,
+                        criterion=criterion,
+                        train_data_iter=train_data_iter,
+                        training_context=training_context,
+                        lr_scheduler=lr_scheduler,
+                        metric_engine=train_metric_engine,
+                    )
 
-                with meters_group("train") as should_log:
-                    if should_log:
-                        # Get aggregated metrics for progress bar
-                        current_metrics = compute_meters(
-                            "train",
-                            aggregate=True,
-                            collective=collective,
-                        )
-                        if train_metric_engine:
-                            current_metrics = train_metric_engine.compute(
-                                current_metrics
+                    with meters_group("train") as should_log:
+                        if should_log:
+                            # Get aggregated metrics for progress bar
+                            current_metrics = compute_meters(
+                                "train",
+                                aggregate=True,
+                                collective=collective,
                             )
+                            if train_metric_engine:
+                                current_metrics = train_metric_engine.compute(
+                                    current_metrics
+                                )
 
-                        if collective.is_local_master:
-                            pbar.set_postfix(current_metrics, refresh=False)
+                            if collective.is_local_master:
+                                pbar.set_postfix(current_metrics, refresh=False)
 
-                        # Log metrics to all configured loggers
-                        if collective.is_master:
-                            self.log_metrics_to_loggers(
-                                current_metrics, iteration, "train"
-                            )
+                            # Log metrics to all configured loggers
+                            if collective.is_master:
+                                self.log_metrics_to_loggers(
+                                    current_metrics, iteration, "train"
+                                )
 
-                step_meters("train")  # Step the metrics logging iteration counter
-                reset_meters(
-                    "train"
-                )  # Reset metrics after logging (keep metrics with reset=False)
-                with training_context["amp_ctx"]:
-                    metrics = self.run_evaluation_if_needed(
+                    step_meters("train")  # Step the metrics logging iteration counter
+                    reset_meters(
+                        "train"
+                    )  # Reset metrics after logging (keep metrics with reset=False)
+                    self.evaluate_and_log(
+                        training_context=training_context,
                         iteration=iteration,
                         model=model,
                         criterion=criterion,
-                        eval_data={
-                            k: v for k, v in eval_datapipeline.items() if v is not None
-                        },
+                        eval_datapipeline=eval_datapipeline,
                         collective=collective,
-                        all_metrics_configs=self.cfg.metrics,
                     )
-                if metrics and collective.is_master:
-                    for eval_name, eval_metrics in metrics.items():
-                        self.log_metrics_to_loggers(eval_metrics, iteration, eval_name)
 
-                self.save_checkpoint_if_needed(
-                    iteration=iteration,
-                    **common_chkp_kwargs,
-                )
+                    self.save_checkpoint_if_needed(
+                        iteration=iteration,
+                        **common_chkp_kwargs,
+                    )
 
-            except KeyboardInterrupt:
-                self.handle_training_interruption(
-                    iteration=iteration,
-                    **common_chkp_kwargs,
-                )
-                break
-            except Exception as e:
-                logger.error(f"Training step failed at iteration {iteration}: {e}")
-                raise
+                except KeyboardInterrupt:
+                    self.handle_training_interruption(
+                        iteration=iteration,
+                        **common_chkp_kwargs,
+                    )
+                    break
+                except Exception as e:
+                    logger.error(f"Training step failed at iteration {iteration}: {e}")
+                    raise
+        else:
+            logger.info("As finished run was resumed, assuming evaluation objective.")
+            self.evaluate_and_log(
+                training_context=training_context,
+                iteration=start_iteration,
+                model=model,
+                criterion=criterion,
+                eval_datapipeline=eval_datapipeline,
+                collective=collective,
+            )
 
         # Close loggers at the end of training
         if collective.is_master:

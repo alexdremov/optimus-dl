@@ -97,6 +97,7 @@ class WandbLogger(BaseMetricsLogger):
         experiment_name: str,
         config: dict[str, Any],
         logs_parent_path: str | None = None,
+        start_iteration: int | None = None,
     ) -> None:
         """Initialize a WandB run with experiment metadata and configuration.
 
@@ -120,10 +121,21 @@ class WandbLogger(BaseMetricsLogger):
                 notes=self.cfg.notes,
                 save_code=self.cfg.save_code,
                 config=config,
-                id=self.run_id,  # Resume from preemption etc
-                resume="allow",  # Allow resuming if run exists
+                id=self.run_id,
+                resume="allow",
             )
             self.logs_parent_path = logs_parent_path
+
+            # Configure "iteration" as the global step metric so it is used as the x-axis.
+            try:
+                wandb.define_metric("iteration")
+                wandb.define_metric("*", step_metric="iteration")
+            except Exception:
+                # Older wandb versions or unexpected errors: fall back without breaking logging.
+                logger.debug(
+                    "Failed to define WandB step metric 'iteration'", exc_info=True
+                )
+
             logger.info(f"WandB run initialized: {self.run.name} ({self.run.id})")
 
         except Exception as e:
@@ -163,7 +175,9 @@ class WandbLogger(BaseMetricsLogger):
                     flattened_metrics[full_key] = value
 
             # Log to wandb
-            self.run.log(flattened_metrics, step=step)
+            flattened_metrics["step"] = step
+            flattened_metrics["iteration"] = step
+            self.run.log(flattened_metrics)
 
         except Exception as e:
             logger.error(f"Failed to log metrics to WandB: {e}")
