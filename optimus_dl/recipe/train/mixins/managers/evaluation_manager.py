@@ -49,7 +49,8 @@ class Evaluator:
         cfg: Evaluator configuration.
         eval_freq: Frequency of evaluation runs (in iterations).
         eval_iterations: Max number of batches to process per evaluation dataset.
-            If None, processes the entire dataset.
+            If None or negative, processes the entire dataset (negative values are
+            treated as unlimited).
     """
 
     def __init__(
