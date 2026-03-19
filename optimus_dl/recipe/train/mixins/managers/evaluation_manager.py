@@ -68,7 +68,7 @@ class Evaluator:
         iteration: int,
         model: BaseModel,
         criterion: BaseCriterion,
-        eval_data: dict[str, EvalDataPipeline],
+        eval_data_dict: dict[str, EvalDataPipeline],
         collective: Any = None,
         all_metrics_configs: dict[str, list[dict]] | None = None,
     ) -> None | dict:
@@ -86,13 +86,20 @@ class Evaluator:
             Dictionary of computed metrics if evaluation ran, else None.
         """
         result = {}
-        for k, v in eval_data.items():
+        for eval_name, eval_data in eval_data_dict.items():
             max_iterations = (
-                v.eval_iterations
-                if v.eval_iterations is not None
+                eval_data.eval_iterations
+                if eval_data.eval_iterations is not None
                 else self.eval_iterations
             )
-            eval_freq = v.eval_freq if v.eval_freq is not None else self.eval_freq
+            if max_iterations is not None and max_iterations < 0:
+                max_iterations = None
+
+            eval_freq = (
+                eval_data.eval_freq
+                if eval_data.eval_freq is not None
+                else self.eval_freq
+            )
             if eval_freq <= 0 or iteration % eval_freq != 0:
                 continue
 
@@ -100,14 +107,14 @@ class Evaluator:
                 result |= self.run_evaluation(
                     model=model,
                     criterion=criterion,
-                    eval_data_dict={k: v},
+                    eval_data_dict={eval_name: eval_data},
                     max_iterations=max_iterations,
                     collective=collective,
                     all_metrics_configs=all_metrics_configs,
                     show_progress=True,
                 )
             except Exception:
-                logger.exception(f"Evaluation for {k} failed.")
+                logger.exception(f"Evaluation for {eval_name} failed.")
 
         if len(result) == 0:
             return None
@@ -152,7 +159,12 @@ class Evaluator:
                 if eval_data.eval_iterations is not None
                 else max_iterations
             )
-            logger.info(f"Running evaluation {eval_name}")
+            if max_iterations_local is not None and max_iterations_local < 0:
+                max_iterations_local = None
+
+            logger.info(
+                f"Running evaluation {eval_name} for {max_iterations_local if max_iterations_local is not None else 'unlimited'} iterations (on each rank)"
+            )
 
             # Handle both raw dataloader and DataPipeline object
             dataloader = getattr(eval_data, "dataloader", eval_data)
@@ -182,10 +194,15 @@ class Evaluator:
                 if show_progress:
                     pbar = tqdm(
                         desc=f"Eval {eval_name}",
-                        disable=collective is not None
-                        and not collective.is_local_master,
+                        disable=(
+                            collective is not None and not collective.is_local_master
+                        ),
                         unit="batch",
-                        total=max_iterations_local,
+                        total=(
+                            max_iterations_local
+                            if max_iterations_local is not None
+                            else None
+                        ),
                     )
 
                 try:
@@ -226,6 +243,7 @@ class Evaluator:
                     pass
                 finally:
                     if pbar:
+                        pbar.refresh()
                         pbar.close()
 
                 total_time = time.perf_counter() - start_time
@@ -245,7 +263,9 @@ class Evaluator:
             if iterations > 0:
                 eval_metrics["perf/ms_per_batch"] = (total_time / iterations) * 1000
 
-            logger.info(f"Finished eval {eval_name}: {eval_metrics}")
+            logger.info(
+                f"Finished eval {eval_name}: {eval_metrics} in {total_time:.1f}s"
+            )
             total_metrics[f"{metrics_prefix}/{eval_name}"] = eval_metrics
         return total_metrics
 
