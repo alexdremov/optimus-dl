@@ -290,7 +290,9 @@ class TrainRecipe(
                 iteration=iteration,
                 model=model,
                 criterion=criterion,
-                eval_data={k: v for k, v in eval_datapipeline.items() if v is not None},
+                eval_data_dict={
+                    k: v for k, v in eval_datapipeline.items() if v is not None
+                },
                 collective=collective,
                 all_metrics_configs=self.cfg.metrics,
             )

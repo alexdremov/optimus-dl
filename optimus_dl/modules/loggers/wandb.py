@@ -4,6 +4,7 @@ This logger integrates with Weights & Biases for experiment tracking,
 supporting both online and offline modes.
 """
 
+import importlib.util
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -16,11 +17,9 @@ from optimus_dl.modules.loggers.config import MetricsLoggerConfig
 
 logger = logging.getLogger(__name__)
 
-try:
-    import wandb
-
+if importlib.util.find_spec("wandb") is not None:
     WANDB_AVAILABLE = True
-except ImportError:
+else:
     WANDB_AVAILABLE = False
     logger.warning("wandb not available - install with 'pip install wandb'")
 
@@ -106,15 +105,30 @@ class WandbLogger(BaseMetricsLogger):
         if not self.enabled:
             return
 
+        import wandb  # for typings comfort
+
+        name = self.cfg.name or experiment_name
+
         try:
+            if self.run_id is not None:
+                run: wandb.Run = wandb.Api().run(
+                    f"{self.cfg.entity}/{self.cfg.project}/{self.run_id}"
+                )
+                if run.name != name:
+                    logger.warning(
+                        f"Wandb run name does not match the loaded experiment name: {name} (this run) != {run.name} ({self.run_id}). Launching a new wandb run."
+                    )
+                    self.run_id = None
+
             # Initialize wandb run
             if OmegaConf.is_config(config):
                 config = OmegaConf.to_container(config, resolve=True)
+
             self.run = wandb.init(
                 project=self.cfg.project,
                 entity=self.cfg.entity,
                 mode=self.cfg.mode,
-                name=self.cfg.name or experiment_name,
+                name=name,
                 group=self.cfg.group,
                 job_type=self.cfg.job_type,
                 tags=list(self.cfg.tags) if self.cfg.tags else None,
@@ -137,7 +151,6 @@ class WandbLogger(BaseMetricsLogger):
                 )
 
             logger.info(f"WandB run initialized: {self.run.name} ({self.run.id})")
-
         except Exception as e:
             logger.error(f"Failed to initialize WandB: {e}", exc_info=True)
             self.enabled = False
