@@ -79,7 +79,7 @@ class Evaluator:
             iteration: Current training step.
             model: The model to evaluate.
             criterion: The loss function.
-            eval_data: Dictionary mapping dataset names to dataloaders.
+            eval_data_dict: Dictionary mapping dataset names to dataloaders.
             collective: Distributed collective for metric aggregation.
             all_metrics_configs: Root metrics configuration from TrainConfig.
 
