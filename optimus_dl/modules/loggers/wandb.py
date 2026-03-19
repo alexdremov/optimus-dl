@@ -4,6 +4,7 @@ This logger integrates with Weights & Biases for experiment tracking,
 supporting both online and offline modes.
 """
 
+import importlib.util
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -16,11 +17,9 @@ from optimus_dl.modules.loggers.config import MetricsLoggerConfig
 
 logger = logging.getLogger(__name__)
 
-try:
-    import wandb
-
+if importlib.util.find_spec("wandb") is not None:
     WANDB_AVAILABLE = True
-except ImportError:
+else:
     WANDB_AVAILABLE = False
     logger.warning("wandb not available - install with 'pip install wandb'")
 
