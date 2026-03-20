@@ -1,11 +1,8 @@
-import os
 from unittest.mock import (
     MagicMock,
-    Mock,
     patch,
 )
 
-import pytest
 
 from optimus_dl.modules.loggers.mlflow import (
     MlflowLogger,
