@@ -6,6 +6,7 @@ supporting both online and offline modes.
 
 import importlib.util
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -105,20 +106,33 @@ class WandbLogger(BaseMetricsLogger):
         if not self.enabled:
             return
 
-        import wandb  # for typings comfort
+        import wandb
 
         name = self.cfg.name or experiment_name
 
         try:
-            if self.run_id is not None:
-                run: wandb.Run = wandb.Api().run(
-                    f"{self.cfg.entity}/{self.cfg.project}/{self.run_id}"
-                )
-                if run.name != name:
+            if self.run_id is not None and self.cfg.mode == "online":
+                entity = self.cfg.entity or os.getenv("WANDB_ENTITY")
+                project = self.cfg.project or os.getenv("WANDB_PROJECT")
+
+                run_path = f"{self.run_id}"
+                if project is not None and entity is not None:
+                    run_path = f"{entity}/{project}/{self.run_id}"
+                elif project is not None:
+                    run_path = f"{project}/{self.run_id}"
+
+                api = wandb.Api()
+                try:
+                    run: wandb.Run = api.run(run_path)
+                    if run.name != name:
+                        logger.warning(
+                            f"Wandb run name does not match the loaded experiment name: {name} (this run) != {run.name} ({self.run_id}). Launching a new wandb run."
+                        )
+                        self.run_id = None
+                except ValueError as e:
                     logger.warning(
-                        f"Wandb run name does not match the loaded experiment name: {name} (this run) != {run.name} ({self.run_id}). Launching a new wandb run."
+                        f"Could not load wandb run {run_path}: {e}. Launching a new wandb run."
                     )
-                    self.run_id = None
 
             # Initialize wandb run
             if OmegaConf.is_config(config):

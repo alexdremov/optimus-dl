@@ -234,7 +234,7 @@ class Evaluator:
                         )
 
                         iterations += 1
-                        if pbar:
+                        if pbar is not None:
                             pbar.update(1)
 
                         # Step metrics for each evaluation iteration
@@ -243,7 +243,7 @@ class Evaluator:
                 except StopIteration:
                     pass
                 finally:
-                    if pbar:
+                    if pbar is not None:
                         pbar.refresh()
                         pbar.close()
 
