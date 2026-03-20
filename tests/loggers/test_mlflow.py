@@ -3,7 +3,6 @@ from unittest.mock import (
     patch,
 )
 
-
 from optimus_dl.modules.loggers.mlflow import (
     MlflowLogger,
     MlflowLoggerConfig,
