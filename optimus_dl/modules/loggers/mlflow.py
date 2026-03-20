@@ -147,7 +147,7 @@ class MlflowLogger(BaseMetricsLogger):
             # Apply user-defined tags after run start to ensure correct format
             if self.cfg.tags:
                 try:
-                    mlflow.set_tags({tag: "true" for tag in self.cfg.tags})
+                    mlflow.set_tags(dict.fromkeys(self.cfg.tags, "true"))
                 except Exception as e:
                     logger.warning(f"Failed to set user-defined tags: {e}")
             # Set environment tags for better traceability
