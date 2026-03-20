@@ -7,6 +7,7 @@
 - **Modular "Recipe" Architecture**: Clean separation between model definitions, data pipelines, and training logic.
 - **Hydra-based Configuration**: Hierarchical, type-safe, and easily conveniently override-able configurations.
 - **Universal Metrics System**: Lazy evaluation and automatic distributed aggregation of metrics.
+- **Unified Logging**: First-class support for Weights & Biases, MLflow (with async and system metrics), and JSONL.
 - **Modern PyTorch**: Built-in support for Mixed Precision (AMP), FSDP2, Tensor Parallelism, Sequence Parallelism, and `torch.compile`.
 - **Efficient Kernels**: Integrated support for [Liger-Kernel](https://github.com/linkedin/Liger-Kernel) for memory-efficient and fast RMSNorm, SwiGLU, and CrossEntropy.
 - **Registry System**: easy dependency injection and component swapping via a centralized registry.

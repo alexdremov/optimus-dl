@@ -52,10 +52,6 @@ class WandbLoggerConfig(MetricsLoggerConfig):
     job_type: str | None = "train"
     name: str | None = None
 
-    # Logging settings
-    log_model: bool = False
-    log_gradients: bool = False
-
 
 @register_metrics_logger("wandb", WandbLoggerConfig)
 class WandbLogger(BaseMetricsLogger):

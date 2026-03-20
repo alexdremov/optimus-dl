@@ -35,18 +35,20 @@ class MlflowLoggerConfig(MetricsLoggerConfig):
     """Configuration for MLflow logger.
 
     Attributes:
+        project: Name of the MLflow experiment (maps to wandb project).
+        name: Name of the MLflow run.
+        workspace: Workspace or group for the MLflow experiment.
         tracking_uri: URI of the MLflow tracking server.
-        experiment_name: Name of the MLflow experiment.
-        run_name: Name of the MLflow run.
         async_logging: If True, enables asynchronous logging for better performance.
         artifact_location: Optional custom artifact location for the experiment.
         log_system_metrics: If True, enables system metrics logging (CPU, GPU, Memory, etc.)
     """
 
     # MLflow specific settings
+    project: str | None = None
+    name: str | None = None
+    workspace: str | None = None
     tracking_uri: str | None = None
-    experiment_name: str | None = None
-    run_name: str | None = None
     async_logging: bool = True
     artifact_location: str | None = None
     log_system_metrics: bool = True
@@ -98,6 +100,13 @@ class MlflowLogger(BaseMetricsLogger):
             mlflow.set_tracking_uri(tracking_uri)
             logger.info(f"MLflow tracking URI set to: {tracking_uri}")
 
+        workspace = self.cfg.workspace or os.getenv("MLFLOW_WORKSPACE")
+        if workspace is not None:
+            try:
+                mlflow.set_workspace(workspace)
+            except Exception as e:
+                logger.error(f"Failed to set MLflow workspace: {e}")
+
         # Enable async logging if requested
         if self.cfg.async_logging:
             try:
@@ -116,7 +125,7 @@ class MlflowLogger(BaseMetricsLogger):
             config_dict = config
 
         # Set experiment
-        exp_name = self.cfg.experiment_name
+        exp_name = self.cfg.project or os.getenv("MLFLOW_EXPERIMENT_NAME")
         try:
             # Check if experiment exists or create it
             if exp_name is not None:
@@ -140,11 +149,12 @@ class MlflowLogger(BaseMetricsLogger):
 
             # Start or resume run
 
-            run_name = self.cfg.name or experiment_name
+            run_name = (
+                self.cfg.name or experiment_name or os.environ.get("MLFLOW_RUN_NAME")
+            )
             self.active_run = mlflow.start_run(
                 run_id=self.run_id,
                 run_name=run_name,
-                tags=None,
                 description=self.cfg.notes,
             )
             self.run_id = self.active_run.info.run_id
@@ -176,13 +186,13 @@ class MlflowLogger(BaseMetricsLogger):
             try:
                 with tempfile.TemporaryDirectory() as tmp_dir:
                     tmp_path = os.path.join(tmp_dir, "config.json")
-                    with open(tmp_path) as f:
+                    with open(tmp_path, "w") as f:
                         json.dump(config_dict, f, indent=2, default=str)
 
                     mlflow.log_artifact(tmp_path, artifact_path="config")
 
                     tmp_path = os.path.join(tmp_dir, "config.yaml")
-                    with open(tmp_path) as f:
+                    with open(tmp_path, "w") as f:
                         yaml.dump(config_dict, f, default_flow_style=False)
 
                     mlflow.log_artifact(tmp_path, artifact_path="config")

@@ -16,16 +16,16 @@ class TestMlflowLogger:
         """Test MlflowLoggerConfig initialization with custom parameters."""
         config = MlflowLoggerConfig(
             tracking_uri="http://localhost:5000",
-            experiment_name="test_experiment",
-            run_name="test_run",
+            project="test_experiment",
+            name="test_run",
             async_logging=True,
             tags=["tag1", "tag2"],
             log_system_metrics=True,
         )
 
         assert config.tracking_uri == "http://localhost:5000"
-        assert config.experiment_name == "test_experiment"
-        assert config.run_name == "test_run"
+        assert config.project == "test_experiment"
+        assert config.name == "test_run"
         assert config.async_logging is True
         assert config.tags == ["tag1", "tag2"]
         assert config.log_system_metrics is True
@@ -68,7 +68,7 @@ class TestMlflowLogger:
         """Test MlflowLogger setup method with experiment initialization."""
         config = MlflowLoggerConfig(
             tracking_uri="http://localhost:5000",
-            experiment_name="test_exp",
+            project="test_exp",
             async_logging=True,
             log_system_metrics=True,
         )
