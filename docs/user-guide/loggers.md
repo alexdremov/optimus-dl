@@ -17,10 +17,10 @@ Writes metrics to JSON Lines files, which are easy to parse and process with sta
 **Configuration Example:**
 ```yaml
 loggers:
-  _name: jsonl
-  output_dir: "logs"
-  filename: "metrics.jsonl"
-  flush_every: 10
+  - _name: jsonl
+    output_dir: "logs"
+    filename: "metrics.jsonl"
+    flush_every: 10
 ```
 
 ### 2. Weights & Biases Logger (`wandb`)
@@ -35,10 +35,10 @@ Integrates with [Weights & Biases](https://wandb.ai/) for interactive experiment
 **Configuration Example:**
 ```yaml
 loggers:
-- _name: wandb
-  project: llm-baselines
-  mode: online
-  enabled: true
+  - _name: wandb
+    project: llm-baselines
+    mode: online
+    enabled: true
 ```
 
 ### 3. MLflow Logger (`mlflow`)
