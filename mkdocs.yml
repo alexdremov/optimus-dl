@@ -69,6 +69,7 @@ nav:
     - Models: user-guide/models.md
     - Data Pipelines: user-guide/data.md
     - Metrics: user-guide/metrics.md
+    - Loggers: user-guide/loggers.md
     - Optimizers & Schedulers: user-guide/optimizers.md
     - Serving: user-guide/serving.md
     - Docker & Deployment: user-guide/docker.md

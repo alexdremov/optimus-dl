@@ -37,8 +37,6 @@ class WandbLoggerConfig(MetricsLoggerConfig):
         group: Name for grouping related runs.
         job_type: Label for the type of run (e.g., 'train', 'eval').
         name: Display name for the run. If None, uses experiment name.
-        log_model: If True, automatically logs model checkpoints as artifacts.
-        log_gradients: If True, logs gradient distributions (requires model reference).
     """
 
     # WandB specific settings
@@ -51,10 +49,6 @@ class WandbLoggerConfig(MetricsLoggerConfig):
     group: str | None = None
     job_type: str | None = "train"
     name: str | None = None
-
-    # Logging settings
-    log_model: bool = False
-    log_gradients: bool = False
 
 
 @register_metrics_logger("wandb", WandbLoggerConfig)
