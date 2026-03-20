@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import platform
+import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -52,6 +53,46 @@ class MlflowLoggerConfig(MetricsLoggerConfig):
     async_logging: bool = True
     artifact_location: str | None = None
     log_system_metrics: bool = True
+
+
+def get_git_commit_hash() -> str | None:
+    """Get the current git commit hash if available."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=15,
+            cwd=os.getcwd(),
+        )
+
+        if result.returncode == 0:
+            return result.stdout.strip()
+
+    except Exception as e:
+        logger.warning(f"Failed to get git commit hash: {e}")
+    return None
+
+
+def get_git_remote() -> str | None:
+    """Get the git remote URL if available."""
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=15,
+            cwd=os.getcwd(),
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+
+    except Exception as e:
+        logger.warning(f"Failed to get git remote URL: {e}")
+
+    return None
 
 
 @register_metrics_logger("mlflow", MlflowLoggerConfig)
@@ -167,12 +208,16 @@ class MlflowLogger(BaseMetricsLogger):
                     logger.warning(f"Failed to set user-defined tags: {e}")
 
             # Set environment tags for better traceability
+            git_hash = get_git_commit_hash()
+            git_remote = get_git_remote()
             try:
                 mlflow.set_tags(
                     {
                         "env.python_version": sys.version.split()[0],
                         "env.platform": platform.platform(),
                         "env.hostname": platform.node(),
+                        "git.commit_hash": git_hash or "unknown",
+                        "git.remote": git_remote or "unknown",
                     }
                 )
             except Exception as e:
