@@ -8,10 +8,6 @@ from optimus_dl.modules.loggers.jsonl import (
     JsonlLogger,
     JsonlLoggerConfig,
 )
-from optimus_dl.modules.loggers.wandb import (
-    WandbLogger,
-    WandbLoggerConfig,
-)
 
 
 class TestJsonlLogger:
