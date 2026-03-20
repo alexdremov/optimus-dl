@@ -29,7 +29,7 @@ Integrates with [Weights & Biases](https://wandb.ai/) for interactive experiment
 **Key Features:**
 - Support for online and offline modes.
 - Automatic run resumption using stored `run_id`.
-- Model artifact logging.
+- Logs the training logs directory as a W&B artifact for later inspection (model checkpoints are not logged automatically).
 - Grouping and job type tagging.
 
 **Configuration Example:**
