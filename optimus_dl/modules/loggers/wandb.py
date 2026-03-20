@@ -115,15 +115,24 @@ class WandbLogger(BaseMetricsLogger):
                 entity = self.cfg.entity or os.getenv("WANDB_ENTITY")
                 project = self.cfg.project or os.getenv("WANDB_PROJECT")
 
-                assert (
-                    entity is not None and project is not None
-                ), f"Could not find wandb entity and project. Please set them in the config or environment variables. {entity = }, {project = }"
-                run: wandb.Run = wandb.Api().run(f"{entity}/{project}/{self.run_id}")
-                if run.name != name:
+                run_path = f"{self.run_id}"
+                if project is not None and entity is not None:
+                    run_path = f"{entity}/{project}/{self.run_id}"
+                elif project is not None:
+                    run_path = f"{project}/{self.run_id}"
+
+                api = wandb.Api()
+                try:
+                    run: wandb.Run = api.run(run_path)
+                    if run.name != name:
+                        logger.warning(
+                            f"Wandb run name does not match the loaded experiment name: {name} (this run) != {run.name} ({self.run_id}). Launching a new wandb run."
+                        )
+                        self.run_id = None
+                except ValueError as e:
                     logger.warning(
-                        f"Wandb run name does not match the loaded experiment name: {name} (this run) != {run.name} ({self.run_id}). Launching a new wandb run."
+                        f"Could not load wandb run {run_path}: {e}. Launching a new wandb run."
                     )
-                    self.run_id = None
 
             # Initialize wandb run
             if OmegaConf.is_config(config):
