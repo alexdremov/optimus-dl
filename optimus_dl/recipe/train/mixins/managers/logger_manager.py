@@ -2,6 +2,7 @@
 
 import atexit
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -47,6 +48,7 @@ class LoggerManager:
         self.previous_state = {}
         self.loggers: list[BaseMetricsLogger] | None = None
         self.closed = False
+        self.spent_logging = None
 
     def build_loggers(self, **kwargs):
         """Instantiate all configured loggers.
@@ -120,6 +122,10 @@ class LoggerManager:
             step: Current iteration.
             group: Metric group name.
         """
+        start_time = time.perf_counter()
+        if self.spent_logging is not None:
+            metrics["ms_spent_logging"] = self.spent_logging * 1000
+
         for logger_instance in self.loggers or []:
             try:
                 logger_instance.log_metrics(metrics, step, group)
@@ -127,6 +133,8 @@ class LoggerManager:
                 logger.error(
                     f"Failed to log metrics with {logger_instance.__class__.__name__}: {e}"
                 )
+        end_time = time.perf_counter()
+        self.spent_logging = end_time - start_time
 
     def close_loggers(self):
         """Clean up all loggers."""
