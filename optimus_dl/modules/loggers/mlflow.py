@@ -139,11 +139,17 @@ class MlflowLogger(BaseMetricsLogger):
             self.active_run = mlflow.start_run(
                 run_id=self.run_id,
                 run_name=experiment_name,
-                tags=dict(self.cfg.tags) if self.cfg.tags else None,
+                tags=None,
                 description=self.cfg.notes,
             )
             self.run_id = self.active_run.info.run_id
 
+            # Apply user-defined tags after run start to ensure correct format
+            if self.cfg.tags:
+                try:
+                    mlflow.set_tags({tag: "true" for tag in self.cfg.tags})
+                except Exception as e:
+                    logger.warning(f"Failed to set user-defined tags: {e}")
             # Set environment tags for better traceability
             try:
                 import platform
