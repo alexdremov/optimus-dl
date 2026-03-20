@@ -1,5 +1,6 @@
 """Logger mixin for handling metrics logging."""
 
+import atexit
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -45,6 +46,7 @@ class LoggerManager:
         self.loggers_config = loggers_config
         self.previous_state = {}
         self.loggers: list[BaseMetricsLogger] | None = None
+        self.closed = False
 
     def build_loggers(self, **kwargs):
         """Instantiate all configured loggers.
@@ -107,6 +109,9 @@ class LoggerManager:
                     f"Failed to setup logger {logger_instance.__class__.__name__}: {e}"
                 )
 
+        # Ensuring all logs are saved on any interruptions
+        atexit.register(self.close_loggers)
+
     def log_metrics_to_loggers(self, metrics, step: int, group: str = "train"):
         """Dispatch metrics to all active loggers.
 
@@ -125,6 +130,10 @@ class LoggerManager:
 
     def close_loggers(self):
         """Clean up all loggers."""
+        if self.closed:
+            return
+        self.closed = True
+
         for logger_instance in self.loggers or []:
             try:
                 logger_instance.close()
