@@ -54,7 +54,7 @@ Integrates with [MLflow](https://mlflow.org/) for experiment tracking, supportin
 **Configuration Example:**
 ```yaml
 loggers:
-  _name: mlflow
+- _name: mlflow
   tracking_uri: "https://mlflow.domain.com"
   name: "llama-training"
 ```
