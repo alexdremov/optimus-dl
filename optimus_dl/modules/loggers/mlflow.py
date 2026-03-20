@@ -5,8 +5,12 @@ local and remote tracking servers with asynchronous logging capabilities.
 """
 
 import importlib.util
+import json
 import logging
 import os
+import platform
+import sys
+import tempfile
 from dataclasses import dataclass
 from typing import Any
 
@@ -136,9 +140,10 @@ class MlflowLogger(BaseMetricsLogger):
 
             # Start or resume run
 
+            run_name = self.cfg.name or experiment_name
             self.active_run = mlflow.start_run(
                 run_id=self.run_id,
-                run_name=experiment_name,
+                run_name=run_name,
                 tags=None,
                 description=self.cfg.notes,
             )
@@ -150,11 +155,9 @@ class MlflowLogger(BaseMetricsLogger):
                     mlflow.set_tags(dict.fromkeys(self.cfg.tags, "true"))
                 except Exception as e:
                     logger.warning(f"Failed to set user-defined tags: {e}")
+
             # Set environment tags for better traceability
             try:
-                import platform
-                import sys
-
                 mlflow.set_tags(
                     {
                         "env.python_version": sys.version.split()[0],
@@ -171,26 +174,18 @@ class MlflowLogger(BaseMetricsLogger):
 
             # Also log full config as an artifact to ensure no loss of data
             try:
-                import json
-                import tempfile
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    tmp_path = os.path.join(tmp_dir, "config.json")
+                    with open(tmp_path) as f:
+                        json.dump(config_dict, f, indent=2, default=str)
 
-                with tempfile.NamedTemporaryFile(
-                    mode="w", suffix=".json", delete=False
-                ) as tmp:
-                    json.dump(config_dict, tmp, indent=2, default=str)
-                    tmp_path = tmp.name
+                    mlflow.log_artifact(tmp_path, artifact_path="config")
 
-                mlflow.log_artifact(tmp_path, artifact_path="config.json")
-                os.unlink(tmp_path)
+                    tmp_path = os.path.join(tmp_dir, "config.yaml")
+                    with open(tmp_path) as f:
+                        yaml.dump(config_dict, f, default_flow_style=False)
 
-                with tempfile.NamedTemporaryFile(
-                    mode="w", suffix=".yaml", delete=False
-                ) as tmp:
-                    yaml.dump(config_dict, tmp, default_flow_style=False)
-                    tmp_path = tmp.name
-
-                mlflow.log_artifact(tmp_path, artifact_path="config.yaml")
-                os.unlink(tmp_path)
+                    mlflow.log_artifact(tmp_path, artifact_path="config")
             except Exception as e:
                 logger.warning(f"Failed to log config artifact: {e}")
 
