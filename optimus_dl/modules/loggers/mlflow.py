@@ -135,6 +135,18 @@ class MlflowLogger(BaseMetricsLogger):
 
         import mlflow
 
+        # Maximum number of retries with exponential backoff
+        os.environ.setdefault("MLFLOW_HTTP_REQUEST_MAX_RETRIES", str(10))
+
+        # Backoff increase factor between retries
+        os.environ.setdefault("MLFLOW_HTTP_REQUEST_BACKOFF_FACTOR", str(5))
+
+        # Random jitter to add to the backoff interval to prevent thundering herd issues (default is 1)
+        os.environ.setdefault("MLFLOW_HTTP_REQUEST_BACKOFF_JITTER", str(10))
+
+        # Timeout in seconds for MLflow HTTP requests (default is 120)
+        os.environ.setdefault("MLFLOW_HTTP_REQUEST_TIMEOUT", str(5 * 60))
+
         # Set tracking URI if provided
         tracking_uri = self.cfg.tracking_uri or os.getenv("MLFLOW_TRACKING_URI")
         if tracking_uri:
