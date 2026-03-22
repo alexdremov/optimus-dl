@@ -140,4 +140,3 @@ python scripts/train.py model=gpt2
 ```
 
 This makes experimentation fast and easy without needing to modify the underlying configuration files.
-

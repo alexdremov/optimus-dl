@@ -178,3 +178,5 @@ _version.py
 
 cache/
 \nsite/
+
+.geminiignore

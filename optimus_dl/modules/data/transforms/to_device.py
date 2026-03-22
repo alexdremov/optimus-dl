@@ -72,12 +72,12 @@ class ToDeviceTransform(BaseTransform):
             if self.properties is None:
                 if not (
                     torch.is_tensor(val)
-                    or isinstance(val, (np.ndarray, int, float, list))
+                    or isinstance(val, np.ndarray | int | float | list)
                 ):
                     continue
                 # If it's a list, check if it's numeric (at least the first element)
                 if isinstance(val, list) and len(val) > 0:
-                    if not isinstance(val[0], (int, float, np.number)):
+                    if not isinstance(val[0], int | float | np.number):
                         continue
 
             if self.device.type != "cuda":

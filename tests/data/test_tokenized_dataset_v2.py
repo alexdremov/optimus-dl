@@ -148,7 +148,7 @@ class TestTokenizedDatasetV2(unittest.TestCase):
             else:
                 # Can be int or array of 1 element depending on implementation choice?
                 # Implementation: if len(parts)==1: scalar.
-                assert isinstance(item["document_id"], (int, np.integer))
+                assert isinstance(item["document_id"], int | np.integer)
 
         total_chunks = self.total_tokens_created // chunk_size
         assert len(chunks) == total_chunks

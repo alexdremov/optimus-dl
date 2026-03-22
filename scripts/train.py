@@ -27,6 +27,7 @@ import logging
 import hydra
 
 from optimus_dl.core.log import setup_logging
+from optimus_dl.core.omegaconf import non_resolving_instantiate
 from optimus_dl.core.registry import build
 from optimus_dl.recipe.train.base import TrainRecipe
 
@@ -56,6 +57,7 @@ def train(cfg_raw):
             >>> train(cfg)
     """
     setup_logging()
+    cfg_raw = non_resolving_instantiate(cfg_raw)
     recipe = build("train_recipe", cfg_raw)
     assert isinstance(recipe, TrainRecipe)
     recipe.run()

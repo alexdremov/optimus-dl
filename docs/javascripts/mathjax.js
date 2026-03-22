@@ -9,7 +9,6 @@ window.MathJax = {
   }
 };
 
-document$.subscribe(() => { 
+document$.subscribe(() => {
   MathJax.typesetPromise()
 })
-

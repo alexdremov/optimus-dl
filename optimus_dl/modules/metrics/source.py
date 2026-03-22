@@ -64,7 +64,7 @@ class MetricSource(ABC):
                 )
 
             def make_hashable(obj: Any) -> Any:
-                if isinstance(obj, (tuple, list)):
+                if isinstance(obj, tuple | list):
                     return tuple(make_hashable(e) for e in obj)
                 if isinstance(obj, dict):
                     return tuple(sorted((k, make_hashable(v)) for k, v in obj.items()))

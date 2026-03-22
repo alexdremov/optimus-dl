@@ -150,7 +150,7 @@ def _validate_and_cast_recursive(cls: Any, cfg: Any, path: str = "") -> Any:
 
     # Handle List
     if origin is list or origin is list:
-        if not isinstance(cfg, (list, omegaconf.ListConfig)):
+        if not isinstance(cfg, list | omegaconf.ListConfig):
             raise TypeError(f"Expected list at {path}, got {type(cfg)}")
 
         # If cls is a bare list, we pass items through as-is
@@ -165,7 +165,7 @@ def _validate_and_cast_recursive(cls: Any, cfg: Any, path: str = "") -> Any:
 
     # Handle Dict
     if origin is dict or origin is dict:
-        if not isinstance(cfg, (dict, omegaconf.DictConfig)):
+        if not isinstance(cfg, dict | omegaconf.DictConfig):
             raise TypeError(f"Expected dict at {path}, got {type(cfg)}")
 
         # If cls is a bare dict, we pass items through as-is
@@ -182,7 +182,7 @@ def _validate_and_cast_recursive(cls: Any, cfg: Any, path: str = "") -> Any:
 
     # Handle Dataclasses
     if is_dataclass(cls):
-        if not isinstance(cfg, (dict, omegaconf.DictConfig)):
+        if not isinstance(cfg, dict | omegaconf.DictConfig):
             raise TypeError(
                 f"Expected dict for dataclass {cls.__name__} at {path}, got {type(cfg)}"
             )

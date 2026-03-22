@@ -150,7 +150,7 @@ def measure_activation_memory(model, input_ids, **kwargs):
         nonlocal total_bytes
         if isinstance(output, torch.Tensor):
             total_bytes += output.numel() * output.element_size()
-        elif isinstance(output, (list, tuple)):
+        elif isinstance(output, list | tuple):
             for t in output:
                 if isinstance(t, torch.Tensor):
                     total_bytes += t.numel() * t.element_size()

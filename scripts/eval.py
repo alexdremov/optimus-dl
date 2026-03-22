@@ -8,6 +8,7 @@ import hydra
 from omegaconf import DictConfig
 
 from optimus_dl.core.log import setup_logging
+from optimus_dl.core.omegaconf import non_resolving_instantiate
 from optimus_dl.recipe.eval import (
     EvalConfig,
     EvalRecipe,
@@ -33,7 +34,7 @@ def pretty_print_results(results: dict) -> None:
             print("-" * 40)
 
             for metric_name, metric_value in task_results.items():
-                if isinstance(metric_value, (int, float)):
+                if isinstance(metric_value, int | float):
                     print(f"  {metric_name}: {metric_value:.4f}")
                 else:
                     print(f"  {metric_name}: {metric_value}")
@@ -63,6 +64,7 @@ def evaluate(cfg: DictConfig) -> None:
     # Convert to structured config
     from omegaconf import OmegaConf
 
+    cfg = non_resolving_instantiate(cfg)
     eval_cfg: EvalConfig = OmegaConf.merge(OmegaConf.structured(EvalConfig), cfg)
 
     logger.info("Starting LLM Baselines Evaluation")
