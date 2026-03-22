@@ -38,9 +38,9 @@ def _extract_interpolations(s: str) -> list[str]:
 
 def test_extract_interpolations_cases() -> None:
     assert _extract_interpolations("${eval:'\"}\"'}") == ["${eval:'\"}\"'}"]
-    assert _extract_interpolations(
+    assert _extract_interpolations('${eval:\'"} " + "${.x}" + " {"\'}') == [
         '${eval:\'"} " + "${.x}" + " {"\'}'
-    ) == ['${eval:\'"} " + "${.x}" + " {"\'}']
+    ]
     assert _extract_interpolations("foo ${bar} baz") == ["${bar}"]
     assert _extract_interpolations("foo '${bar}'") == ["${bar}"]
     assert _extract_interpolations("${eval:'${foo}'}") == ["${eval:'${foo}'}"]
