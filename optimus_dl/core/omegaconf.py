@@ -51,6 +51,7 @@ from omegaconf import (
     DictConfig,
     ListConfig,
 )
+from omegaconf._utils import split_key
 
 logger = logging.getLogger(__name__)
 
@@ -206,40 +207,15 @@ if not OmegaConf.has_resolver("_lazy_inst"):
 
 
 def _split_path(path: str) -> list[str]:
-    """Split an OmegaConf path into components, handling both . and [index]."""
-    parts = []
-    curr = ""
-    for char in path:
-        if char == ".":
-            if curr:
-                parts.append(curr)
-            curr = ""
-        elif char == "[":
-            if curr:
-                parts.append(curr)
-            curr = "["
-        elif char == "]":
-            curr += "]"
-            parts.append(curr)
-            curr = ""
-        else:
-            curr += char
-    if curr:
-        parts.append(curr)
-    return parts
+    """Split an OmegaConf path into components using internal utility."""
+    if not path:
+        return []
+    return split_key(path)
 
 
 def _join_path(parts: list[str]) -> str:
     """Join path components back into an OmegaConf dot-separated string."""
-    res = ""
-    for i, p in enumerate(parts):
-        if p.startswith("["):
-            res += p
-        else:
-            if i > 0:
-                res += "."
-            res += p
-    return res
+    return ".".join(parts)
 
 
 def _to_absolute_key(inter_key: str, parent_path: str) -> str:
@@ -262,7 +238,7 @@ def _to_absolute_key(inter_key: str, parent_path: str) -> str:
         parts = parts[:-pop_count]
 
     if temp_key:
-        parts.append(temp_key)
+        parts.extend(_split_path(temp_key))
 
     return _join_path(parts)
 
