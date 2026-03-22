@@ -28,5 +28,12 @@ def _to_absolute_key(inter_key: str, parent_path: str) -> str:
     return _join_path(parts)
 
 
-print("split_key empty:", split_key(""))
-print("orig:", _to_absolute_key(".foo", ""))
+def test_split_path_empty():
+    # split_key("") returns [''], but _split_path("") is expected to return []
+    assert split_key("") == [""]
+    assert _split_path("") == []
+
+
+def test_to_absolute_key_from_root_relative():
+    # A leading dot with an empty parent path should resolve to the key without the dot
+    assert _to_absolute_key(".foo", "") == "foo"
