@@ -14,24 +14,14 @@ import hashlib
 import importlib
 import logging
 import os
-import re
-from typing import (
-    Any,
-    Dict,
-    List,
-    Optional,
-    Set,
-    Tuple,
-    Union,
-)
+from typing import Any
 
 import hydra
 from omegaconf import (
-    OmegaConf,
     DictConfig,
     ListConfig,
+    OmegaConf,
 )
-from omegaconf.errors import ConfigAttributeError
 
 logger = logging.getLogger(__name__)
 
@@ -100,10 +90,10 @@ This allows you to compute hashes of root config in YAML configs:
 
 
 # Use a global store for ghost nodes, keyed by (root_id, ghost_key)
-_GLOBAL_GHOST_CONFIGS: Dict[Tuple[int, str], DictConfig] = {}
-_GLOBAL_GHOST_DEPS: Dict[Tuple[int, str], List[str]] = {}
-_GLOBAL_LAZY_INST_CACHE: Dict[Tuple[int, str], Tuple[str, Any]] = {}
-_GLOBAL_RECURSION_TRACKER: Set[Tuple[int, str]] = set()
+_GLOBAL_GHOST_CONFIGS: dict[tuple[int, str], DictConfig] = {}
+_GLOBAL_GHOST_DEPS: dict[tuple[int, str], list[str]] = {}
+_GLOBAL_LAZY_INST_CACHE: dict[tuple[int, str], tuple[str, Any]] = {}
+_GLOBAL_RECURSION_TRACKER: set[tuple[int, str]] = set()
 
 
 def _lazy_inst_resolver(ghost_key: str, _root_: Any) -> Any:
@@ -164,7 +154,7 @@ if not OmegaConf.has_resolver("_lazy_inst"):
     OmegaConf.register_new_resolver("_lazy_inst", _lazy_inst_resolver, use_cache=False)
 
 
-def _split_path(path: str) -> List[str]:
+def _split_path(path: str) -> list[str]:
     """Split an OmegaConf path into components, handling both . and [index]."""
     parts = []
     curr = ""
@@ -188,7 +178,7 @@ def _split_path(path: str) -> List[str]:
     return parts
 
 
-def _join_path(parts: List[str]) -> str:
+def _join_path(parts: list[str]) -> str:
     """Join path components back into an OmegaConf dot-separated string."""
     res = ""
     for i, p in enumerate(parts):
@@ -232,7 +222,7 @@ def _get_relative_path(from_val_path: str, to_abs_path: str) -> str:
     t_parts = _split_path(to_abs_path)
 
     common = 0
-    for f, t in zip(f_parts, t_parts):
+    for f, t in zip(f_parts, t_parts, strict=False):
         if f == t:
             common += 1
         else:
@@ -245,7 +235,7 @@ def _get_relative_path(from_val_path: str, to_abs_path: str) -> str:
     return "." * dots + _join_path(rem)
 
 
-def _extract_interpolations(s: str) -> List[str]:
+def _extract_interpolations(s: str) -> list[str]:
     """Robustly extract all top-level interpolation blocks from a string, handling nesting."""
     inters = []
     stack = []
@@ -260,7 +250,7 @@ def _extract_interpolations(s: str) -> List[str]:
 
 
 def _normalize_and_collect_deps(
-    obj: Any, current_path: str, ghost_root_path: str, outside_deps: List[str]
+    obj: Any, current_path: str, ghost_root_path: str, outside_deps: list[str]
 ) -> Any:
     """Recursively normalize interpolations and collect outside dependencies."""
     if isinstance(obj, dict):
@@ -398,7 +388,7 @@ def non_resolving_instantiate(config: Any, lazy: bool = True, **kwargs: Any) -> 
                 if "_target_" in node:
                     # RATIONALE: To move a node to internal storage while preserving
                     # its relative interpolations, we must normalize them.
-                    outside_deps: List[str] = []
+                    outside_deps: list[str] = []
                     raw_data = OmegaConf.to_container(node, resolve=False)
                     norm_data = _normalize_and_collect_deps(
                         raw_data, path, path, outside_deps
