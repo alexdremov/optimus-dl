@@ -163,4 +163,3 @@ jobs:
         xml-skip-covered: true
         remove-links-to-files: true
         remove-links-to-lines: true
-

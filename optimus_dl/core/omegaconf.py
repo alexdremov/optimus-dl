@@ -18,9 +18,10 @@ from typing import Any
 
 import hydra
 from omegaconf import (
+    OmegaConf,
+    Container,
     DictConfig,
     ListConfig,
-    OmegaConf,
 )
 
 logger = logging.getLogger(__name__)
@@ -89,31 +90,49 @@ This allows you to compute hashes of root config in YAML configs:
 """
 
 
-# Use a global store for ghost nodes, keyed by (root_id, ghost_key)
-_GLOBAL_GHOST_CONFIGS: dict[tuple[int, str], DictConfig] = {}
-_GLOBAL_GHOST_DEPS: dict[tuple[int, str], list[str]] = {}
-_GLOBAL_LAZY_INST_CACHE: dict[tuple[int, str], tuple[str, Any]] = {}
-_GLOBAL_RECURSION_TRACKER: set[tuple[int, str]] = set()
+# --- Lazy Instantiation System ---
 
 
-def _lazy_inst_resolver(ghost_key: str, _root_: Any) -> Any:
-    """Internal resolver for reactive lazy instantiation."""
-    root_id = id(_root_)
-    cache_key = (root_id, ghost_key)
+def _copy_lazy_state(src: Any, dst: Any) -> None:
+    """Recursively copy lazy definitions between caches to propagate state to instantiated containers."""
+    if isinstance(src, Container) and isinstance(dst, Container):
+        src_cache = OmegaConf.get_cache(src)
+        dst_cache = OmegaConf.get_cache(dst)
+        if "lazy_configs" in src_cache:
+            dst_cache["lazy_configs"] = src_cache["lazy_configs"]
 
-    if cache_key in _GLOBAL_RECURSION_TRACKER:
-        raise ValueError(f"Circular dependency detected for lazy node: {ghost_key}")
+        if isinstance(src, DictConfig) and isinstance(dst, DictConfig):
+            for k in src.keys():
+                if k in dst:
+                    _copy_lazy_state(src._get_node(k), dst._get_node(k))
+        elif isinstance(src, ListConfig) and isinstance(dst, ListConfig):
+            for i in range(min(len(src), len(dst))):
+                _copy_lazy_state(src._get_node(i), dst._get_node(i))
 
-    if cache_key not in _GLOBAL_GHOST_CONFIGS:
-        raise ValueError(f"Could not find lazy config node for {ghost_key}")
 
-    node = _GLOBAL_GHOST_CONFIGS[cache_key]
-    outside_deps = _GLOBAL_GHOST_DEPS.get(cache_key, [])
+def _lazy_inst_resolver(local_key: str, _root_: Any, _parent_: Any) -> Any:
+    """Internal resolver for reactive lazy instantiation.
 
-    # Fingerprinting: Check external dependencies
+    Reads lazy state directly from the `_parent_` node's resolver cache,
+    avoiding any modification to the visible configuration structure.
+    """
+    cache = OmegaConf.get_cache(_parent_)
+
+    if "lazy_configs" not in cache or str(local_key) not in cache["lazy_configs"]:
+        raise ValueError(
+            f"Could not find lazy config definition for '{local_key}' in parent. "
+            "Ensure the config was initialized with non_resolving_instantiate."
+        )
+
+    definition_node, outside_deps, kwargs = cache["lazy_configs"][str(local_key)]
+
+    recursion_tracker = cache.setdefault("_lazy_recursion", set())
+    if str(local_key) in recursion_tracker:
+        raise ValueError(f"Circular dependency detected for lazy node: {local_key}")
+
+    # Fingerprinting: Check if any external dependencies have changed.
     try:
         if outside_deps:
-            # Create a temporary container to resolve dependencies against the root
             temp_deps = OmegaConf.create(outside_deps)
             temp_deps._set_parent(_root_)
             current_fp = str(OmegaConf.to_container(temp_deps, resolve=True))
@@ -122,34 +141,38 @@ def _lazy_inst_resolver(ghost_key: str, _root_: Any) -> Any:
     except Exception as e:
         if "recursion" in str(e).lower() or isinstance(e, RecursionError):
             raise ValueError(
-                f"Circular dependency detected during resolution: {ghost_key}"
+                f"Circular dependency detected during dependency resolution for lazy node: {local_key}"
             ) from e
         raise
 
-    if cache_key in _GLOBAL_LAZY_INST_CACHE:
-        last_fp, instance = _GLOBAL_LAZY_INST_CACHE[cache_key]
+    lazy_inst_cache = cache.setdefault("_lazy_inst_cache", {})
+    if str(local_key) in lazy_inst_cache:
+        last_fp, instance = lazy_inst_cache[str(local_key)]
         if last_fp == current_fp:
             return instance
 
-    # Re-instantiate
-    node._set_parent(_root_)
-    _GLOBAL_RECURSION_TRACKER.add(cache_key)
-    try:
-        # We NO LONGER clean the config. If the user provided extra keys,
-        # it's their responsibility to ensure the target accepts them.
-        # This preserves interpolations that might depend on those keys.
-        instance = hydra.utils.instantiate(node)
-    finally:
-        _GLOBAL_RECURSION_TRACKER.remove(cache_key)
+    # Re-instantiate:
+    # Re-link definition node to the root so internal absolute interpolations work.
+    definition_node._set_parent(_root_)
 
-    if isinstance(instance, (dict, list)):
+    recursion_tracker.add(str(local_key))
+    try:
+        instance = hydra.utils.instantiate(definition_node, **kwargs)
+    finally:
+        recursion_tracker.remove(str(local_key))
+
+    # Wrap containers to preserve reactivity for nested lookups.
+    if isinstance(instance, dict | list):
         instance = OmegaConf.create(instance)
 
-    _GLOBAL_LAZY_INST_CACHE[cache_key] = (current_fp, instance)
+    # Propagate lazy configs to the newly instantiated container so nested targets work.
+    if isinstance(instance, Container):
+        _copy_lazy_state(definition_node, instance)
+
+    lazy_inst_cache[str(local_key)] = (current_fp, instance)
     return instance
 
 
-# Register the internal lazy instantiation resolver
 if not OmegaConf.has_resolver("_lazy_inst"):
     OmegaConf.register_new_resolver("_lazy_inst", _lazy_inst_resolver, use_cache=False)
 
@@ -204,7 +227,7 @@ def _to_absolute_key(inter_key: str, parent_path: str) -> str:
 
     parts = _split_path(parent_path)
 
-    # OmegaConf relative paths: . is current container, .. is parent container
+    # OmegaConf relative paths: . is current container, .. is parent container.
     # pop n-1 parts for n dots.
     pop_count = dots - 1
     if pop_count > 0:
@@ -228,7 +251,7 @@ def _get_relative_path(from_val_path: str, to_abs_path: str) -> str:
         else:
             break
 
-    # up_count is number of steps to go up from parent container to common prefix
+    # Number of steps to go up from parent container to common prefix
     up_count = (len(f_parts) - 1) - common
     dots = up_count + 1
     rem = t_parts[common:]
@@ -236,7 +259,7 @@ def _get_relative_path(from_val_path: str, to_abs_path: str) -> str:
 
 
 def _extract_interpolations(s: str) -> list[str]:
-    """Robustly extract all top-level interpolation blocks from a string, handling nesting."""
+    """Robustly extract top-level interpolation blocks from a string, handling nesting."""
     inters = []
     stack = []
     for i in range(len(s)):
@@ -252,12 +275,16 @@ def _extract_interpolations(s: str) -> list[str]:
 def _normalize_and_collect_deps(
     obj: Any, current_path: str, ghost_root_path: str, outside_deps: list[str]
 ) -> Any:
-    """Recursively normalize interpolations and collect outside dependencies."""
+    """Recursively normalize interpolations and collect outside dependencies.
+
+    Internal paths (within the ghosted node) are made relative to keep the node portable.
+    External paths are made absolute and added to the outside dependency list for fingerprinting.
+    """
     if isinstance(obj, dict):
         return {
             k: _normalize_and_collect_deps(
                 v,
-                f"{current_path}.{k}" if current_path else k,
+                f"{current_path}.{k}" if current_path else str(k),
                 ghost_root_path,
                 outside_deps,
             )
@@ -272,7 +299,6 @@ def _normalize_and_collect_deps(
         ]
     elif isinstance(obj, str) and "${" in obj:
         parts = _split_path(current_path)
-        # parent_path is the container of this value
         parent_path = _join_path(parts[:-1])
 
         def process_inter_block(inter_block: str) -> str:
@@ -285,16 +311,17 @@ def _normalize_and_collect_deps(
                 name = resolver_parts[0]
                 args = resolver_parts[1]
 
-                # Robust extraction of nested blocks within args
+                if name == "_lazy_inst":
+                    return f"${{{name}:{args}}}"
+
                 nested_blocks = _extract_interpolations(args)
                 for block in nested_blocks:
                     args = args.replace(block, process_inter_block(block))
                 return f"${{{name}:{args}}}"
 
-            # Resolve absolute key from root
             abs_key = _to_absolute_key(content, parent_path)
 
-            # Normalization: keep internal dependencies relative, external absolute
+            # Check if internal or external
             if (
                 abs_key == ghost_root_path
                 or abs_key.startswith(ghost_root_path + ".")
@@ -305,7 +332,6 @@ def _normalize_and_collect_deps(
                 outside_deps.append(f"${{{abs_key}}}")
                 return f"${{{abs_key}}}"
 
-        # Replace all top-level interpolations in the string with normalized versions
         res = obj
         for block in _extract_interpolations(obj):
             res = res.replace(block, process_inter_block(block))
@@ -318,51 +344,12 @@ def non_resolving_instantiate(config: Any, lazy: bool = True, **kwargs: Any) -> 
 
     It selectively instantiates nodes with a '_target_' using hydra.utils.instantiate,
     without eagerly resolving the entire configuration tree.
-
-    Unlike standard Hydra instantiation, this preserves reactivity:
-    - If a target node depends on '${params.lr}', and 'params.lr' is updated
-      after instantiation, the object will be automatically re-instantiated
-      on the next access (if lazy=True).
-    - Interpolations pointing TO an instantiated node (e.g., 'ref: ${model}')
-      remain live and will reflect the current state of the model.
-
-    EXAMPLES:
-        # Reactive behavior
-        cfg = OmegaConf.create({'val': 10, 'obj': {'_target_': 'math.ceil', '_args_': ['${val}']}})
-        inst = non_resolving_instantiate(cfg)
-        print(inst.obj) # 10
-        inst.val = 20.1
-        print(inst.obj) # 21 (Re-instantiated!)
-
-        # Interpolation preservation
-        cfg = OmegaConf.create({'a': {'_target_': 'dict', 'x': 1}, 'b': '${a.x}'})
-        inst = non_resolving_instantiate(cfg)
-        inst.a.x = 100
-        print(inst.b) # 100
-
-    COUNTER-EXAMPLES:
-        # standard instantiate (EAGER)
-        cfg = ...
-        inst = hydra.utils.instantiate(cfg)
-        inst.val = 20.1
-        print(inst.obj) # 10 (STALE - it was replaced by a fixed int)
-
-    Args:
-        config: The configuration node to instantiate.
-        lazy: If True, defers instantiation and supports reactive re-instantiation.
-              Defaults to True.
-        **kwargs: Additional keyword arguments to pass to hydra.utils.instantiate.
-
-    Returns:
-        The instantiated object or a new configuration object with targets instantiated.
     """
-    if isinstance(config, (DictConfig, ListConfig)):
+    if isinstance(config, DictConfig | ListConfig):
         config_copy = copy.deepcopy(config)
         OmegaConf.set_struct(config_copy, False)
         OmegaConf.set_readonly(config_copy, False)
         config_copy._set_flag("allow_objects", True)
-
-        root_id = id(config_copy)
 
         if not lazy:
 
@@ -383,49 +370,74 @@ def non_resolving_instantiate(config: Any, lazy: bool = True, **kwargs: Any) -> 
 
             return _walk_and_instantiate(config_copy)
 
-        def _walk_and_ghost(node: Any, path: str) -> Any:
+        def _walk_and_ghost(
+            node: Any,
+            path: str,
+            parent_node: Any,
+            local_key: str | int,
+            target_deps: list[str] | None,
+        ) -> Any:
             if isinstance(node, DictConfig):
                 if "_target_" in node:
-                    # RATIONALE: To move a node to internal storage while preserving
-                    # its relative interpolations, we must normalize them.
-                    outside_deps: list[str] = []
-                    raw_data = OmegaConf.to_container(node, resolve=False)
+                    # Bottom-Up
+                    my_deps: list[str] = []
+                    node_copy = copy.deepcopy(node)
+                    for k in list(node_copy.keys()):
+                        if not OmegaConf.is_interpolation(node_copy, k):
+                            node_copy[k] = _walk_and_ghost(
+                                node_copy[k],
+                                f"{path}.{k}" if path else str(k),
+                                node_copy,
+                                k,
+                                my_deps,
+                            )
+
+                    raw_data = OmegaConf.to_container(node_copy, resolve=False)
                     norm_data = _normalize_and_collect_deps(
-                        raw_data, path, path, outside_deps
+                        raw_data, path, path, my_deps
                     )
                     norm_node = OmegaConf.create(norm_data)
 
-                    # Move to internal ghost storage.
-                    ghost_key = (
-                        path.replace(".", "_").replace("[", "_").replace("]", "_")
-                    )
-                    if not ghost_key:
-                        ghost_key = "root"
+                    # Store definition in the parent container's resolver cache
+                    cache = OmegaConf.get_cache(parent_node)
+                    lazy_configs = cache.setdefault("lazy_configs", {})
 
-                    _GLOBAL_GHOST_CONFIGS[(root_id, ghost_key)] = norm_node
-                    _GLOBAL_GHOST_DEPS[(root_id, ghost_key)] = outside_deps
+                    # Propagate caches from node_copy to norm_node to preserve nested targets
+                    _copy_lazy_state(node_copy, norm_node)
 
-                    # Replace node with our reactive resolver.
-                    return f"${{_lazy_inst:{ghost_key}}}"
+                    # Deduplicate dependencies while preserving order
+                    unique_deps = list(dict.fromkeys(my_deps))
+                    lazy_configs[str(local_key)] = (norm_node, unique_deps, kwargs)
+
+                    if target_deps is not None:
+                        target_deps.extend(unique_deps)
+
+                    return f"${{_lazy_inst:{local_key}}}"
 
                 for key in list(node.keys()):
-                    if key == "_lazy_configs":
-                        continue
                     if OmegaConf.is_interpolation(node, key):
                         continue
-                    child_path = f"{path}.{key}" if path else key
-                    node[key] = _walk_and_ghost(node[key], child_path)
+                    child_path = f"{path}.{key}" if path else str(key)
+                    node[key] = _walk_and_ghost(
+                        node[key], child_path, node, key, target_deps
+                    )
                 return node
             elif isinstance(node, ListConfig):
                 for i in range(len(node)):
                     if OmegaConf.is_interpolation(node, i):
                         continue
                     child_path = f"{path}[{i}]"
-                    node[i] = _walk_and_ghost(node[i], child_path)
+                    node[i] = _walk_and_ghost(node[i], child_path, node, i, target_deps)
                 return node
             return node
 
-        return _walk_and_ghost(config_copy, "")
+        if isinstance(config_copy, DictConfig) and "_target_" in config_copy:
+            wrapper = OmegaConf.create({"root": None})
+            wrapper.root = _walk_and_ghost(config_copy, "", wrapper, "root", None)
+            return wrapper
+        else:
+            _walk_and_ghost(config_copy, "", None, "", None)
+            return config_copy
 
     elif isinstance(config, dict):
         if "_target_" in config:

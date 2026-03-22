@@ -124,7 +124,7 @@ class TestTokenizedDataset(unittest.TestCase):
             assert isinstance(item["input_ids"], np.ndarray)
             assert isinstance(item["seq_lens"], np.ndarray)
             # Default strategy yields full docs, so document_id should be scalar int
-            assert isinstance(item["document_id"], (int, np.integer))
+            assert isinstance(item["document_id"], int | np.integer)
 
             assert item["input_ids"].dtype == dataset.dtype
             assert item["document_id"] == doc_count

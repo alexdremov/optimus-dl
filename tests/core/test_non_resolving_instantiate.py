@@ -1,5 +1,3 @@
-import math
-
 import omegaconf
 import torch
 import pytest

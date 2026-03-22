@@ -10,4 +10,3 @@ make CC=gcc CUDA=$CUDA_PATH lib
 make lib_install
 cd ../
 rm -rf gdrcopy
-

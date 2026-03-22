@@ -35,7 +35,7 @@ def pretty_print_results(results: dict) -> None:
         print("-" * 40)
 
         for metric_name, metric_value in dataset_results.items():
-            if isinstance(metric_value, (int, float)):
+            if isinstance(metric_value, int | float):
                 print(f"  {metric_name}: {metric_value:.4f}")
             else:
                 print(f"  {metric_name}: {metric_value}")
