@@ -449,9 +449,13 @@ def non_resolving_instantiate(config: Any, lazy: bool = True, **kwargs: Any) -> 
             return node
 
         if isinstance(config_copy, DictConfig) and "_target_" in config_copy:
-            wrapper = OmegaConf.create({"root": None})
-            wrapper.root = _walk_and_ghost(config_copy, "", wrapper, "root", None)
-            return wrapper
+            # Eagerly instantiate the root node if it's a target
+            for k in list(config_copy.keys()):
+                if k != "_target_" and not OmegaConf.is_interpolation(config_copy, k):
+                    config_copy[k] = _walk_and_ghost(
+                        config_copy[k], str(k), config_copy, k, None
+                    )
+            return hydra.utils.instantiate(config_copy, **kwargs)
         else:
             _walk_and_ghost(config_copy, "", None, "", None)
             return config_copy
