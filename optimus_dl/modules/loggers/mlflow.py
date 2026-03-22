@@ -134,6 +134,7 @@ class MlflowLogger(BaseMetricsLogger):
             return
 
         import mlflow
+        import mlflow.config
 
         # Set tracking URI if provided
         tracking_uri = self.cfg.tracking_uri or os.getenv("MLFLOW_TRACKING_URI")

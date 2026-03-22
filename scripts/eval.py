@@ -8,6 +8,7 @@ import hydra
 from omegaconf import DictConfig
 
 from optimus_dl.core.log import setup_logging
+from optimus_dl.core.omegaconf import non_resolving_instantiate
 from optimus_dl.recipe.eval import (
     EvalConfig,
     EvalRecipe,
@@ -63,6 +64,7 @@ def evaluate(cfg: DictConfig) -> None:
     # Convert to structured config
     from omegaconf import OmegaConf
 
+    cfg = non_resolving_instantiate(cfg)
     eval_cfg: EvalConfig = OmegaConf.merge(OmegaConf.structured(EvalConfig), cfg)
 
     logger.info("Starting LLM Baselines Evaluation")

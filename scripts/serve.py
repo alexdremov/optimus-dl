@@ -10,6 +10,7 @@ from omegaconf import (
 )
 
 from optimus_dl.core.log import setup_logging
+from optimus_dl.core.omegaconf import non_resolving_instantiate
 from optimus_dl.recipe.serve import (
     ServeConfig,
     ServeRecipe,
@@ -28,6 +29,7 @@ def serve(cfg: DictConfig) -> None:
     setup_logging()
 
     # Convert to structured config
+    cfg = non_resolving_instantiate(cfg)
     serve_cfg: ServeConfig = OmegaConf.merge(OmegaConf.structured(ServeConfig), cfg)
 
     logger.info("Starting LLM Baselines Server")
