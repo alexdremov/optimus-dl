@@ -7,6 +7,34 @@ variable access.
 It also provides a custom non-resolving instantiation system that allows
 Hydra-style object creation while preserving OmegaConf reactivity and
 interpolation integrity.
+
+Lazy reactive Hydra instantiation for OmegaConf trees.
+
+Goal
+----
+Hydra's `hydra.utils.instantiate(...)` normally resolves interpolations eagerly.
+That breaks OmegaConf reactivity in some workflows.
+
+This module implements a lazy alternative:
+
+- Every DictConfig node with `_target_` is replaced by `${_lazy_inst:<id>}`
+- Real target config is stored in a resolver-side cache
+- On access, `_lazy_inst`:
+  1) checks whether external dependencies changed
+  2) returns cached instance if not changed
+  3) re-instantiates if changed
+
+Key guarantees
+--------------
+1. Internal references inside a target node remain relative/portable.
+2. External references are tracked for cache invalidation.
+3. Nested lazy targets continue to work after instantiation.
+4. Circular lazy recursion is detected.
+
+Important
+---------
+- This relies on OmegaConf internals (`_set_parent`, resolver cache usage).
+- Not thread-safe by design (shared mutable cache in config object).
 """
 
 import copy
@@ -258,18 +286,31 @@ def _get_relative_path(from_val_path: str, to_abs_path: str) -> str:
     return "." * dots + _join_path(rem)
 
 
+def _get_interpolations_antlr(node: Any, interpolations: list[str]) -> None:
+    if type(node).__name__ == "InterpolationContext":
+        interpolations.append(node.getText())
+        return
+
+    if hasattr(node, "getChildCount"):
+        for i in range(node.getChildCount()):
+            _get_interpolations_antlr(node.getChild(i), interpolations)
+
+
 def _extract_interpolations(s: str) -> list[str]:
-    """Robustly extract top-level interpolation blocks from a string, handling nesting."""
-    inters = []
-    stack = []
-    for i in range(len(s)):
-        if s[i : i + 2] == "${":
-            stack.append(i)
-        elif s[i] == "}" and stack:
-            start = stack.pop()
-            if not stack:
-                inters.append(s[start : i + 1])
-    return inters
+    """Extract top-level interpolation blocks using OmegaConf's internal parser."""
+    if "${" not in s:
+        return []
+
+    try:
+        from omegaconf.grammar_parser import parse
+
+        tree = parse(s)
+        inters: list[str] = []
+        _get_interpolations_antlr(tree, inters)
+        return inters
+    except Exception:
+        # Fallback if parser fails, though it shouldn't for valid omegaconf strings
+        return []
 
 
 def _normalize_and_collect_deps(
