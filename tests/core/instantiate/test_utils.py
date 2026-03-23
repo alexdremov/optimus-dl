@@ -1,7 +1,7 @@
 import pytest
 from omegaconf import OmegaConf
 
-from optimus_dl.core.instantiate.utils import (
+from optimus_dl.core.instantiate import (
     compose,
     concat_lists,
     cond,
