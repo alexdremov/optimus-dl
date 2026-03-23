@@ -10,13 +10,9 @@ from collections.abc import (
     Callable,
     Mapping,
 )
-from typing import (
-    Any,
-)
+from typing import Any
 
-from omegaconf import (
-    OmegaConf,
-)
+from omegaconf import OmegaConf
 
 
 def merge_dicts(*dicts: Mapping[str, Any]) -> dict[str, Any]:
@@ -26,7 +22,7 @@ def merge_dicts(*dicts: Mapping[str, Any]) -> dict[str, Any]:
 
     Usage in config:
         my_kwargs:
-          _target_: optimus_dl.core.instantiate.utils.merge_dicts
+          _target_: optimus_dl.core.instantiate.merge_dicts
           _args_:
             - ${defaults.kwargs}
             - {specific_override: 42}
@@ -52,7 +48,7 @@ def cond(condition: bool, true_val: Any, false_val: Any) -> Any:
 
     Usage in config:
         layer:
-          _target_: optimus_dl.core.instantiate.utils.cond
+          _target_: optimus_dl.core.instantiate.cond
           condition: ${use_flash_attn}
           true_val:
             _target_: optimus_dl.modules.FlashAttention
@@ -75,7 +71,7 @@ def repeat(times: int, item: Any) -> list[Any]:
 
     Usage in config:
         layers:
-          _target_: optimus_dl.core.instantiate.utils.repeat
+          _target_: optimus_dl.core.instantiate.repeat
           times: ${model.n_layers}
           item:
             _target_: optimus_dl.modules.TransformerLayer
@@ -94,7 +90,7 @@ def concat_lists(*lists: list[Any]) -> list[Any]:
 
     Usage in config:
         all_metrics:
-          _target_: optimus_dl.core.instantiate.utils.concat_lists
+          _target_: optimus_dl.core.instantiate.concat_lists
           _args_:
             - ${metrics.train}
             - ${metrics.val}
@@ -118,7 +114,7 @@ def get_item(key: str, mapping: Mapping[str, Any], default: Any = None) -> Any:
 
     Usage in config:
         optimizer:
-          _target_: optimus_dl.core.instantiate.utils.get_item
+          _target_: optimus_dl.core.instantiate.get_item
           key: ${args.optim_type}
           mapping:
             adamw:
@@ -148,7 +144,7 @@ def compose(*functions: Callable) -> Callable:
 
     Usage in config:
         transform:
-          _target_: optimus_dl.core.instantiate.utils.compose
+          _target_: optimus_dl.core.instantiate.compose
           _args_:
             - _target_: optimus_dl.data.transforms.Tokenize
             - _target_: optimus_dl.data.transforms.Chunk
