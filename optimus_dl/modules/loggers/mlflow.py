@@ -334,19 +334,19 @@ class MlflowLogger(BaseMetricsLogger):
             logger.error(f"Error logging artifacts: {e}")
 
         try:
+            mlflow.flush_artifact_async_logging()
+            mlflow.flush_async_logging()
+            mlflow.flush_trace_async_logging()
+        except Exception as e:
+            logger.error(f"Error flushing MLflow logging: {e}")
+
+        try:
             mlflow.end_run()
             logger.info("MLflow run ended successfully")
         except Exception as e:
             logger.error(f"Error ending MLflow run: {e}")
         finally:
             self.active_run = None
-
-        try:
-            mlflow.flush_artifact_async_logging()
-            mlflow.flush_async_logging()
-            mlflow.flush_trace_async_logging()
-        except Exception as e:
-            logger.error(f"Error flushing MLflow logging: {e}")
 
     def state_dict(self) -> dict[str, Any]:
         """Return the run_id for resumption."""
