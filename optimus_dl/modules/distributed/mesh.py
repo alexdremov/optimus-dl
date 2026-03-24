@@ -313,12 +313,14 @@ class MeshCollective(Collective):
     @override
     def broadcast(self, tensor: Tensor, source_rank: int = 0) -> None:
         """Broadcast a tensor from the source rank."""
-        dist.broadcast(tensor, source_rank, group=self._process_group)
+        dist.broadcast(tensor, group_src=source_rank, group=self._process_group)
 
     @override
     def broadcast_objects(self, objects: list[object], source_rank: int = 0) -> None:
         """Broadcast Python objects from the source rank."""
-        dist.broadcast_object_list(objects, source_rank, group=self._process_group)
+        dist.broadcast_object_list(
+            objects, group_src=source_rank, group=self._process_group
+        )
 
     @property
     @override

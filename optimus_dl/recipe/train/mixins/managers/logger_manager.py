@@ -50,6 +50,8 @@ class LoggerManager:
         self.closed = False
         self.spent_logging = None
 
+        self._atexit_handlers = []
+
     def build_loggers(self, **kwargs):
         """Instantiate all configured loggers.
 
@@ -75,6 +77,9 @@ class LoggerManager:
                 )
                 loggers.append(logger_instance)
                 logger.info(f"Built logger: {logger_instance.__class__.__name__}")
+
+                close_handle = atexit.register(logger_instance.close)
+                self._atexit_handlers.append(close_handle)
             except Exception as e:
                 logger.error(f"Failed to build logger from config {logger_config}: {e}")
                 raise
@@ -111,9 +116,6 @@ class LoggerManager:
                     f"Failed to setup logger {logger_instance.__class__.__name__}: {e}"
                 )
 
-        # Ensuring all logs are saved on any interruptions
-        atexit.register(self.close_loggers)
-
     def log_metrics_to_loggers(self, metrics, step: int, group: str = "train"):
         """Dispatch metrics to all active loggers.
 
@@ -142,13 +144,16 @@ class LoggerManager:
             return
         self.closed = True
 
-        for logger_instance in self.loggers or []:
+        for logger_instance, close_handle in zip(
+            self.loggers or [], self._atexit_handlers, strict=True
+        ):
             try:
                 logger_instance.close()
             except Exception as e:
                 logger.error(
                     f"Failed to close logger {logger_instance.__class__.__name__}: {e}"
                 )
+            atexit.unregister(close_handle)
 
     def state_dict(self):
         """Collect state from all loggers for checkpointing."""
