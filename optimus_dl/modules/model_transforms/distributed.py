@@ -110,6 +110,13 @@ class DDPTransform(BaseDistributedTransform):
             logger.info("Single rank detected, skipping DDP wrapping")
             return model
 
+        assert isinstance(
+            self.collective, MeshCollective
+        ), "DDPTransform requires a MeshCollective for distributed mode"
+        assert (
+            self.collective.dp_mesh.shape[0] == self.collective.world_size
+        ), "DP mesh size must match world size for DDPTransform (no sharding is possible with DDP)"
+
         logger.info("Wrapping model with DDP")
 
         # Move model to device
