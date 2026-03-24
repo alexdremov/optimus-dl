@@ -114,7 +114,7 @@ class DDPTransform(BaseDistributedTransform):
             self.collective, MeshCollective
         ), "DDPTransform requires a MeshCollective for distributed mode"
         assert (
-            self.collective.dp_mesh.shape[0] == self.collective.world_size
+            self.collective.dp_mesh.shape[0] == self.collective.dp_world_size
         ), "DP mesh size must match world size for DDPTransform (no sharding is possible with DDP)"
 
         logger.info("Wrapping model with DDP")
