@@ -342,10 +342,16 @@ class TrainRecipe(
                 is_restart=is_restart,
                 checkpoint_manager=self.checkpoint_manager,
             )
+            logger.info("Model built")
 
             optimizer: Optimizer = self.build_optimizer(model.make_parameter_groups())
+            logger.info("Optimizer built")
+
             lr_scheduler = self.build_lr_scheduler(optimizer)
+            logger.info("LR scheduler built")
+
             criterion: BaseCriterion = self.build_criterion(collective=collective)
+            logger.info("Criterion built")
 
             # Setup training context (AMP, scaler, etc.) using recipe mixin
             training_context = self.setup_training_context(device)
