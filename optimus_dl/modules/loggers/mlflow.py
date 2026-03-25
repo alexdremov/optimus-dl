@@ -43,6 +43,9 @@ class MlflowLoggerConfig(MetricsLoggerConfig):
         async_logging: If True, enables asynchronous logging for better performance.
         artifact_location: Optional custom artifact location for the experiment.
         log_system_metrics: If True, enables system metrics logging (CPU, GPU, Memory, etc.)
+        max_retries: The maximum number of retries for HTTP requests to the tracking server.
+        backoff_factor: The backoff factor for HTTP request retries.
+        timeout: The timeout for HTTP requests in seconds.
     """
 
     # MLflow specific settings
@@ -53,6 +56,11 @@ class MlflowLoggerConfig(MetricsLoggerConfig):
     async_logging: bool = True
     artifact_location: str | None = None
     log_system_metrics: bool = True
+
+    # Reliability settings
+    max_retries: int = 10
+    backoff_factor: int = 2
+    timeout: int = 15
 
 
 def get_git_commit_hash() -> str | None:
@@ -135,6 +143,19 @@ class MlflowLogger(BaseMetricsLogger):
 
         import mlflow
         import mlflow.config
+        import mlflow.environment_variables
+
+        # Configure reliability settings via environment variables
+        # MLflow's Python client respects these for its internal requests session
+
+        mlflow.environment_variables.MLFLOW_HTTP_REQUEST_MAX_RETRIES.set(
+            self.cfg.max_retries
+        )
+        mlflow.environment_variables.MLFLOW_HTTP_REQUEST_BACKOFF_FACTOR.set(
+            self.cfg.backoff_factor
+        )
+        mlflow.environment_variables.MLFLOW_HTTP_REQUEST_TIMEOUT.set(self.cfg.timeout)
+        mlflow.environment_variables.MLFLOW_HTTP_RESPECT_RETRY_AFTER_HEADER.set(True)
 
         # Set tracking URI if provided
         tracking_uri = self.cfg.tracking_uri or os.getenv("MLFLOW_TRACKING_URI")
