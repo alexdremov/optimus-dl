@@ -71,7 +71,7 @@ class Evaluator:
         model: BaseModel,
         criterion: BaseCriterion,
         eval_data_dict: dict[str, EvalDataPipeline],
-        collective: Collective = None,
+        collective: Collective | None = None,
         all_metrics_configs: dict[str, list[dict]] | None = None,
     ) -> None | dict:
         """Run evaluation if the current iteration matches the frequency.
@@ -91,7 +91,7 @@ class Evaluator:
 
         # deterministic order
         eval_data_dict_keys = sorted(eval_data_dict.keys())
-        for eval_name, eval_data in eval_data_dict_keys:
+        for eval_name in eval_data_dict_keys:
             eval_data = eval_data_dict[eval_name]
 
             max_iterations = (
@@ -160,7 +160,9 @@ class Evaluator:
         total_metrics = {}
         all_metrics_configs = all_metrics_configs or {}
 
-        for eval_name, eval_data in eval_data_dict.items():
+        eval_data_dict_keys = sorted(eval_data_dict.keys())
+        for eval_name in eval_data_dict_keys:
+            eval_data = eval_data_dict[eval_name]
             max_iterations_local = (
                 eval_data.eval_iterations
                 if eval_data.eval_iterations is not None
