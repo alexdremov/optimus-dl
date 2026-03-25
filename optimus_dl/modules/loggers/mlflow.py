@@ -156,6 +156,9 @@ class MlflowLogger(BaseMetricsLogger):
         )
         mlflow.environment_variables.MLFLOW_HTTP_REQUEST_TIMEOUT.set(self.cfg.timeout)
         mlflow.environment_variables.MLFLOW_HTTP_RESPECT_RETRY_AFTER_HEADER.set(True)
+        mlflow.environment_variables.MLFLOW_DISABLE_TELEMETRY.set(
+            True
+        )  # Disable telemetry for privacy and reduced overhead
 
         # Set tracking URI if provided
         tracking_uri = self.cfg.tracking_uri or os.getenv("MLFLOW_TRACKING_URI")
