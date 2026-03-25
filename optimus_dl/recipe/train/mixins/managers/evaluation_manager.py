@@ -17,6 +17,7 @@ from optimus_dl.core.registry import (
 )
 from optimus_dl.modules.criterion import BaseCriterion
 from optimus_dl.modules.data import EvalDataPipeline
+from optimus_dl.modules.distributed.base import Collective
 from optimus_dl.modules.metrics import (
     compute_meters,
     log_averaged,
@@ -70,7 +71,7 @@ class Evaluator:
         model: BaseModel,
         criterion: BaseCriterion,
         eval_data_dict: dict[str, EvalDataPipeline],
-        collective: Any = None,
+        collective: Collective | None = None,
         all_metrics_configs: dict[str, list[dict]] | None = None,
     ) -> None | dict:
         """Run evaluation if the current iteration matches the frequency.
@@ -87,7 +88,12 @@ class Evaluator:
             Dictionary of computed metrics if evaluation ran, else None.
         """
         result = {}
-        for eval_name, eval_data in eval_data_dict.items():
+
+        # deterministic order
+        eval_data_dict_keys = sorted(eval_data_dict.keys())
+        for eval_name in eval_data_dict_keys:
+            eval_data = eval_data_dict[eval_name]
+
             max_iterations = (
                 eval_data.eval_iterations
                 if eval_data.eval_iterations is not None
@@ -154,7 +160,9 @@ class Evaluator:
         total_metrics = {}
         all_metrics_configs = all_metrics_configs or {}
 
-        for eval_name, eval_data in eval_data_dict.items():
+        eval_data_dict_keys = sorted(eval_data_dict.keys())
+        for eval_name in eval_data_dict_keys:
+            eval_data = eval_data_dict[eval_name]
             max_iterations_local = (
                 eval_data.eval_iterations
                 if eval_data.eval_iterations is not None

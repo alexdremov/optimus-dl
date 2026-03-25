@@ -180,3 +180,5 @@ cache/
 \nsite/
 
 .geminiignore
+
+build
