@@ -52,6 +52,7 @@ target "ccache-export" {
   args = {
     ARCH = "${ARCH}"
     CACHE_BUSTER = "${CACHE_BUSTER}"
+    VERSION = "${VERSION}"
   }
 }
 
@@ -62,5 +63,6 @@ target "ccache-seed" {
   args = {
     ARCH = "${ARCH}"
     CACHE_BUSTER = "${CACHE_BUSTER}"
+    VERSION = "${VERSION}"
   }
 }

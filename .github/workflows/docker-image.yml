@@ -8,8 +8,8 @@ on:
     types: [published]
   pull_request:
     paths:
-      - 'docker/**'
-      - '.github/workflows/docker-image.yml'
+      - "docker/**"
+      - ".github/workflows/docker-image.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -33,7 +33,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install build and get version
         id: prep
@@ -144,9 +144,9 @@ jobs:
 
       - name: Docker Build & Push Platform-Specific Image
         run: |
-          VERSION="${{ needs.prepare.outputs.version }}"
-          BRANCH_NAME="${{ needs.prepare.outputs.branch_name }}"
-          ARCH="${{ matrix.arch }}"
+          export VERSION="${{ needs.prepare.outputs.version }}"
+          export BRANCH_NAME="${{ needs.prepare.outputs.branch_name }}"
+          export ARCH="${{ matrix.arch }}"
 
           echo "Building Version: $VERSION for Architecture: $ARCH on ${{ matrix.runner }}"
 
@@ -187,7 +187,6 @@ jobs:
 
           echo "Starting build and push:"
           eval "$BAKE_CMD"
-
 
       - name: Save updated ccache to registry
         if: always()
