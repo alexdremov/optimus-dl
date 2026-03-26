@@ -340,26 +340,6 @@ class CheckpointManager:
         metadata_path_tmp = Path(str(metadata_path) + f".{iteration}.tmp")
         per_rank_metadata_tmp = Path(str(per_rank_metadata_path) + f".{iteration}.tmp")
 
-        final_paths_to_check = (
-            per_rank_metadata_path,
-        )  # ranks check their own per-rank metadata path to avoid race conditions
-        if collective.is_master:
-            final_paths_to_check = (
-                checkpoint_id,
-                metadata_path,
-                per_rank_metadata_path,
-            )  # master checks all paths to ensure they don't exist before saving, to prevent accidental overwrites
-
-        for path in final_paths_to_check:
-            if path.exists():
-                logger.warning(
-                    f"Checkpoint file {path} already exists and will be overwritten"
-                )
-                if path.is_dir():
-                    shutil.rmtree(path)
-                else:
-                    os.remove(path)
-
         tmp_paths_to_check = (per_rank_metadata_tmp,)
         if collective.is_master:
             tmp_paths_to_check = (
@@ -434,6 +414,26 @@ class CheckpointManager:
         logger.info(
             "All ranks have finished saving checkpoint, proceeding with renaming temporary files..."
         )
+
+        final_paths_to_check = (
+            per_rank_metadata_path,
+        )  # ranks check their own per-rank metadata path to avoid race conditions
+        if collective.is_master:
+            final_paths_to_check = (
+                checkpoint_id,
+                metadata_path,
+                per_rank_metadata_path,
+            )  # master checks all paths to ensure they don't exist before saving, to prevent accidental overwrites
+
+        for path in final_paths_to_check:
+            if path.exists():
+                logger.warning(
+                    f"Checkpoint file {path} already exists and will be overwritten"
+                )
+                if path.is_dir():
+                    shutil.rmtree(path)
+                else:
+                    os.remove(path)
 
         # Atomically move temp files to final location
         for final_path, tmp_path in tmp_mappings:
