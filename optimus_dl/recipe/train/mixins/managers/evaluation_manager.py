@@ -133,10 +133,11 @@ class Evaluator:
         criterion: BaseCriterion,
         eval_data_dict: dict,
         max_iterations: int | None = None,
-        collective: Any = None,
+        collective: Collective | None = None,
         all_metrics_configs: dict[str, list[dict]] | None = None,
         metrics_prefix: str = "eval",
         show_progress: bool = False,
+        guaranteed_same_batches: bool = False,
     ):
         """Execute the evaluation loop for all provided datasets.
 
@@ -152,6 +153,8 @@ class Evaluator:
             all_metrics_configs: Root metrics configuration mapping dataset names to configs.
             metrics_prefix: Prefix for metric groups (e.g., "eval" or "metrics").
             show_progress: Whether to show a progress bar.
+            guaranteed_same_batches: If True, assumes all ranks will see the same number of batches, allowing for simpler stopping logic.
+            If False, uses collective communication to determine when to stop if any rank exhausts its dataloader.
 
         Returns:
             Nested dictionary of results: {dataset_name: {metric_name: value}}.
@@ -221,8 +224,30 @@ class Evaluator:
                         or iterations < max_iterations_local
                     ):
                         log_event_occurence("perf/full_iteration")
+                        exhausted = False
+                        try:
+                            elapsed_batch_get, batch = measured_next(eval_iter)
+                        except StopIteration:
+                            exhausted = True
 
-                        elapsed_batch_get, batch = measured_next(eval_iter)
+                        if collective is not None and not guaranteed_same_batches:
+                            any_stopping = collective.all_reduce(
+                                torch.tensor(
+                                    [exhausted],
+                                    device=collective.default_device,
+                                    dtype=torch.int32,
+                                ),
+                                op=Collective.ReduceOp.MAX,
+                            )
+                            if any_stopping.item() == 1:
+                                # at least one rank is exhausted, stop evaluation
+                                raise StopIteration
+                        else:
+                            # If we are guaranteed that all ranks see the same number of batches,
+                            # we can just stop when this rank is exhausted
+                            if exhausted:
+                                raise StopIteration
+
                         loss, exposed = criterion(
                             model, batch, requested_protocols=requested_protocols
                         )

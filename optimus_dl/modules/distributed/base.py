@@ -24,6 +24,8 @@ class Collective(ABC):
         world_size: Total number of processes in the global gang.
     """
 
+    ReduceOp = ReduceOp
+
     rank: int
     world_size: int
 
