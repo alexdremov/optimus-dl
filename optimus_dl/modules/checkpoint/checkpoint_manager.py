@@ -638,7 +638,12 @@ class CheckpointManager:
         else:
             logger.info("Metrics not restored")
 
-        per_rank_metadata_available = set(per_rank_metadata.keys())
+        per_rank_metadata_available = set(per_rank_metadata.keys()) - {
+            "iteration",
+            "metrics",
+            "data_loaders",
+            "data_sources",
+        }
         for key, value in kwargs.items():
             assert hasattr(
                 value, "load_state_dict"
