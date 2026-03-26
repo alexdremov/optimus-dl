@@ -12,6 +12,7 @@ from optimus_dl.modules.data.datasets import (
     build_dataset,
     register_dataset,
 )
+from optimus_dl.modules.data.datasets.base import BaseDataset
 from optimus_dl.modules.data.profiling import (
     PipelineProfiler,
     ProfilingProxyNode,
@@ -44,16 +45,16 @@ class EvalDataPipeline(NamedTuple):
     eval_guaranteed_same_batches: bool | None
 
 
-class LoggingDataNode(torchdata.nodes.BaseNode):
+class LoggingDataNode(BaseDataset):
     """A simple node that logs reset calls and delegates to a source node. Useful for debugging data pipelines."""
 
     def __init__(self, name: str, source: torchdata.nodes.BaseNode):
-        super().__init__()
+        super().__init__(None)
         self.name = name
         self.source = source
 
     def reset(self, initial_state=None):
-        logger.info(f"Resetting data node {self.name}")
+        logger.info(f"Resetting data node {self.name}, initial_state={initial_state}")
         super().reset(initial_state)
         self.source.reset(initial_state)
 
