@@ -11,12 +11,18 @@ logger = logging.getLogger(__name__)
 
 def finalize_process(timeout_seconds: int = 5, max_retries=10) -> None:
     """
-    Recursively terminates all child processes of the current process.
-    Terminate current process in case of unresponsive children after retries.
+    Finalizes the process by ensuring all child processes are terminated to prevent hanging.
+     - First attempts a polite termination of child processes.
+     - If any child processes are still alive after the timeout, it forcefully kills them.
+     - Schedules a watchdog to force exit the process after a delay as a safety net.
+
+    Args:
+        timeout_seconds: Time to wait for child processes to terminate before force killing.
+        max_retries: Maximum number of retries to check for alive child processes.
     """
-    # try to gracefully terminate joblib
     force_terminate_joblib()
     finish_wandb()
+    finish_mlflow()
 
     children = ["dummy"]
     retries = 0
@@ -116,3 +122,20 @@ def finish_wandb():
     if wandb.run is not None:
         logger.info("Finishing WandB run to ensure all processes are terminated.")
         wandb.finish()
+
+
+def finish_mlflow():
+    """
+    Ensures that all MLflow processes are terminated to prevent hanging.
+    """
+    try:
+        import mlflow
+    except ImportError:
+        logger.warning("MLflow is not installed, cannot finish MLflow run.")
+        return
+
+    try:
+        mlflow.end_run()
+        logger.info("Finished MLflow run to ensure all processes are terminated.")
+    except Exception as e:
+        logger.warning(f"Failed to finish MLflow run: {e}", exc_info=True)
