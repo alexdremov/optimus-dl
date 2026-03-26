@@ -340,7 +340,17 @@ class CheckpointManager:
         metadata_path_tmp = Path(str(metadata_path) + f".{iteration}.tmp")
         per_rank_metadata_tmp = Path(str(per_rank_metadata_path) + f".{iteration}.tmp")
 
-        for path in (checkpoint_id, metadata_path, per_rank_metadata_path):
+        final_paths_to_check = (
+            per_rank_metadata_path,
+        )  # ranks check their own per-rank metadata path to avoid race conditions
+        if collective.is_master:
+            final_paths_to_check = (
+                checkpoint_id,
+                metadata_path,
+                per_rank_metadata_path,
+            )  # master checks all paths to ensure they don't exist before saving, to prevent accidental overwrites
+
+        for path in final_paths_to_check:
             if path.exists():
                 logger.warning(
                     f"Checkpoint file {path} already exists and will be overwritten"
@@ -350,7 +360,15 @@ class CheckpointManager:
                 else:
                     os.remove(path)
 
-        for path in (checkpoint_id_tmp, metadata_path_tmp, per_rank_metadata_tmp):
+        tmp_paths_to_check = (per_rank_metadata_tmp,)
+        if collective.is_master:
+            tmp_paths_to_check = (
+                checkpoint_id_tmp,
+                metadata_path_tmp,
+                per_rank_metadata_tmp,
+            )
+
+        for path in tmp_paths_to_check:
             if path.exists():
                 logger.warning(
                     f"Temporary checkpoint file {path} already exists and will be overwritten"
@@ -369,6 +387,15 @@ class CheckpointManager:
                     (checkpoint_id, checkpoint_id_tmp),
                 ]
             )
+
+        # Ensure all ranks have checked for existing files before any rank starts writing
+        logger.info(
+            "All ranks are checking for existing checkpoint files before saving..."
+        )
+        collective.barrier()
+        logger.info(
+            "All ranks have checked for existing checkpoint files, proceeding with saving..."
+        )
 
         # All ranks save to temporary paths first
         dcp_save(
