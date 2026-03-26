@@ -239,14 +239,26 @@ class Evaluator:
                         or max_iterations_local < 0
                         or iterations < max_iterations_local
                     ):
+                        logger.debug(
+                            f"Eval {eval_name}: Starting iteration {iterations}"
+                        )
                         log_event_occurence("perf/full_iteration")
                         exhausted = False
                         try:
+                            logger.debug(
+                                f"Eval {eval_name}: Fetching batch for iteration {iterations}"
+                            )
                             elapsed_batch_get, batch = measured_next(eval_iter)
                         except StopIteration:
+                            logger.debug(
+                                f"Eval {eval_name}: Dataloader exhausted on this rank"
+                            )
                             exhausted = True
 
                         if check_exchaustion:
+                            logger.debug(
+                                f"Eval {eval_name}: Synchronizing exhaustion state (all_reduce MAX)"
+                            )
                             stop_flag[0] = int(exhausted)
                             collective.all_reduce(
                                 stop_flag,
@@ -254,24 +266,28 @@ class Evaluator:
                             )
                             if stop_flag.item() == 1:
                                 # at least one rank is exhausted, stop evaluation
-                                logging.info(
-                                    "At least one rank exhausted its dataloader, stopping evaluation."
+                                logger.info(
+                                    f"Eval {eval_name}: At least one rank exhausted its dataloader, stopping evaluation."
                                 )
                                 raise StopIteration
                         else:
                             # If we are guaranteed that all ranks see the same number of batches,
                             # we can just stop when this rank is exhausted
                             if exhausted:
-                                logging.info(
-                                    "Dataloader exhausted, stopping evaluation."
+                                logger.info(
+                                    f"Eval {eval_name}: Dataloader exhausted, stopping evaluation."
                                 )
                                 raise StopIteration
 
+                        logger.debug(
+                            f"Eval {eval_name}: Running forward pass for iteration {iterations}"
+                        )
                         loss, exposed = criterion(
                             model, batch, requested_protocols=requested_protocols
                         )
 
                         if engine:
+                            logger.debug(f"Eval {eval_name}: Updating metric engine")
                             computed_data = exposed.copy()
                             computed_data["loss"] = loss
                             engine.update(
@@ -291,6 +307,9 @@ class Evaluator:
 
                         # Step metrics for each evaluation iteration
                         step_meters(f"{metrics_prefix}/{eval_name}")
+                        logger.debug(
+                            f"Eval {eval_name}: Finished iteration {iterations-1}"
+                        )
 
                 except StopIteration:
                     pass
@@ -302,6 +321,7 @@ class Evaluator:
                 total_time = time.perf_counter() - start_time
                 log_event_end("perf/total_run")
 
+            logger.debug(f"Eval {eval_name}: Computing aggregated meters")
             eval_metrics = compute_meters(
                 f"{metrics_prefix}/{eval_name}",
                 aggregate=True,

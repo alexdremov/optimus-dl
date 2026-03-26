@@ -268,7 +268,12 @@ class CheckpointManager:
         """
         if not isinstance(checkpoint_path, Path):
             checkpoint_path = Path(checkpoint_path)
-        checkpoint_path.mkdir(parents=True, exist_ok=True)
+
+        if not checkpoint_path.exists() and collective.is_master:
+            checkpoint_path.mkdir(parents=True, exist_ok=True)
+
+        logger.info("Waiting for all ranks to reach checkpoint saving point...")
+        collective.barrier()
 
         logger.info(f"Saving state for model and optimizer at iteration {iteration}")
         model_state_dict = dcp_state_dict.get_model_state_dict(
@@ -413,6 +418,7 @@ class CheckpointManager:
         )
 
         per_rank_metadata = {
+            "iteration": iteration,
             "data_loaders": {
                 k: v.state_dict() for k, v in (data_loaders or {}).items()
             },
@@ -583,6 +589,11 @@ class CheckpointManager:
         per_rank_metadata = torch.load(
             per_rank_metadata_path, map_location="cpu", weights_only=False
         )
+
+        assert iteration == per_rank_metadata.get(
+            "iteration", iteration
+        ), f"Global iteration {iteration} does not match per-rank iteration {per_rank_metadata['iteration']} - checkpoint may be corrupted."
+
         for key in load_strategy.extra_ignore_keys or []:
             if key in per_rank_metadata:
                 per_rank_metadata.pop(key)

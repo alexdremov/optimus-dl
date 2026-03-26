@@ -313,9 +313,11 @@ class TrainRecipe(
             logger.info(self.cfg)
 
             # Setup device and distributed collective
+            logger.debug("Setting up device and distributed collective...")
             device, collective = setup_device_and_collective(
                 use_gpu=self.cfg.common.use_gpu, config=self.cfg.common.distributed
             )
+            logger.debug(f"Device and collective setup complete. Device: {device}")
 
             logger.info(
                 "Setting up console logging. Will log from master only from now."
@@ -337,6 +339,7 @@ class TrainRecipe(
                     clear_existing=False,
                 )
 
+            logger.debug("Building model...")
             model: BaseModel = self.build_model(
                 model_config=self.cfg.model,
                 collective=collective,
@@ -345,12 +348,15 @@ class TrainRecipe(
             )
             logger.info("Model built")
 
+            logger.debug("Building optimizer...")
             optimizer: Optimizer = self.build_optimizer(model.make_parameter_groups())
             logger.info("Optimizer built")
 
+            logger.debug("Building LR scheduler...")
             lr_scheduler = self.build_lr_scheduler(optimizer)
             logger.info("LR scheduler built")
 
+            logger.debug("Building criterion...")
             criterion: BaseCriterion = self.build_criterion(collective=collective)
             logger.info("Criterion built")
 
@@ -358,6 +364,7 @@ class TrainRecipe(
             training_context = self.setup_training_context(device)
 
             try:
+                logger.debug("Building data pipelines...")
                 train_datapipeline = self.build_train_data(
                     device=device, collective=collective
                 )
@@ -371,6 +378,7 @@ class TrainRecipe(
                     "train": train_datapipeline.dataloader,
                     # eval dataloader may be not restored
                 }
+                logger.debug("Data pipelines built")
             except Exception as e:
                 logger.error(f"Failed to build data pipelines: {e}")
                 raise
@@ -381,6 +389,7 @@ class TrainRecipe(
             log_event_end("perf/init")
 
             # Try to resume from checkpoint in output paths
+            logger.debug("Checking for existing checkpoints to load...")
             start_iteration, metadata = self.load_checkpoint_if_exists(
                 model=model,
                 optimizer=optimizer,
@@ -398,6 +407,9 @@ class TrainRecipe(
             if not is_restart and self.cfg.common.load_checkpoint is not None:
                 # if checkpoint from output path was not loaded, we are sure that this launch is not
                 # re-scheduling / preemption re-start, so we can try loading model from load_checkpoint
+                logger.debug(
+                    f"Loading checkpoint from {self.cfg.common.load_checkpoint}..."
+                )
                 metadata = self.load_checkpoint(
                     model=model,
                     optimizer=optimizer,
@@ -452,7 +464,9 @@ class TrainRecipe(
             "grad_scaler": training_context["scaler"],
         }
 
+        logger.debug("Initializing training data iterator...")
         train_data_iter = iter(train_datapipeline.dataloader)
+        logger.debug("Training data iterator initialized")
 
         # Setup training metric engine if config exists
         train_metric_engine = None
@@ -461,6 +475,7 @@ class TrainRecipe(
 
             train_metric_engine = MetricEngine("train", self.cfg.metrics["train"])
 
+        logger.debug("Reaching pre-training barrier...")
         collective.barrier()
         logger.info("All ranks are ready")
 
@@ -477,6 +492,7 @@ class TrainRecipe(
             )
             for iteration in pbar:
                 try:
+                    logger.debug(f"Starting training iteration {iteration}")
                     # Execute one training iteration using recipe mixin
                     self.run_training_iteration(
                         model=model,
@@ -487,10 +503,14 @@ class TrainRecipe(
                         lr_scheduler=lr_scheduler,
                         metric_engine=train_metric_engine,
                     )
+                    logger.debug(f"Finished training iteration {iteration}")
 
                     with meters_group("train") as should_log:
                         if should_log:
                             # Get aggregated metrics for progress bar
+                            logger.debug(
+                                f"Computing training metrics for iteration {iteration}"
+                            )
                             current_metrics = compute_meters(
                                 "train",
                                 aggregate=True,
@@ -514,6 +534,10 @@ class TrainRecipe(
                     reset_meters(
                         "train"
                     )  # Reset metrics after logging (keep metrics with reset=False)
+
+                    logger.debug(
+                        f"Running evaluation if needed for iteration {iteration}"
+                    )
                     self.evaluate_and_log(
                         training_context=training_context,
                         iteration=iteration,
@@ -523,12 +547,16 @@ class TrainRecipe(
                         collective=collective,
                     )
 
+                    logger.debug(
+                        f"Saving checkpoint if needed for iteration {iteration}"
+                    )
                     self.save_checkpoint_if_needed(
                         iteration=iteration,
                         **common_chkp_kwargs,
                     )
 
                 except KeyboardInterrupt:
+                    logger.info("Training interrupted by user")
                     self.handle_training_interruption(
                         iteration=iteration,
                         **common_chkp_kwargs,
@@ -550,4 +578,5 @@ class TrainRecipe(
 
         # Close loggers at the end of training
         if collective.is_master:
+            logger.debug("Closing loggers...")
             self.close_loggers()

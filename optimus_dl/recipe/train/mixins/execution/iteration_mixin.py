@@ -270,6 +270,9 @@ class TrainingIterationMixin:
                 )
 
                 try:
+                    logger.debug(
+                        f"Fetching microbatch {microbatch_idx+1}/{self.optimization_config.acc_steps}"
+                    )
                     elapsed_batch_get, batch = measured_next(train_data_iter)
                 except StopIteration:
                     logger.error("Training data iterator exhausted unexpectedly")
@@ -279,6 +282,9 @@ class TrainingIterationMixin:
                     continue
 
                 with self.accumulation_context(model, is_last_microbatch):
+                    logger.debug(
+                        f"Starting forward pass for microbatch {microbatch_idx+1}"
+                    )
                     forward_result = self.execute_forward_pass(
                         model,
                         criterion,
@@ -297,6 +303,9 @@ class TrainingIterationMixin:
                             computed_data=computed_data,
                         )
 
+                    logger.debug(
+                        f"Starting backward pass for microbatch {microbatch_idx+1}"
+                    )
                     elapsed_backward = self.execute_backward_pass(
                         loss, training_context["scaler"]
                     )
@@ -310,12 +319,14 @@ class TrainingIterationMixin:
                 )
 
             # Optimizer step
+            logger.debug("Starting optimizer step")
             optimizer_result = self.execute_optimizer_step(
                 optimizer,
                 model,
                 training_context["scaler"],
                 self.optimization_config.clip_grad_norm,
             )
+            logger.debug("Optimizer step finished")
 
             # Log optimizer metrics
             self.log_optimizer_metrics(
@@ -329,6 +340,7 @@ class TrainingIterationMixin:
             optimizer.zero_grad()
 
             if lr_scheduler is not None:
+                logger.debug("Stepping LR scheduler")
                 lr_scheduler.step()
 
     def accumulation_context(self, model, is_last_microbatch):
