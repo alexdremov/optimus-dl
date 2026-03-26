@@ -37,6 +37,7 @@ class EvalDataPipeline(NamedTuple):
     dataloader: torchdata.nodes.BaseNode | torchdata.nodes.Loader
     eval_freq: int | None
     eval_iterations: int | None
+    eval_guaranteed_same_batches: bool | None
 
 
 def build_data_pipeline(
@@ -70,12 +71,19 @@ def build_data_pipeline(
             pipeline._is_root = True
 
     assert isinstance(pipeline, torchdata.nodes.BaseNode)
-    if hasattr(cfg, "eval_freq") or hasattr(cfg, "eval_iterations"):
+    if (
+        hasattr(cfg, "eval_freq")
+        or hasattr(cfg, "eval_iterations")
+        or hasattr(cfg, "eval_guaranteed_same_batches")
+    ):
         return EvalDataPipeline(
             datasets=dataset,
             dataloader=pipeline,
             eval_freq=getattr(cfg, "eval_freq", None),
             eval_iterations=getattr(cfg, "eval_iterations", None),
+            eval_guaranteed_same_batches=getattr(
+                cfg, "eval_guaranteed_same_batches", None
+            ),
         )
     else:
         return DataPipeline(datasets=dataset, dataloader=pipeline)

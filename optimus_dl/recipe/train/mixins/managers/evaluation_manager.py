@@ -52,6 +52,8 @@ class Evaluator:
         eval_iterations: Max number of batches to process per evaluation dataset.
             If None or negative, processes the entire dataset (negative values are
             treated as unlimited).
+        eval_guaranteed_same_batches:  If True, assumes all ranks will see the same number of batches, allowing for simpler stopping logic.
+            If False, uses collective communication to determine when to stop if any rank exhausts its dataloader.
     """
 
     def __init__(
@@ -59,11 +61,13 @@ class Evaluator:
         cfg: EvaluatorConfig,
         eval_freq: int = 0,
         eval_iterations: int | None = None,
+        eval_guaranteed_same_batches: bool = False,
         **kwargs: Any,
     ):
         self.cfg = cfg
         self.eval_freq = eval_freq
         self.eval_iterations = eval_iterations
+        self.eval_guaranteed_same_batches = eval_guaranteed_same_batches
 
     def run_evaluation_if_needed(
         self,
@@ -137,7 +141,6 @@ class Evaluator:
         all_metrics_configs: dict[str, list[dict]] | None = None,
         metrics_prefix: str = "eval",
         show_progress: bool = False,
-        guaranteed_same_batches: bool = False,
     ):
         """Execute the evaluation loop for all provided datasets.
 
@@ -153,8 +156,6 @@ class Evaluator:
             all_metrics_configs: Root metrics configuration mapping dataset names to configs.
             metrics_prefix: Prefix for metric groups (e.g., "eval" or "metrics").
             show_progress: Whether to show a progress bar.
-            guaranteed_same_batches: If True, assumes all ranks will see the same number of batches, allowing for simpler stopping logic.
-            If False, uses collective communication to determine when to stop if any rank exhausts its dataloader.
 
         Returns:
             Nested dictionary of results: {dataset_name: {metric_name: value}}.
@@ -170,6 +171,11 @@ class Evaluator:
                 eval_data.eval_iterations
                 if eval_data.eval_iterations is not None
                 else max_iterations
+            )
+            guaranteed_same_batches_local = (
+                eval_data.eval_guaranteed_same_batches
+                if eval_data.eval_guaranteed_same_batches is not None
+                else self.eval_guaranteed_same_batches
             )
             if max_iterations_local is not None and max_iterations_local < 0:
                 max_iterations_local = None
@@ -230,7 +236,7 @@ class Evaluator:
                         except StopIteration:
                             exhausted = True
 
-                        if collective is not None and not guaranteed_same_batches:
+                        if collective is not None and not guaranteed_same_batches_local:
                             any_stopping = collective.all_reduce(
                                 torch.tensor(
                                     [exhausted],

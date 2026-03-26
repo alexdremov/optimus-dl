@@ -133,6 +133,7 @@ class TrainRecipe(
             cast_to=Evaluator,
             eval_freq=cfg.common.eval_freq,
             eval_iterations=cfg.common.eval_iterations,
+            eval_guaranteed_same_batches=cfg.common.eval_guaranteed_same_batches,
         )
         assert self.evaluator is not None, "Evaluator not initialized"
 
