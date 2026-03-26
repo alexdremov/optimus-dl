@@ -223,10 +223,13 @@ class Evaluator:
                         ),
                     )
 
-                check_exchaustion = (
+                check_exhaustion = (
                     collective is not None and not guaranteed_same_batches_local
                 )
-                if check_exchaustion:
+
+                stop_flag = None
+                if check_exhaustion:
+                    assert collective is not None
                     stop_flag = torch.tensor(
                         [False],
                         device=collective.default_device,
@@ -255,7 +258,9 @@ class Evaluator:
                             )
                             exhausted = True
 
-                        if check_exchaustion:
+                        if check_exhaustion:
+                            assert collective is not None
+                            assert stop_flag is not None
                             logger.debug(
                                 f"Eval {eval_name}: Synchronizing exhaustion state (all_reduce MAX)"
                             )
