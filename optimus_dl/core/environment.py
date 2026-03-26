@@ -1,8 +1,6 @@
 import os
 from dataclasses import dataclass
-from typing import (
-    Any,
-)
+from typing import Any
 
 
 @dataclass
@@ -29,3 +27,6 @@ class EnvironmentVariable:
 
 # Activate additional logging for debugging purposes if OPTIMUS_DEBUG is set to True
 OPTIMUS_DEBUG = EnvironmentVariable("OPTIMUS_DEBUG", bool, False)
+
+# Timeout in seconds to wait for child processes to terminate before force killing the process
+OPTIMUS_EXIT_TIMEOUT = EnvironmentVariable("OPTIMUS_EXIT_TIMEOUT", int, 30)

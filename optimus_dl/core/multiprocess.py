@@ -4,12 +4,15 @@ import os
 
 import psutil
 
+from .environment import OPTIMUS_EXIT_TIMEOUT
+
 logger = logging.getLogger(__name__)
 
 
-def force_kill_children(timeout_seconds: int = 15, max_retries=10) -> None:
+def finalize_process(timeout_seconds: int = 5, max_retries=10) -> None:
     """
     Recursively terminates all child processes of the current process.
+    Terminate current process in case of unresponsive children after retries.
     """
     # try to gracefully terminate joblib
     force_terminate_joblib()
@@ -31,7 +34,7 @@ def force_kill_children(timeout_seconds: int = 15, max_retries=10) -> None:
             logger.warning(
                 f"Failed to get child processes for PID {os.getpid()}", exc_info=True
             )
-            return
+            break
 
         # Phase 1: Polite termination
         for child in children:
@@ -54,6 +57,29 @@ def force_kill_children(timeout_seconds: int = 15, max_retries=10) -> None:
                     f"Failed to force kill child process: {child.pid}", exc_info=True
                 )
                 continue
+
+    _schedule_watchdog()
+
+
+def _schedule_watchdog():
+    """
+    Schedules a watchdog to forcefully kill the process after a delay if it is still alive.
+    This is a safety net in case some child processes are unresponsive and prevent exit.
+    """
+    import threading
+    import time
+
+    timeout = OPTIMUS_EXIT_TIMEOUT.get()
+
+    def watchdog():
+        time.sleep(timeout)
+        logger.warning("Watchdog timeout reached, forcefully exiting process.")
+        os._exit(0)  # Force exit without cleanup
+
+    logger.info(
+        f"Scheduling watchdog to force exit after {timeout} seconds if not exited."
+    )
+    threading.Thread(target=watchdog, daemon=True).start()
 
 
 def force_terminate_joblib():
