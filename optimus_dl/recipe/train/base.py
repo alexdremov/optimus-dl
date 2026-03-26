@@ -9,6 +9,7 @@ from optimus_dl.core.log import (
     setup_logging,
     trange,
 )
+from optimus_dl.core.multiprocess import force_kill_children
 from optimus_dl.core.registry import build as build_component
 from optimus_dl.core.seed import set_seed
 from optimus_dl.modules.checkpoint import CheckpointManager
@@ -582,3 +583,4 @@ class TrainRecipe(
             self.close_loggers()
         collective.close()
         logger.info("Training run complete")
+        force_kill_children()
