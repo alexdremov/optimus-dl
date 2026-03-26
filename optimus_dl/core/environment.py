@@ -29,4 +29,5 @@ class EnvironmentVariable:
 OPTIMUS_DEBUG = EnvironmentVariable("OPTIMUS_DEBUG", bool, False)
 
 # Timeout in seconds to wait for child processes to terminate before force killing the process
+# < 0 means disable, 0 means immediate force kill, > 0 means wait for that many seconds
 OPTIMUS_EXIT_TIMEOUT = EnvironmentVariable("OPTIMUS_EXIT_TIMEOUT", int, 30)

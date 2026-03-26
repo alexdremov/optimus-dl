@@ -77,6 +77,16 @@ def _schedule_watchdog():
 
     timeout = OPTIMUS_EXIT_TIMEOUT.get()
 
+    if timeout < 0:
+        logger.info("Watchdog disabled (OPTIMUS_EXIT_TIMEOUT < 0)")
+        return
+    elif timeout == 0:
+        logger.warning(
+            "Immediate watchdog enabled (OPTIMUS_EXIT_TIMEOUT = 0), process will be force killed immediately."
+        )
+        os._exit(0)  # Force exit without cleanup
+        return
+
     def watchdog():
         time.sleep(timeout)
         logger.warning("Watchdog timeout reached, forcefully exiting process.")
