@@ -206,9 +206,9 @@ class TrainRecipe(
         """Delegate metrics logging to LoggerManager."""
         return self.logger_manager.log_metrics_to_loggers(*args, **kwargs)
 
-    def close_loggers(self, *args, **kwargs):
+    def close_loggers(self, run_status: RunStatus = RunStatus.SUCCESS, *args, **kwargs):
         """Delegate logger cleanup to LoggerManager."""
-        self.logger_manager.finished(RunStatus.SUCCESS)
+        self.logger_manager.finished(run_status)
         return self.logger_manager.close_loggers(*args, **kwargs)
 
     def save_checkpoint_if_needed(self, *args, **kwargs):
@@ -564,6 +564,9 @@ class TrainRecipe(
                         iteration=iteration,
                         **common_chkp_kwargs,
                     )
+                    if collective.is_master:
+                        logger.debug("Closing loggers...")
+                        self.close_loggers(run_status=RunStatus.INTERRUPTED)
                     break
                 except Exception as e:
                     logger.error(f"Training step failed at iteration {iteration}: {e}")

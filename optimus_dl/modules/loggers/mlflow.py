@@ -389,7 +389,7 @@ class MlflowLogger(BaseMetricsLogger):
         import mlflow
 
         try:
-            mlflow.set_tag("finish_status", status)
+            mlflow.set_tag("finish_status", status.value)
             logger.info(f"MLflow run finished with status: {status.value}")
         except Exception as e:
             logger.error(f"Failed to set run status tag in MLflow: {e}")

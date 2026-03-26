@@ -20,6 +20,7 @@ class RunStatus(StrEnum):
 
     SUCCESS = "success"
     FAILURE = "failure"
+    INTERRUPTED = "interrupted"
 
 
 class BaseMetricsLogger(ABC):
@@ -99,11 +100,10 @@ class BaseMetricsLogger(ABC):
         """
         return {}
 
-    @abstractmethod
     def finished(self, status: RunStatus):
         """Hook for when training finishes, to log final status.
 
         Args:
             status: The final status of the run (e.g., success, failure).
         """
-        pass
+        return

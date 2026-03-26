@@ -344,7 +344,7 @@ class JsonlLogger(BaseMetricsLogger):
             final_entry = {
                 "step": None,
                 "group": "final",
-                "status": str(status),
+                "status": status.value,
             }
             if self.cfg.include_timestamp:
                 from datetime import (

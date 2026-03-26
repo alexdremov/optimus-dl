@@ -236,7 +236,7 @@ class WandbLogger(BaseMetricsLogger):
             return
 
         try:
-            self.run.summary["finish_status"] = str(status)
+            self.run.summary["finish_status"] = status.value
             logger.info(f"WandB run finished with status: {status.value}")
         except Exception as e:
             logger.error(f"Failed to set run status tag in WandB: {e}")
