@@ -14,6 +14,7 @@ from optimus_dl.core.registry import (
 from optimus_dl.modules.loggers import (
     BaseMetricsLogger,
     MetricsLoggerConfig,
+    RunStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -165,6 +166,16 @@ class LoggerManager:
     def load_state_dict(self, state_dict):
         """Load logger states from a checkpoint."""
         self.previous_state = state_dict
+
+    def finished(self, status: RunStatus):
+        """Hook for when training finishes, to log final status."""
+        for logger_instance in self.loggers or []:
+            try:
+                logger_instance.finished(status)
+            except Exception as e:
+                logger.error(
+                    f"Failed to log finished status with {logger_instance.__class__.__name__}: {e}"
+                )
 
 
 _, register_logger_manager, build_logger_manager = make_registry(

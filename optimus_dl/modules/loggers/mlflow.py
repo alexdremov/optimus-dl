@@ -18,9 +18,12 @@ from typing import Any
 import yaml
 from omegaconf import OmegaConf
 
-from optimus_dl.modules.loggers import register_metrics_logger
-from optimus_dl.modules.loggers.base import BaseMetricsLogger
-from optimus_dl.modules.loggers.config import MetricsLoggerConfig
+from optimus_dl.modules.loggers import (
+    BaseMetricsLogger,
+    MetricsLoggerConfig,
+    RunStatus,
+    register_metrics_logger,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -232,6 +235,8 @@ class MlflowLogger(BaseMetricsLogger):
                 except Exception as e:
                     logger.warning(f"Failed to set user-defined tags: {e}")
 
+            mlflow.set_tag("finish_status", "started")
+
             # Set environment tags for better traceability
             git_hash = get_git_commit_hash()
             git_remote = get_git_remote()
@@ -375,3 +380,16 @@ class MlflowLogger(BaseMetricsLogger):
     def state_dict(self) -> dict[str, Any]:
         """Return the run_id for resumption."""
         return {"run_id": self.run_id}
+
+    def finished(self, status: RunStatus):
+        """Log final status of the run."""
+        if not self.enabled or self.active_run is None:
+            return
+
+        import mlflow
+
+        try:
+            mlflow.set_tag("finish_status", status)
+            logger.info(f"MLflow run finished with status: {status.value}")
+        except Exception as e:
+            logger.error(f"Failed to set run status tag in MLflow: {e}")

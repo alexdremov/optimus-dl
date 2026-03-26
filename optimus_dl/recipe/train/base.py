@@ -14,6 +14,7 @@ from optimus_dl.core.registry import build as build_component
 from optimus_dl.core.seed import set_seed
 from optimus_dl.modules.checkpoint import CheckpointManager
 from optimus_dl.modules.criterion import BaseCriterion
+from optimus_dl.modules.loggers import RunStatus
 from optimus_dl.modules.metrics import (
     compute_meters,
     log_event_end,
@@ -207,6 +208,7 @@ class TrainRecipe(
 
     def close_loggers(self, *args, **kwargs):
         """Delegate logger cleanup to LoggerManager."""
+        self.logger_manager.finished(RunStatus.SUCCESS)
         return self.logger_manager.close_loggers(*args, **kwargs)
 
     def save_checkpoint_if_needed(self, *args, **kwargs):

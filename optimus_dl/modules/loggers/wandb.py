@@ -12,9 +12,12 @@ from typing import Any
 
 from omegaconf import OmegaConf
 
-from optimus_dl.modules.loggers import register_metrics_logger
-from optimus_dl.modules.loggers.base import BaseMetricsLogger
-from optimus_dl.modules.loggers.config import MetricsLoggerConfig
+from optimus_dl.modules.loggers import (
+    BaseMetricsLogger,
+    MetricsLoggerConfig,
+    RunStatus,
+    register_metrics_logger,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -226,3 +229,14 @@ class WandbLogger(BaseMetricsLogger):
         return {
             "run_id": self.run.id if self.run is not None else None,
         }
+
+    def finished(self, status: RunStatus):
+        """Set the run status tag in WandB at the end of the run."""
+        if not self.enabled or self.run is None:
+            return
+
+        try:
+            self.run.summary["finish_status"] = str(status)
+            logger.info(f"WandB run finished with status: {status.value}")
+        except Exception as e:
+            logger.error(f"Failed to set run status tag in WandB: {e}")

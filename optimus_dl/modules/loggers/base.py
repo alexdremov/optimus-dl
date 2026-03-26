@@ -9,9 +9,17 @@ from abc import (
     ABC,
     abstractmethod,
 )
+from enum import StrEnum
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+class RunStatus(StrEnum):
+    """Enumeration for training run status."""
+
+    SUCCESS = "success"
+    FAILURE = "failure"
 
 
 class BaseMetricsLogger(ABC):
@@ -90,3 +98,12 @@ class BaseMetricsLogger(ABC):
             (e.g., a run ID for WandB).
         """
         return {}
+
+    @abstractmethod
+    def finished(self, status: RunStatus):
+        """Hook for when training finishes, to log final status.
+
+        Args:
+            status: The final status of the run (e.g., success, failure).
+        """
+        pass
