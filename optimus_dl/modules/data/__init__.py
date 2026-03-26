@@ -63,6 +63,9 @@ class LoggingDataNode(torchdata.nodes.BaseNode):
     def next(self):
         return self.source.next()
 
+    def __repr__(self):
+        return f"LoggingDataNode(name={self.name}, source={repr(self.source)})"
+
 
 def build_data_pipeline(
     cfg: DataPipelineConfig | EvalDataPipelineConfig,

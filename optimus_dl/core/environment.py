@@ -27,5 +27,5 @@ class EnvironmentVariable:
         os.environ[self.name] = str(value)
 
 
-# Activate additional loggings for debugging purposes if OPTIMUS_DEBUG is set to True
+# Activate additional logging for debugging purposes if OPTIMUS_DEBUG is set to True
 OPTIMUS_DEBUG = EnvironmentVariable("OPTIMUS_DEBUG", bool, False)
