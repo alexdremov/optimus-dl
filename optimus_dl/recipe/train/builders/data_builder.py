@@ -124,6 +124,7 @@ class DataBuilder:
                     ),
                     eval_freq=v.eval_freq,
                     eval_iterations=v.eval_iterations,
+                    eval_guaranteed_same_batches=v.eval_guaranteed_same_batches,
                 )
                 if v is not None
                 else None
