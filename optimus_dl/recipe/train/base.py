@@ -580,3 +580,5 @@ class TrainRecipe(
         if collective.is_master:
             logger.debug("Closing loggers...")
             self.close_loggers()
+        collective.close()
+        logger.info("Training run complete")

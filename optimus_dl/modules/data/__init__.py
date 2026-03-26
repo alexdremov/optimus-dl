@@ -1,9 +1,11 @@
-from contextlib import nullcontext
-from typing import NamedTuple
+import logging
+from typing import (
+    Any,
+    NamedTuple,
+)
 
 import torchdata
 import torchdata.nodes
-from omegaconf import DictConfig
 
 from optimus_dl.core.bootstrap import bootstrap_module
 from optimus_dl.modules.data.datasets import (
@@ -15,7 +17,7 @@ from optimus_dl.modules.data.profiling import (
     ProfilingProxyNode,
     scope_profiler,
 )
-from optimus_dl.modules.data.transforms.composite import (
+from optimus_dl.modules.data.transforms import (
     build_transform,
     register_transform,
 )
@@ -25,6 +27,8 @@ from .config import (
     DataPipelineConfig,
     EvalDataPipelineConfig,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class DataPipeline(NamedTuple):
@@ -40,6 +44,26 @@ class EvalDataPipeline(NamedTuple):
     eval_guaranteed_same_batches: bool | None
 
 
+class LoggingDataNode(torchdata.nodes.BaseNode):
+    """A simple node that logs reset calls and delegates to a source node. Useful for debugging data pipelines."""
+
+    def __init__(self, name: str, source: torchdata.nodes.BaseNode):
+        super().__init__()
+        self.name = name
+        self.source = source
+
+    def reset(self, initial_state=None):
+        logger.info(f"Resetting data node {self.name}")
+        super().reset(initial_state)
+        self.source.reset(initial_state)
+
+    def get_state(self) -> dict[str, Any]:
+        return self.source.get_state()
+
+    def next(self):
+        return self.source.next()
+
+
 def build_data_pipeline(
     cfg: DataPipelineConfig | EvalDataPipelineConfig,
     profile_name: str | None = None,
@@ -48,6 +72,7 @@ def build_data_pipeline(
     if cfg is None:
         return None
     dataset = build_dataset(cfg.source, **kwargs)
+    dataset = LoggingDataNode(name=profile_name or repr(dataset), source=dataset)
     pipeline = dataset
 
     profiler = None
