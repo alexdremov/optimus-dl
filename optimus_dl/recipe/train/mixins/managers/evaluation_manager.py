@@ -237,15 +237,16 @@ class Evaluator:
                             exhausted = True
 
                         if collective is not None and not guaranteed_same_batches_local:
-                            any_stopping = collective.all_reduce(
-                                torch.tensor(
-                                    [exhausted],
-                                    device=collective.default_device,
-                                    dtype=torch.int32,
-                                ),
+                            flag = torch.tensor(
+                                [exhausted],
+                                device=collective.default_device,
+                                dtype=torch.int32,
+                            )
+                            collective.all_reduce(
+                                flag,
                                 op=Collective.ReduceOp.MAX,
                             )
-                            if any_stopping.item() == 1:
+                            if flag.item() == 1:
                                 # at least one rank is exhausted, stop evaluation
                                 raise StopIteration
                         else:
