@@ -23,7 +23,6 @@ Usage:
 """
 
 import logging
-import sys
 
 import hydra
 
@@ -62,7 +61,6 @@ def train(cfg_raw):
     recipe = build("train_recipe", cfg_raw)
     assert isinstance(recipe, TrainRecipe)
     recipe.run()
-    sys.exit(0)
 
 
 if __name__ == "__main__":

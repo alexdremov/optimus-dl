@@ -583,4 +583,5 @@ class TrainRecipe(
             self.close_loggers()
         collective.close()
         logger.info("Training run complete")
+
         force_kill_children()
