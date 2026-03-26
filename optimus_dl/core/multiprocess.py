@@ -24,6 +24,9 @@ def force_kill_children(timeout_seconds: int = 15, max_retries=10) -> None:
         try:
             current_process = psutil.Process(os.getpid())
             children = current_process.children(recursive=True)
+            logger.info(
+                f"Found {children} child processes to terminate (retry {retries}/{max_retries})"
+            )
         except Exception:
             logger.warning(
                 f"Failed to get child processes for PID {os.getpid()}", exc_info=True
