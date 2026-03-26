@@ -2,9 +2,7 @@
 
 import logging
 import time
-from dataclasses import (
-    dataclass,
-)
+from dataclasses import dataclass
 from typing import Any
 
 import torch
@@ -52,6 +50,10 @@ class Evaluator:
         eval_iterations: Max number of batches to process per evaluation dataset.
             If None or negative, processes the entire dataset (negative values are
             treated as unlimited).
+        eval_guaranteed_same_batches: If True, assumes all ranks will see the same
+            number of batches, allowing for simpler stopping logic. If False, uses
+            collective communication to determine when to stop if any rank exhausts
+            its dataloader.
     """
 
     def __init__(
@@ -59,11 +61,13 @@ class Evaluator:
         cfg: EvaluatorConfig,
         eval_freq: int = 0,
         eval_iterations: int | None = None,
+        eval_guaranteed_same_batches: bool = False,
         **kwargs: Any,
     ):
         self.cfg = cfg
         self.eval_freq = eval_freq
         self.eval_iterations = eval_iterations
+        self.eval_guaranteed_same_batches = eval_guaranteed_same_batches
 
     def run_evaluation_if_needed(
         self,
@@ -133,7 +137,7 @@ class Evaluator:
         criterion: BaseCriterion,
         eval_data_dict: dict,
         max_iterations: int | None = None,
-        collective: Any = None,
+        collective: Collective | None = None,
         all_metrics_configs: dict[str, list[dict]] | None = None,
         metrics_prefix: str = "eval",
         show_progress: bool = False,
@@ -167,6 +171,11 @@ class Evaluator:
                 eval_data.eval_iterations
                 if eval_data.eval_iterations is not None
                 else max_iterations
+            )
+            guaranteed_same_batches_local = (
+                eval_data.eval_guaranteed_same_batches
+                if eval_data.eval_guaranteed_same_batches is not None
+                else self.eval_guaranteed_same_batches
             )
             if max_iterations_local is not None and max_iterations_local < 0:
                 max_iterations_local = None
@@ -214,20 +223,76 @@ class Evaluator:
                         ),
                     )
 
+                check_exhaustion = (
+                    collective is not None and not guaranteed_same_batches_local
+                )
+
+                stop_flag = None
+                if check_exhaustion:
+                    assert collective is not None
+                    stop_flag = torch.tensor(
+                        [False],
+                        device=collective.default_device,
+                        dtype=torch.int32,
+                    )
+
                 try:
                     while (
                         max_iterations_local is None
                         or max_iterations_local < 0
                         or iterations < max_iterations_local
                     ):
+                        logger.debug(
+                            f"Eval {eval_name}: Starting iteration {iterations}"
+                        )
                         log_event_occurence("perf/full_iteration")
+                        exhausted = False
+                        try:
+                            logger.debug(
+                                f"Eval {eval_name}: Fetching batch for iteration {iterations}"
+                            )
+                            elapsed_batch_get, batch = measured_next(eval_iter)
+                        except StopIteration:
+                            logger.debug(
+                                f"Eval {eval_name}: Dataloader exhausted on this rank"
+                            )
+                            exhausted = True
 
-                        elapsed_batch_get, batch = measured_next(eval_iter)
+                        if check_exhaustion:
+                            assert collective is not None
+                            assert stop_flag is not None
+                            logger.debug(
+                                f"Eval {eval_name}: Synchronizing exhaustion state (all_reduce MAX)"
+                            )
+                            stop_flag[0] = int(exhausted)
+                            collective.all_reduce(
+                                stop_flag,
+                                op=Collective.ReduceOp.MAX,
+                            )
+                            if stop_flag.item() == 1:
+                                # at least one rank is exhausted, stop evaluation
+                                logger.info(
+                                    f"Eval {eval_name}: At least one rank exhausted its dataloader, stopping evaluation."
+                                )
+                                raise StopIteration
+                        else:
+                            # If we are guaranteed that all ranks see the same number of batches,
+                            # we can just stop when this rank is exhausted
+                            if exhausted:
+                                logger.info(
+                                    f"Eval {eval_name}: Dataloader exhausted, stopping evaluation."
+                                )
+                                raise StopIteration
+
+                        logger.debug(
+                            f"Eval {eval_name}: Running forward pass for iteration {iterations}"
+                        )
                         loss, exposed = criterion(
                             model, batch, requested_protocols=requested_protocols
                         )
 
                         if engine:
+                            logger.debug(f"Eval {eval_name}: Updating metric engine")
                             computed_data = exposed.copy()
                             computed_data["loss"] = loss
                             engine.update(
@@ -247,6 +312,9 @@ class Evaluator:
 
                         # Step metrics for each evaluation iteration
                         step_meters(f"{metrics_prefix}/{eval_name}")
+                        logger.debug(
+                            f"Eval {eval_name}: Finished iteration {iterations-1}"
+                        )
 
                 except StopIteration:
                     pass
@@ -258,6 +326,7 @@ class Evaluator:
                 total_time = time.perf_counter() - start_time
                 log_event_end("perf/total_run")
 
+            logger.debug(f"Eval {eval_name}: Computing aggregated meters")
             eval_metrics = compute_meters(
                 f"{metrics_prefix}/{eval_name}",
                 aggregate=True,

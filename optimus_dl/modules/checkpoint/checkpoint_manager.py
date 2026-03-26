@@ -31,6 +31,9 @@ from optimus_dl.core.registry import (
 )
 from optimus_dl.modules.distributed import Collective
 from optimus_dl.modules.lr_scheduler import BaseLRScheduler
+from optimus_dl.modules.metrics import (
+    state_dict as metrics_state_dict,
+)
 from optimus_dl.modules.model.base import BaseModel
 
 from .load_strategy import LoadStrategy
@@ -248,8 +251,8 @@ class CheckpointManager:
         full_config: Any,
         is_save_persistent: bool,
         is_save_last: bool,
-        lr_scheduler=None,
         iteration: int = 0,
+        lr_scheduler=None,
         data_loaders: dict | None = None,
         **kwargs: Any,
     ) -> None:
@@ -261,14 +264,19 @@ class CheckpointManager:
             optimizer: Optimizer to save
             collective: Collective for distributed operations
             full_config: Full configuration object for metadata
-            lr_scheduler: Optional LR scheduler to save
             iteration: Current training iteration
+            lr_scheduler: Optional LR scheduler to save
             data_loaders: Optional data loaders to save state
             **kwargs: Additional metadata to save
         """
         if not isinstance(checkpoint_path, Path):
             checkpoint_path = Path(checkpoint_path)
-        checkpoint_path.mkdir(parents=True, exist_ok=True)
+
+        if not checkpoint_path.exists() and collective.is_master:
+            checkpoint_path.mkdir(parents=True, exist_ok=True)
+
+        logger.info("Waiting for all ranks to reach checkpoint saving point...")
+        collective.barrier()
 
         logger.info(f"Saving state for model and optimizer at iteration {iteration}")
         model_state_dict = dcp_state_dict.get_model_state_dict(
@@ -291,9 +299,10 @@ class CheckpointManager:
                 logger.info(f"Saving state for {key}")
                 kwargs_states[key] = value.state_dict()
             else:
-                logger.error(
+                raise ValueError(
                     f"Could not save state for {key} ({value}) as no state_dict() method found"
                 )
+
         metadata = {
             "iteration": iteration,
             "config": full_config,
@@ -327,34 +336,51 @@ class CheckpointManager:
                 f"Calling save checkpoint with both {is_save_persistent = } and {is_save_last = }"
             )
 
-        checkpoint_id_tmp = None
-        metadata_path_tmp = None
-        per_rank_metadata_tmp = None
+        checkpoint_id_tmp = Path(str(checkpoint_id) + f".{iteration}.tmp")
+        metadata_path_tmp = Path(str(metadata_path) + f".{iteration}.tmp")
+        per_rank_metadata_tmp = Path(str(per_rank_metadata_path) + f".{iteration}.tmp")
 
-        if checkpoint_id.exists() and collective.is_master:
-            checkpoint_id_tmp = Path(str(checkpoint_id) + ".tmp")
-            if checkpoint_id_tmp.exists():
-                if checkpoint_id_tmp.is_dir():
-                    shutil.rmtree(checkpoint_id_tmp)
+        final_paths_to_check = (
+            per_rank_metadata_path,
+        )  # ranks check their own per-rank metadata path to avoid race conditions
+        if collective.is_master:
+            final_paths_to_check = (
+                checkpoint_id,
+                metadata_path,
+                per_rank_metadata_path,
+            )  # master checks all paths to ensure they don't exist before saving, to prevent accidental overwrites
+
+        for path in final_paths_to_check:
+            if path.exists():
+                logger.warning(
+                    f"Checkpoint file {path} already exists and will be overwritten"
+                )
+                if path.is_dir():
+                    shutil.rmtree(path)
                 else:
-                    os.remove(checkpoint_id_tmp)
+                    os.remove(path)
 
-            shutil.move(checkpoint_id, checkpoint_id_tmp)
+        tmp_paths_to_check = (per_rank_metadata_tmp,)
+        if collective.is_master:
+            tmp_paths_to_check = (
+                checkpoint_id_tmp,
+                metadata_path_tmp,
+                per_rank_metadata_tmp,
+            )
 
-        if metadata_path.exists() and collective.is_master:
-            metadata_path_tmp = Path(str(metadata_path) + ".tmp")
-            if metadata_path_tmp.exists():
-                os.remove(metadata_path_tmp)
-            shutil.move(metadata_path, metadata_path_tmp)
-
-        if per_rank_metadata_path.exists():
-            per_rank_metadata_tmp = Path(str(per_rank_metadata_path) + ".tmp")
-            if per_rank_metadata_tmp.exists():
-                os.remove(per_rank_metadata_tmp)
-            shutil.move(per_rank_metadata_path, per_rank_metadata_tmp)
+        for path in tmp_paths_to_check:
+            if path.exists():
+                logger.warning(
+                    f"Temporary checkpoint file {path} already exists and will be overwritten"
+                )
+                if path.is_dir():
+                    shutil.rmtree(path)
+                else:
+                    os.remove(path)
 
         tmp_mappings = [(per_rank_metadata_path, per_rank_metadata_tmp)]
         if collective.is_master:
+            # Only master does final renaming of metadata and checkpoint
             tmp_mappings.extend(
                 [
                     (metadata_path, metadata_path_tmp),
@@ -362,57 +388,33 @@ class CheckpointManager:
                 ]
             )
 
-        def restore_from_failure():
-            for dst, src in tmp_mappings:
-                if src is None or not src.exists():
-                    continue
-                if dst.exists():
-                    if dst.is_dir():
-                        shutil.rmtree(dst)
-                    else:
-                        os.remove(dst)
-                logger.warning(f"Checkpoint failed, restoring {dst} from {src}")
-                shutil.move(src, dst)
+        # Ensure all ranks have checked for existing files before any rank starts writing
+        logger.info(
+            "All ranks are checking for existing checkpoint files before saving..."
+        )
+        collective.barrier()
+        logger.info(
+            "All ranks have checked for existing checkpoint files, proceeding with saving..."
+        )
 
-        def clean_all_tmp():
-            for _, src in tmp_mappings:
-                if src is None or not src.exists():
-                    continue
-                if src.is_dir():
-                    shutil.rmtree(src)
-                else:
-                    os.remove(src)
-
-        try:
-            dcp_save(
-                state_dict=state_dict,
-                storage_writer=FileSystemWriter(checkpoint_id),
-                process_group=collective.process_group,
-            )
-        except Exception:
-            restore_from_failure()
-            raise
+        # All ranks save to temporary paths first
+        dcp_save(
+            state_dict=state_dict,
+            storage_writer=FileSystemWriter(checkpoint_id_tmp),
+            process_group=collective.process_group,
+        )
 
         if collective.is_master:
             # Save metadata separately
-            try:
-                torch.save(metadata, metadata_path)
-            except Exception:
-                restore_from_failure()
-                raise
+            torch.save(metadata, metadata_path_tmp)
 
-        logger.info(f"Checkpoint saved to {checkpoint_id} / {metadata_path}")
         assert (
             "data_loaders" not in kwargs_states
         ), "Data loaders should be passed separately"
         assert "metrics" not in kwargs_states, "Metrics should be passed separately"
-        logger.info("Saving data loaders and metrics")
-
-        from optimus_dl.modules.metrics import (
-            state_dict as metrics_state_dict,
-        )
 
         per_rank_metadata = {
+            "iteration": iteration,
             "data_loaders": {
                 k: v.state_dict() for k, v in (data_loaders or {}).items()
             },
@@ -421,11 +423,22 @@ class CheckpointManager:
         }
 
         # Save per-rank metadata
-        try:
-            torch.save(per_rank_metadata, per_rank_metadata_path)
-        except Exception:
-            restore_from_failure()
-            raise
+        torch.save(per_rank_metadata, per_rank_metadata_tmp)
+        logger.info(
+            f"Checkpoint saved to {checkpoint_id_tmp} / {metadata_path_tmp} / {per_rank_metadata_tmp}"
+        )
+
+        # Ensure all ranks have finished saving before renaming
+        # This is crucial to prevent corruption if one of the ranks has failed
+        collective.barrier()
+        logger.info(
+            "All ranks have finished saving checkpoint, proceeding with renaming temporary files..."
+        )
+
+        # Atomically move temp files to final location
+        for final_path, tmp_path in tmp_mappings:
+            tmp_path.rename(final_path)
+            logger.info(f"Renamed {tmp_path} to {final_path}")
 
         # Create symlink to latest
         if should_symlink_last:
@@ -463,7 +476,6 @@ class CheckpointManager:
         logger.info(
             f"{per_rank_metadata.keys() = } {metadata.keys() = } {state_dict.keys() = }"
         )
-        clean_all_tmp()
 
     def load_checkpoint(
         self,
@@ -565,6 +577,8 @@ class CheckpointManager:
                 metadatas, source_rank=0
             )  # pyright: ignore[reportArgumentType]
             metadata = metadatas[0]
+
+        logger.debug(f"Loaded metadata: {metadata}")
         assert metadata is not None, "Metadata not loaded correctly"
 
         if lr_scheduler is not None and "lr_scheduler" in metadata:
@@ -583,6 +597,12 @@ class CheckpointManager:
         per_rank_metadata = torch.load(
             per_rank_metadata_path, map_location="cpu", weights_only=False
         )
+
+        logger.debug(f"Loaded per-rank metadata for rank {rank}: {per_rank_metadata}")
+        assert iteration == per_rank_metadata.get(
+            "iteration", iteration
+        ), f"Global iteration {iteration} does not match per-rank iteration {per_rank_metadata.get('iteration', 'unknown')} - checkpoint may be corrupted."
+
         for key in load_strategy.extra_ignore_keys or []:
             if key in per_rank_metadata:
                 per_rank_metadata.pop(key)
@@ -618,13 +638,26 @@ class CheckpointManager:
         else:
             logger.info("Metrics not restored")
 
+        per_rank_metadata_available = set(per_rank_metadata.keys()) - {
+            "iteration",
+            "metrics",
+            "data_loaders",
+            "data_sources",
+        }
         for key, value in kwargs.items():
             assert hasattr(
                 value, "load_state_dict"
             ), f"Do not how to restore {key} = {value}"
             if key not in per_rank_metadata:
                 logger.warning(f"Not restoring {key} = {value} as no state found")
+                continue
             value.load_state_dict(per_rank_metadata[key])
+            per_rank_metadata_available.remove(key)
+
+        if len(per_rank_metadata_available) > 0:
+            logger.warning(
+                f"Some per-rank metadata keys were not used during loading: {per_rank_metadata_available}"
+            )
 
         logger.info(f"Checkpoint has {iteration = }")
         return metadata

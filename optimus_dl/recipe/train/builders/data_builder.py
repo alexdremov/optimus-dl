@@ -71,6 +71,9 @@ class DataBuilder:
         Returns:
             A DataPipeline containing the dataset and loader.
         """
+        logger.debug(
+            f"Building train data pipeline for rank {collective.dp_rank}/{collective.dp_world_size}"
+        )
         kwargs["rank"] = collective.dp_rank
         kwargs["world_size"] = collective.dp_world_size
         kwargs["seed"] = self._get_rank_seed(
@@ -80,11 +83,13 @@ class DataBuilder:
             self.data_config.train_datasets, profile_name="train", **kwargs
         )
         if train_data is None:
+            logger.debug("No train data pipeline built (train_datasets is None)")
             return None
         dataloader = torchdata.nodes.Loader(
             root=train_data.dataloader,
             restart_on_stop_iteration=True,
         )
+        logger.debug("Train data pipeline built successfully")
         return DataPipeline(
             datasets=train_data.datasets,
             dataloader=dataloader,
@@ -106,6 +111,9 @@ class DataBuilder:
         Returns:
             Dictionary mapping dataset names to DataPipelines.
         """
+        logger.debug(
+            f"Building eval data pipelines for rank {collective.dp_rank}/{collective.dp_world_size}"
+        )
         kwargs["rank"] = collective.dp_rank
         kwargs["world_size"] = collective.dp_world_size
         kwargs["seed"] = self._get_rank_seed(
@@ -124,12 +132,14 @@ class DataBuilder:
                     ),
                     eval_freq=v.eval_freq,
                     eval_iterations=v.eval_iterations,
+                    eval_guaranteed_same_batches=v.eval_guaranteed_same_batches,
                 )
                 if v is not None
                 else None
             )
             for k, v in eval_data.items()
         }
+        logger.debug(f"Built {len(eval_data)} eval data pipelines")
         return eval_data
 
 

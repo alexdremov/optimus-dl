@@ -87,6 +87,12 @@ class TrainRecipeConfig:
     eval_freq: int = field(
         default=100, metadata={"description": "Frequency of evaluations. Zero disables"}
     )
+    eval_guaranteed_same_batches: bool = field(
+        default=False,
+        metadata={
+            "description": "Whether it is guaranteed that each DP rank sees the same number of batches during evaluation."
+        },
+    )
     # Checkpointing
     save_freq: int = field(
         default=II(".eval_freq"),

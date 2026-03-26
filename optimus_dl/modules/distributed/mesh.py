@@ -121,7 +121,9 @@ class MeshCollective(Collective):
 
             if not dist.is_initialized():
                 backend = "nccl" if mesh_device_type == "cuda" else "gloo"
-                logger.info(f"Initializing default PG with {backend = }")
+                logger.debug(
+                    f"Starting default process group initialization with {backend=}"
+                )
                 device_id = None
                 if mesh_device_type == "cuda":
                     torch.cuda.set_device(local_rank)
@@ -132,20 +134,26 @@ class MeshCollective(Collective):
                     world_size=world_size,
                     device_id=device_id,
                 )
+                logger.debug("Default process group initialized successfully")
 
             logger.info(
                 f"Initializing mesh with {mesh_device_type=}, shape={mesh_dims}, names={mesh_names}"
             )
+            logger.debug("Calling init_device_mesh for parallel_mesh")
             parallel_mesh = init_device_mesh(
                 device_type=mesh_device_type,
                 mesh_shape=mesh_dims,
                 mesh_dim_names=mesh_names,
             )
+            logger.debug("parallel_mesh initialized successfully")
+
+            logger.debug("Calling init_device_mesh for physical_mesh")
             physical_mesh = init_device_mesh(
                 device_type=mesh_device_type,
                 mesh_shape=(world_size // local_world_size, local_world_size),
                 mesh_dim_names=("nodes", "local_ranks"),
             )
+            logger.debug("physical_mesh initialized successfully")
             mesh = Meshes(parallel_mesh, physical_mesh)
 
         self._mesh: Meshes = mesh
