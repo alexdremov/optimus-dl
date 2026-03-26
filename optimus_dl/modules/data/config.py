@@ -50,7 +50,7 @@ class EvalDataPipelineConfig(DataPipelineConfig):
     eval_guaranteed_same_batches: bool | None = field(
         default=None,
         metadata={
-            "description": "Whether it is guaranteed that each DP rank sees the same batches count. If None, use the global eval_guaranteed_same_batches."
+            "description": "Whether it is guaranteed that each DP rank sees the same number of batches. If None, use the global eval_guaranteed_same_batches."
         },
     )
 

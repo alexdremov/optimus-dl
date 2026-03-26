@@ -2,9 +2,7 @@
 
 import logging
 import time
-from dataclasses import (
-    dataclass,
-)
+from dataclasses import dataclass
 from typing import Any
 
 import torch
@@ -52,8 +50,10 @@ class Evaluator:
         eval_iterations: Max number of batches to process per evaluation dataset.
             If None or negative, processes the entire dataset (negative values are
             treated as unlimited).
-        eval_guaranteed_same_batches:  If True, assumes all ranks will see the same number of batches, allowing for simpler stopping logic.
-            If False, uses collective communication to determine when to stop if any rank exhausts its dataloader.
+        eval_guaranteed_same_batches: If True, assumes all ranks will see the same
+            number of batches, allowing for simpler stopping logic. If False, uses
+            collective communication to determine when to stop if any rank exhausts
+            its dataloader.
     """
 
     def __init__(
@@ -223,6 +223,16 @@ class Evaluator:
                         ),
                     )
 
+                check_exchaustion = (
+                    collective is not None and not guaranteed_same_batches_local
+                )
+                if check_exchaustion:
+                    stop_flag = torch.tensor(
+                        [False],
+                        device=collective.default_device,
+                        dtype=torch.int32,
+                    )
+
                 try:
                     while (
                         max_iterations_local is None
@@ -236,23 +246,25 @@ class Evaluator:
                         except StopIteration:
                             exhausted = True
 
-                        if collective is not None and not guaranteed_same_batches_local:
-                            flag = torch.tensor(
-                                [exhausted],
-                                device=collective.default_device,
-                                dtype=torch.int32,
-                            )
+                        if check_exchaustion:
+                            stop_flag[0] = int(exhausted)
                             collective.all_reduce(
-                                flag,
+                                stop_flag,
                                 op=Collective.ReduceOp.MAX,
                             )
-                            if flag.item() == 1:
+                            if stop_flag.item() == 1:
                                 # at least one rank is exhausted, stop evaluation
+                                logging.info(
+                                    "At least one rank exhausted its dataloader, stopping evaluation."
+                                )
                                 raise StopIteration
                         else:
                             # If we are guaranteed that all ranks see the same number of batches,
                             # we can just stop when this rank is exhausted
                             if exhausted:
+                                logging.info(
+                                    "Dataloader exhausted, stopping evaluation."
+                                )
                                 raise StopIteration
 
                         loss, exposed = criterion(

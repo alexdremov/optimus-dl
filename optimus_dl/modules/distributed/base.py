@@ -7,7 +7,7 @@ import torch
 from torch import Tensor
 from torch.distributed import (
     ProcessGroup,
-    ReduceOp,
+    ReduceOp as TorchReduceOp,
 )
 
 
@@ -24,7 +24,7 @@ class Collective(ABC):
         world_size: Total number of processes in the global gang.
     """
 
-    ReduceOp = ReduceOp
+    ReduceOp = TorchReduceOp
 
     rank: int
     world_size: int
@@ -105,7 +105,7 @@ class Collective(ABC):
         ...
 
     @abstractmethod
-    def all_reduce(self, tensor: Tensor, op: ReduceOp.RedOpType) -> None:
+    def all_reduce(self, tensor: Tensor, op: TorchReduceOp.RedOpType) -> None:
         """Perform an all-reduce operation."""
         ...
 
