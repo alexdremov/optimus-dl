@@ -601,7 +601,7 @@ class CheckpointManager:
         logger.debug(f"Loaded per-rank metadata for rank {rank}: {per_rank_metadata}")
         assert iteration == per_rank_metadata.get(
             "iteration", iteration
-        ), f"Global iteration {iteration} does not match per-rank iteration {per_rank_metadata['iteration']} - checkpoint may be corrupted."
+        ), f"Global iteration {iteration} does not match per-rank iteration {per_rank_metadata.get('iteration', 'unknown')} - checkpoint may be corrupted."
 
         for key in load_strategy.extra_ignore_keys or []:
             if key in per_rank_metadata:
@@ -638,13 +638,21 @@ class CheckpointManager:
         else:
             logger.info("Metrics not restored")
 
+        per_rank_metadata_available = set(per_rank_metadata.keys())
         for key, value in kwargs.items():
             assert hasattr(
                 value, "load_state_dict"
             ), f"Do not how to restore {key} = {value}"
             if key not in per_rank_metadata:
                 logger.warning(f"Not restoring {key} = {value} as no state found")
+                continue
             value.load_state_dict(per_rank_metadata[key])
+            per_rank_metadata_available.remove(key)
+
+        if len(per_rank_metadata_available) > 0:
+            logger.warning(
+                f"Some per-rank metadata keys were not used during loading: {per_rank_metadata_available}"
+            )
 
         logger.info(f"Checkpoint has {iteration = }")
         return metadata
