@@ -571,6 +571,8 @@ class CheckpointManager:
                 metadatas, source_rank=0
             )  # pyright: ignore[reportArgumentType]
             metadata = metadatas[0]
+
+        logger.debug(f"Loaded metadata: {metadata}")
         assert metadata is not None, "Metadata not loaded correctly"
 
         if lr_scheduler is not None and "lr_scheduler" in metadata:
@@ -590,6 +592,7 @@ class CheckpointManager:
             per_rank_metadata_path, map_location="cpu", weights_only=False
         )
 
+        logger.debug(f"Loaded per-rank metadata for rank {rank}: {per_rank_metadata}")
         assert iteration == per_rank_metadata.get(
             "iteration", iteration
         ), f"Global iteration {iteration} does not match per-rank iteration {per_rank_metadata['iteration']} - checkpoint may be corrupted."
