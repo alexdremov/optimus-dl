@@ -365,7 +365,7 @@ class MlflowLogger(BaseMetricsLogger):
         try:
             mlflow.flush_artifact_async_logging()
             mlflow.flush_async_logging()
-            mlflow.flush_trace_async_logging()
+            mlflow.flush_trace_async_logging(terminate=True)
         except Exception as e:
             logger.error(f"Error flushing MLflow logging: {e}")
 

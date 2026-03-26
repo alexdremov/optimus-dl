@@ -1,3 +1,4 @@
+import gc
 import logging
 import pathlib
 
@@ -585,5 +586,7 @@ class TrainRecipe(
         if collective.is_master:
             logger.debug("Closing loggers...")
             self.close_loggers()
+
+        gc.collect()
         collective.close()
         logger.info("Training run complete")
