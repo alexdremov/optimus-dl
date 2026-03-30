@@ -114,7 +114,7 @@ def force_terminate_joblib():
     if executor is not None:
         logger.info("Shutting down Joblib reusable executor to prevent worker respawn.")
         logger.warning(
-            "Lokky workers may not terminated completely. This may lead to the process hanging if they do not exit on their own. It is recomended to not use joblib."
+            "Loky workers may not terminate completely. This may cause the process to hang if they do not exit on their own. It is recommended not to use Joblib."
         )
         executor.shutdown(wait=False, kill_workers=True)
 
