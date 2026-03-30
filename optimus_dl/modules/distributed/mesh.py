@@ -275,7 +275,11 @@ class MeshCollective(Collective):
     @override
     def close(self) -> None:
         """Clean up process groups."""
-        pass
+        logger.info("Closing MeshCollective and cleaning up process groups...")
+        self.barrier()  # Ensure all ranks reach this point before closing
+        logger.info("Destroying process group...")
+        if dist.is_initialized():
+            dist.destroy_process_group()
 
     @override
     def barrier(self) -> None:

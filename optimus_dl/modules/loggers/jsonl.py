@@ -18,7 +18,10 @@ import yaml
 from omegaconf import OmegaConf
 
 from optimus_dl.modules.loggers import register_metrics_logger
-from optimus_dl.modules.loggers.base import BaseMetricsLogger
+from optimus_dl.modules.loggers.base import (
+    BaseMetricsLogger,
+    RunStatus,
+)
 from optimus_dl.modules.loggers.config import MetricsLoggerConfig
 
 logger = logging.getLogger(__name__)
@@ -331,3 +334,40 @@ class JsonlLogger(BaseMetricsLogger):
                 logger.error(f"Error closing JSONL file for group '{group}': {e}")
 
         self.file_handles.clear()
+
+    def finished(self, status: RunStatus):
+        """Log final status at the end of the run."""
+        if not self.enabled:
+            return
+
+        try:
+            final_entry = {
+                "step": None,
+                "group": "final",
+                "status": status.value,
+            }
+            if self.cfg.include_timestamp:
+                from datetime import (
+                    datetime,
+                    timezone,
+                )
+
+                final_entry["timestamp"] = datetime.now(timezone.utc).isoformat()
+
+            json_line = json.dumps(
+                final_entry,
+                indent=self.cfg.indent,
+                sort_keys=self.cfg.sort_keys,
+                default=str,
+            )
+            # Write to a special final log file
+            final_file = (
+                self.output_dir / f"{self.base_filename.rsplit('.', 1)[0]}_final.jsonl"
+            )
+            with open(final_file, "a", encoding="utf-8") as f:
+                f.write(json_line + "\n")
+
+            logger.info(f"Logged final status to JSONL: {status}")
+
+        except Exception as e:
+            logger.error(f"Failed to log final status to JSONL: {e}")

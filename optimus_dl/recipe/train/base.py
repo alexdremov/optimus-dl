@@ -1,3 +1,4 @@
+import gc
 import logging
 import pathlib
 
@@ -9,10 +10,12 @@ from optimus_dl.core.log import (
     setup_logging,
     trange,
 )
+from optimus_dl.core.multiprocess import finalize_process
 from optimus_dl.core.registry import build as build_component
 from optimus_dl.core.seed import set_seed
 from optimus_dl.modules.checkpoint import CheckpointManager
 from optimus_dl.modules.criterion import BaseCriterion
+from optimus_dl.modules.loggers import RunStatus
 from optimus_dl.modules.metrics import (
     compute_meters,
     log_event_end,
@@ -204,8 +207,9 @@ class TrainRecipe(
         """Delegate metrics logging to LoggerManager."""
         return self.logger_manager.log_metrics_to_loggers(*args, **kwargs)
 
-    def close_loggers(self, *args, **kwargs):
+    def close_loggers(self, run_status: RunStatus = RunStatus.SUCCESS, *args, **kwargs):
         """Delegate logger cleanup to LoggerManager."""
+        self.logger_manager.finished(run_status)
         return self.logger_manager.close_loggers(*args, **kwargs)
 
     def save_checkpoint_if_needed(self, *args, **kwargs):
@@ -561,6 +565,9 @@ class TrainRecipe(
                         iteration=iteration,
                         **common_chkp_kwargs,
                     )
+                    if collective.is_master:
+                        logger.debug("Closing loggers...")
+                        self.close_loggers(run_status=RunStatus.INTERRUPTED)
                     break
                 except Exception as e:
                     logger.error(f"Training step failed at iteration {iteration}: {e}")
@@ -580,3 +587,8 @@ class TrainRecipe(
         if collective.is_master:
             logger.debug("Closing loggers...")
             self.close_loggers()
+
+        gc.collect()
+        collective.close()
+        logger.info("Training run complete")
+        finalize_process()

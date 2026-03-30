@@ -7,6 +7,8 @@ import colorlog
 from rich.console import Console
 from rich.logging import RichHandler
 
+from .environment import OPTIMUS_DEBUG
+
 
 def tqdm(*args, **kwargs):
     """
@@ -90,7 +92,10 @@ def setup_logging(
         root_logger.handlers.clear()
 
     # Will be further filtered by specific handlers
-    root_logger.setLevel(logging.DEBUG)
+    if OPTIMUS_DEBUG.get():
+        root_logger.setLevel(logging.DEBUG)
+    else:
+        root_logger.setLevel(logging.INFO)
 
     handlers = []
 
@@ -149,7 +154,11 @@ def setup_logging(
         log_path = Path(str(log_path)).expanduser()
         log_path.mkdir(parents=True, exist_ok=True)
 
-        for file_level in ("debug", "info", "error"):
+        file_levels = ["info", "error"]
+        if OPTIMUS_DEBUG.get():
+            file_levels.append("debug")
+
+        for file_level in file_levels:
             file_handler = logging.FileHandler(log_path / f"{file_level}.log")
             file_handler.setLevel(getattr(logging, file_level.upper()))
 
