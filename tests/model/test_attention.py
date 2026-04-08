@@ -92,6 +92,111 @@ class TestCausalSelfAttention:
                     # Output shape should match input shape
                     assert output.shape == (batch_size, seq_len, config.n_embd)
 
+    @patch("torch.nn.functional.scaled_dot_product_attention")
+    def test_flash_attention_forward(self, mock_flash_attn, device):
+        config = MockConfig(n_embd=768, n_head=12)
+
+        with patch(
+            "optimus_dl.modules.model.blocks.attention.FLASH_ATTENTION_AVAILABLE", True
+        ):
+            attention = CausalSelfAttention(config).to(device)
+
+            # Mock flash attention to return expected shape
+            batch_size, seq_len = 2, 10
+            expected_output = torch.randn(
+                batch_size,
+                config.n_head,
+                seq_len,
+                config.n_embd // config.n_head,
+                device=device,
+            )
+            mock_flash_attn.return_value = expected_output
+
+            x = torch.randn(batch_size, seq_len, config.n_embd).to(device)
+            output = attention(x)
+
+            # Check that flash attention was called
+            mock_flash_attn.assert_called_once()
+            call_args = mock_flash_attn.call_args
+
+            # Verify flash attention arguments
+            assert call_args[1]["is_causal"] is True
+            assert call_args[1]["attn_mask"] is None
+
+            # Check output shape
+            assert output.shape == (batch_size, seq_len, config.n_embd)
+
+    def test_manual_attention_forward(self, device):
+        config = MockConfig(n_embd=768, n_head=12, block_size=1024)
+
+        with patch(
+            "optimus_dl.modules.model.blocks.attention.FLEX_ATTENTION_AVAILABLE", False
+        ):
+            attention = CausalSelfAttention(config).to(device)
+            attention.eval()  # Disable dropout for deterministic testing
+
+            batch_size, seq_len = 2, 5
+            x = torch.randn(batch_size, seq_len, config.n_embd).to(device)
+
+            output = attention(x)
+            assert output.shape == (batch_size, seq_len, config.n_embd)
+
+    def test_attention_head_reshaping(self, device):
+        config = MockConfig(n_embd=768, n_head=12)
+        attention = CausalSelfAttention(config).to(device)
+
+        batch_size, seq_len = 2, 8
+        x = torch.randn(batch_size, seq_len, config.n_embd).to(device)
+
+        # Test that q, k, v are properly reshaped
+        xq = attention.wq(x)
+        xk = attention.wk(x)
+        xv = attention.wv(x)
+
+        # Original shapes before head reshaping
+        assert xq.shape == (batch_size, seq_len, config.n_embd)
+        assert xk.shape == (batch_size, seq_len, config.n_embd)
+        assert xv.shape == (batch_size, seq_len, config.n_embd)
+
+        # After head reshaping (as done in forward)
+        head_size = config.n_embd // config.n_head
+        xq_reshaped = xq.view(batch_size, seq_len, config.n_head, head_size).transpose(
+            1, 2
+        )
+        xk_reshaped = xk.view(batch_size, seq_len, config.n_head, head_size).transpose(
+            1, 2
+        )
+        xv_reshaped = xv.view(batch_size, seq_len, config.n_head, head_size).transpose(
+            1, 2
+        )
+
+        expected_shape = (batch_size, config.n_head, seq_len, head_size)
+        assert xq_reshaped.shape == expected_shape
+        assert xk_reshaped.shape == expected_shape
+        assert xv_reshaped.shape == expected_shape
+
+    def test_dropout_behavior(self, device):
+        config = MockConfig(dropout=0.5)
+        attention = CausalSelfAttention(config).to(device)
+
+        # Test training mode (dropout active)
+        attention.train()
+        x = torch.randn(1, 10, config.n_embd).to(device)
+
+        # Run multiple times to see if outputs differ due to dropout
+        [attention(x) for _ in range(3)]
+
+        # In training mode with dropout, outputs should potentially differ
+        # (though not guaranteed with random seeds)
+
+        # Test eval mode (dropout inactive)
+        attention.eval()
+        output1 = attention(x)
+        output2 = attention(x)
+
+        # In eval mode, outputs should be identical
+        torch.testing.assert_close(output1, output2)
+
     def test_causal_mask_application(self, device):
         """Test that causal masking prevents attention to future positions."""
         config = MockConfig(n_embd=64, n_head=4, block_size=10)
