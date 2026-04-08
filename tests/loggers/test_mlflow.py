@@ -49,13 +49,17 @@ class TestMlflowLogger:
     @patch("mlflow.set_experiment")
     @patch("mlflow.start_run")
     @patch("mlflow.set_tags")
+    @patch("mlflow.set_tag")
     @patch("mlflow.log_params")
     @patch("mlflow.log_artifact")
+    @patch("mlflow.environment_variables")
     @patch("mlflow.utils.validation.MAX_PARAM_VAL_LENGTH", 6000)
     def test_mlflow_logger_setup(
         self,
+        mock_env_vars,
         mock_log_artifact,
         mock_log_params,
+        mock_set_tag,
         mock_set_tags,
         mock_start_run,
         mock_set_experiment,
@@ -94,8 +98,10 @@ class TestMlflowLogger:
         mock_enable_sys.assert_called_once()
         mock_set_experiment.assert_called_with(experiment_id="exp_id")
         mock_start_run.assert_called_once()
-        mock_set_tags.assert_called_once()
+        mock_set_tags.assert_called()
+        mock_set_tag.assert_called_with("finish_status", "started")
         mock_log_artifact.assert_called()
+        mock_env_vars.MLFLOW_HTTP_REQUEST_TIMEOUT.set.assert_called()
 
         # Verify long param was truncated in log_params
         args, _ = mock_log_params.call_args

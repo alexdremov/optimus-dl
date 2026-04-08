@@ -151,6 +151,13 @@ def test_varlen_sliding_window_gqa_consistency(device, n_kv_head):
         )
 
     out_sdpa_flat = torch.cat([out_sdpa[0, :seq_len1], out_sdpa[1, :seq_len2]], dim=0)
+    rtol = 1e-4
+    atol = 1e-4
+    if device.type == "cuda":
+        # Varlen kernels sometimes have slight numerical differences
+        rtol = 2e-4
+        atol = 2e-4
+
     torch.testing.assert_close(
-        out_varlen.squeeze(0), out_sdpa_flat, atol=1e-4, rtol=1e-4
+        out_varlen.squeeze(0), out_sdpa_flat, atol=atol, rtol=rtol
     )

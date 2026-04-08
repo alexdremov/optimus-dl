@@ -34,8 +34,10 @@ class TestCausalSelfAttention:
         assert attention.n_head == 12
         assert attention.n_embd == 768
         assert attention.dropout == 0.1
-        assert isinstance(attention.c_attn, nn.Linear)
-        assert isinstance(attention.c_proj, nn.Linear)
+        assert isinstance(attention.wq, nn.Linear)
+        assert isinstance(attention.wk, nn.Linear)
+        assert isinstance(attention.wv, nn.Linear)
+        assert isinstance(attention.wo, nn.Linear)
         assert isinstance(attention.attn_dropout, nn.Dropout)
         assert isinstance(attention.resid_dropout, nn.Dropout)
 
@@ -50,26 +52,32 @@ class TestCausalSelfAttention:
         config = MockConfig(n_embd=768, n_head=12)
         attention = CausalSelfAttention(config)
 
-        # c_attn should project to 3 * n_embd for q, k, v
-        assert attention.c_attn.in_features == 768
-        assert attention.c_attn.out_features == 3 * 768
+        # wq, wk, wv should project to n_embd (or sharded)
+        assert attention.wq.in_features == 768
+        assert attention.wq.out_features == 768
+        assert attention.wk.out_features == 768
+        assert attention.wv.out_features == 768
 
-        # c_proj should project back to n_embd
-        assert attention.c_proj.in_features == 768
-        assert attention.c_proj.out_features == 768
+        # wo should project back to n_embd
+        assert attention.wo.in_features == 768
+        assert attention.wo.out_features == 768
 
     def test_bias_configuration(self):
         # Test with bias=True
         config_with_bias = MockConfig(bias=True)
         attention_with_bias = CausalSelfAttention(config_with_bias)
-        assert attention_with_bias.c_attn.bias is not None
-        assert attention_with_bias.c_proj.bias is not None
+        assert attention_with_bias.wq.bias is not None
+        assert attention_with_bias.wk.bias is not None
+        assert attention_with_bias.wv.bias is not None
+        assert attention_with_bias.wo.bias is not None
 
         # Test with bias=False
         config_no_bias = MockConfig(bias=False)
         attention_no_bias = CausalSelfAttention(config_no_bias)
-        assert attention_no_bias.c_attn.bias is None
-        assert attention_no_bias.c_proj.bias is None
+        assert attention_no_bias.wq.bias is None
+        assert attention_no_bias.wk.bias is None
+        assert attention_no_bias.wv.bias is None
+        assert attention_no_bias.wo.bias is None
 
     def test_forward_shape_consistency(self, device):
         config = MockConfig(n_embd=768, n_head=12, block_size=1024)
@@ -93,7 +101,7 @@ class TestCausalSelfAttention:
         config = MockConfig(n_embd=768, n_head=12)
 
         with patch(
-            "optimus_dl.modules.model.blocks.attention.hasattr", return_value=True
+            "optimus_dl.modules.model.blocks.attention.FLASH_ATTENTION_AVAILABLE", True
         ):
             attention = CausalSelfAttention(config).to(device)
 
@@ -126,39 +134,13 @@ class TestCausalSelfAttention:
         config = MockConfig(n_embd=768, n_head=12, block_size=1024)
 
         with patch(
-            "optimus_dl.modules.model.blocks.attention.hasattr", return_value=False
+            "optimus_dl.modules.model.blocks.attention.FLEX_ATTENTION_AVAILABLE", False
         ):
             attention = CausalSelfAttention(config).to(device)
             attention.eval()  # Disable dropout for deterministic testing
 
             batch_size, seq_len = 2, 5
             x = torch.randn(batch_size, seq_len, config.n_embd).to(device)
-
-            output = attention(x)
-            assert output.shape == (batch_size, seq_len, config.n_embd)
-
-    def test_causal_mask_application(self, device):
-        """Test that causal masking prevents attention to future positions."""
-        config = MockConfig(n_embd=64, n_head=4, block_size=10)
-
-        with patch(
-            "optimus_dl.modules.model.blocks.attention.hasattr", return_value=False
-        ):
-            attention = CausalSelfAttention(config).to(device)
-            attention.eval()
-
-            # Test with a small sequence to verify causal masking
-            batch_size, seq_len = 1, 4
-            x = torch.ones(
-                batch_size, seq_len, config.n_embd, device=device
-            )  # Use ones for predictable QKV
-
-            # Override the c_attn to return known values for testing
-            with torch.no_grad():
-                # Set c_attn weights to identity-like for predictable q, k, v
-                attention.c_attn.weight.fill_(0.1)
-                if attention.c_attn.bias is not None:
-                    attention.c_attn.bias.fill_(0.0)
 
             output = attention(x)
             assert output.shape == (batch_size, seq_len, config.n_embd)
@@ -171,29 +153,31 @@ class TestCausalSelfAttention:
         x = torch.randn(batch_size, seq_len, config.n_embd).to(device)
 
         # Test that q, k, v are properly reshaped
-        q, k, v = attention.c_attn(x).split(config.n_embd, dim=2)
+        xq = attention.wq(x)
+        xk = attention.wk(x)
+        xv = attention.wv(x)
 
         # Original shapes before head reshaping
-        assert q.shape == (batch_size, seq_len, config.n_embd)
-        assert k.shape == (batch_size, seq_len, config.n_embd)
-        assert v.shape == (batch_size, seq_len, config.n_embd)
+        assert xq.shape == (batch_size, seq_len, config.n_embd)
+        assert xk.shape == (batch_size, seq_len, config.n_embd)
+        assert xv.shape == (batch_size, seq_len, config.n_embd)
 
         # After head reshaping (as done in forward)
         head_size = config.n_embd // config.n_head
-        q_reshaped = q.view(batch_size, seq_len, config.n_head, head_size).transpose(
+        xq_reshaped = xq.view(batch_size, seq_len, config.n_head, head_size).transpose(
             1, 2
         )
-        k_reshaped = k.view(batch_size, seq_len, config.n_head, head_size).transpose(
+        xk_reshaped = xk.view(batch_size, seq_len, config.n_head, head_size).transpose(
             1, 2
         )
-        v_reshaped = v.view(batch_size, seq_len, config.n_head, head_size).transpose(
+        xv_reshaped = xv.view(batch_size, seq_len, config.n_head, head_size).transpose(
             1, 2
         )
 
         expected_shape = (batch_size, config.n_head, seq_len, head_size)
-        assert q_reshaped.shape == expected_shape
-        assert k_reshaped.shape == expected_shape
-        assert v_reshaped.shape == expected_shape
+        assert xq_reshaped.shape == expected_shape
+        assert xk_reshaped.shape == expected_shape
+        assert xv_reshaped.shape == expected_shape
 
     def test_dropout_behavior(self, device):
         config = MockConfig(dropout=0.5)
@@ -217,6 +201,30 @@ class TestCausalSelfAttention:
         # In eval mode, outputs should be identical
         torch.testing.assert_close(output1, output2)
 
+    def test_causal_mask_application(self, device):
+        """Test that causal masking prevents attention to future positions."""
+        config = MockConfig(n_embd=64, n_head=4, block_size=10)
+
+        attention = CausalSelfAttention(config).to(device)
+        attention.eval()
+
+        # Test with a small sequence to verify causal masking
+        batch_size, seq_len = 1, 4
+        x = torch.ones(
+            batch_size, seq_len, config.n_embd, device=device
+        )  # Use ones for predictable QKV
+
+        # Override the weights to return known values for testing
+        with torch.no_grad():
+            attention.wq.weight.fill_(0.1)
+            attention.wk.weight.fill_(0.1)
+            attention.wv.weight.fill_(0.1)
+            if attention.wq.bias is not None:
+                attention.wq.bias.fill_(0.0)
+
+        output = attention(x)
+        assert output.shape == (batch_size, seq_len, config.n_embd)
+
     def test_gradient_flow(self, device):
         config = MockConfig(n_embd=64, n_head=4)
         attention = CausalSelfAttention(config).to(device)
@@ -227,14 +235,8 @@ class TestCausalSelfAttention:
         loss.backward()
 
         # Check that gradients flow through all parameters
-        assert attention.c_attn.weight.grad is not None
-        assert attention.c_proj.weight.grad is not None
-        assert x.grad is not None
-
-        if attention.c_attn.bias is not None:
-            assert attention.c_attn.bias.grad is not None
-        if attention.c_proj.bias is not None:
-            assert attention.c_proj.bias.grad is not None
+        for name, param in attention.named_parameters():
+            assert param.grad is not None, f"Gradient not flowing for {name}"
 
     def test_different_head_configurations(self, device):
         """Test various valid head configurations"""

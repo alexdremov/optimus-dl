@@ -6,8 +6,10 @@ import pathlib
 import shutil
 import tempfile
 from dataclasses import dataclass
+from unittest.mock import patch
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from optimus_dl.modules.tokenizer import register_tokenizer
@@ -26,6 +28,81 @@ from optimus_dl.recipe.pretokenize.recipe import DataPrepRecipe
 # Configure logging to capture output during tests
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def mock_list_repo_files(repo_id, repo_type=None, **kwargs):
+    """Mock for huggingface_hub.list_repo_files to avoid real network calls."""
+    if repo_id == "Salesforce/wikitext":
+        return [
+            "README.md",
+            "wikitext-2-raw-v1/train-00000-of-00001.parquet",
+            "wikitext-2-raw-v1/test-00000-of-00001.parquet",
+            "wikitext-2-raw-v1/validation-00000-of-00001.parquet",
+            "wikitext-103-raw-v1/train-00000-of-00002.parquet",
+            "wikitext-103-raw-v1/train-00001-of-00002.parquet",
+            "wikitext-103-raw-v1/test-00000-of-00001.parquet",
+            "wikitext-103-raw-v1/validation-00000-of-00001.parquet",
+        ]
+    return []
+
+
+def mock_hf_hub_download(repo_id, filename, **kwargs):
+    """Mock for huggingface_hub.hf_hub_download to return local dummy files."""
+    tmp_dir = pathlib.Path(tempfile.gettempdir()) / "optimus_dl_test_artifacts"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    local_path = tmp_dir / filename.replace("/", "_")
+
+    if filename == "README.md":
+        content = """---
+configs:
+  - config_name: wikitext-2-raw-v1
+    data_files:
+      - split: train
+        path: wikitext-2-raw-v1/train-00000-of-00001.parquet
+      - split: test
+        path: wikitext-2-raw-v1/test-00000-of-00001.parquet
+      - split: validation
+        path: wikitext-2-raw-v1/validation-00000-of-00001.parquet
+---
+"""
+        with open(local_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        return str(local_path)
+
+    if filename.endswith(".parquet"):
+        # Create a dummy parquet file with some text data
+        df = pd.DataFrame(
+            {
+                "text": [
+                    "This is a test sentence.",
+                    "Another sentence for tokenization.",
+                ]
+                * 10
+            }
+        )
+        df.to_parquet(local_path)
+        return str(local_path)
+
+    return str(local_path)
+
+
+# Apply mocks globally for this module
+pytestmark = pytest.mark.usefixtures("hf_hub_mock")
+
+
+@pytest.fixture(autouse=True, scope="module")
+def hf_hub_mock():
+    with (
+        patch(
+            "optimus_dl.recipe.pretokenize.source.list_repo_files",
+            side_effect=mock_list_repo_files,
+        ),
+        patch(
+            "optimus_dl.recipe.pretokenize.source.hf_hub_download",
+            side_effect=mock_hf_hub_download,
+        ),
+    ):
+        yield
 
 
 @dataclass
@@ -51,8 +128,19 @@ class SlowTiktokenTokenizer(TiktokenTokenizer):
 
 def _run_recipe_process(config):
     # Running in a separate process
-    recipe = DataPrepRecipe(config)
-    recipe.run()
+    # We need to re-apply the mock inside the child process if it's not inherited
+    with (
+        patch(
+            "optimus_dl.recipe.pretokenize.source.list_repo_files",
+            side_effect=mock_list_repo_files,
+        ),
+        patch(
+            "optimus_dl.recipe.pretokenize.source.hf_hub_download",
+            side_effect=mock_hf_hub_download,
+        ),
+    ):
+        recipe = DataPrepRecipe(config)
+        recipe.run()
 
 
 @pytest.fixture
