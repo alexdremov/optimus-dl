@@ -94,8 +94,6 @@ def test_save_checkpoint_persistent_paths(tmp_checkpoint_dir):
     ):
         iteration = 10
         expected_checkpoint_id = tmp_checkpoint_dir / f"checkpoint_{iteration:09d}"
-        tmp_checkpoint_dir / f"metadata_{iteration:09d}.pt"
-        (tmp_checkpoint_dir / f"per_rank_metadata_0_{iteration:09d}.pt")
 
         mgr.save_checkpoint(
             checkpoint_path=tmp_checkpoint_dir,

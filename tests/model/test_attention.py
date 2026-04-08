@@ -235,14 +235,8 @@ class TestCausalSelfAttention:
         loss.backward()
 
         # Check that gradients flow through all parameters
-        assert attention.wq.weight.grad is not None
-        assert attention.wo.weight.grad is not None
-        assert x.grad is not None
-
-        if attention.wq.bias is not None:
-            assert attention.wq.bias.grad is not None
-        if attention.wo.bias is not None:
-            assert attention.wo.bias.grad is not None
+        for name, param in attention.named_parameters():
+            assert param.grad is not None, f"Gradient not flowing for {name}"
 
     def test_different_head_configurations(self, device):
         """Test various valid head configurations"""
