@@ -62,87 +62,16 @@ def attention_mask_fn(
     return mask
 
 
-class CausalSelfAttention(nn.Module):
-    """Standard causal self-attention layer as used in GPT-2.
+class BaseSelfAttention(nn.Module):
+    """Base self-attention layer supporting modern features.
 
-    Includes support for dropout and causal masking.
-
-    Attributes:
-        c_attn: Combined Linear layer for query, key, and value projections.
-        c_proj: Linear layer for output projection.
-        n_head: Number of attention heads.
-        n_embd: Embedding dimensionality.
-        dropout: Dropout probability.
-    """
-
-    def __init__(self, config):
-        super().__init__()
-        assert config.n_embd % config.n_head == 0
-        # key, query, value projections for all heads, but in a batch
-        self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
-        # output projection
-        self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
-        # regularization
-        self.attn_dropout = nn.Dropout(config.dropout)
-        self.resid_dropout = nn.Dropout(config.dropout)
-        self.n_head = config.n_head
-        self.n_embd = config.n_embd
-        self.dropout = config.dropout
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Perform the forward pass of causal self-attention.
-
-        Args:
-            x: Input tensor of shape (batch, seq_len, embed_dim).
-
-        Returns:
-            Output tensor of shape (batch, seq_len, embed_dim).
-        """
-        B, T, C = (
-            x.size()
-        )  # batch size, sequence length, embedding dimensionality (n_embd)
-
-        # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        q, k, v = self.c_attn(x).split(self.n_embd, dim=2)
-        k = k.view(B, T, self.n_head, C // self.n_head).transpose(
-            1, 2
-        )  # (B, nh, T, hs)
-        q = q.view(B, T, self.n_head, C // self.n_head).transpose(
-            1, 2
-        )  # (B, nh, T, hs)
-        v = v.view(B, T, self.n_head, C // self.n_head).transpose(
-            1, 2
-        )  # (B, nh, T, hs)
-
-        # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
-        y = torch.nn.functional.scaled_dot_product_attention(
-            q,
-            k,
-            v,
-            attn_mask=None,
-            dropout_p=self.dropout if self.training else 0,
-            is_causal=True,
-        )
-        y = (
-            y.transpose(1, 2).contiguous().view(B, T, C)
-        )  # re-assemble all head outputs side by side
-
-        # output projection
-        y = self.resid_dropout(self.c_proj(y))
-        return y
-
-
-class RotarySelfAttention(nn.Module):
-    """Generalized Rotary Self-Attention.
-
-    Supports several modern features:
-
+    Supports:
     - **Grouped Query Attention (GQA)**: For improved inference efficiency.
-    - **Rotary Positional Embeddings (RoPE)**: For better positional encoding.
     - **Q/K Normalization**: Optional RMSNorm on Query/Key for training stability.
     - **Sliding Window Attention**: Optional sliding window masking.
     - **Dynamic Sequence Padding**: Support for `seq_lens` masking via flex_attention.
     - **Variable-length Attention**: Support for optimized Flash Attention on packed batches via `cu_seqlens`.
+    - **Tensor Parallelism & Sequence Parallelism**: Full support for DTensor and SP.
 
     Attributes:
         wq: Linear projection for Query.
@@ -170,10 +99,12 @@ class RotarySelfAttention(nn.Module):
         sliding_window: int | None = None,
     ):
         super().__init__()
+        assert n_embd % n_head == 0, "n_embd must be divisible by n_head"
         self.n_head = n_head
         self.n_kv_head = n_kv_head if n_kv_head is not None else n_head
         self.n_rep = self.n_head // self.n_kv_head
         self.head_dim = head_dim or n_embd // n_head
+        self.n_embd = n_embd
         self.dropout = dropout
         self.use_qk_norm = use_qk_norm
         self.qk_norm_per_head = qk_norm_per_head
@@ -201,6 +132,26 @@ class RotarySelfAttention(nn.Module):
 
         # Flex attention block mask
         self._block_mask = None
+
+    def apply_pos_emb(
+        self,
+        xq: torch.Tensor,
+        xk: torch.Tensor,
+        freqs_cis: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Hook for applying positional embeddings. Default is no-op.
+
+        Args:
+            xq: Query tensor.
+            xk: Key tensor.
+            freqs_cis: Optional positional embedding frequencies.
+            position_ids: Optional position IDs.
+
+        Returns:
+            Tuple of (xq, xk) with positional embeddings applied.
+        """
+        return xq, xk
 
     @torch.compiler.disable(recursive=False)
     def _varlen_attn_fallback(
@@ -294,21 +245,21 @@ class RotarySelfAttention(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        freqs_cis: torch.Tensor,
+        freqs_cis: torch.Tensor | None = None,
         seq_lens: torch.Tensor | None = None,
         document_ids: torch.Tensor | None = None,
         position_ids: torch.Tensor | None = None,
         cu_seqlens: torch.Tensor | None = None,
         max_seqlen: int | None = None,
     ) -> torch.Tensor:
-        """Perform the forward pass with RoPE and GQA.
+        """Perform the forward pass with support for GQA, QK-Norm, and flexible masking.
 
         Args:
             x: Input tensor of shape (B, T, C).
-            freqs_cis: Precomputed frequencies for RoPE.
+            freqs_cis: Optional frequencies for positional embeddings.
             seq_lens: Optional 1D tensor of sequence lengths to mask out padding.
             document_ids: Optional 2D tensor of document IDs for packed/flat batching.
-            position_ids: Optional 2D tensor of position IDs for RoPE.
+            position_ids: Optional 2D tensor of position IDs.
             cu_seqlens: Optional 1D tensor of cumulative sequence lengths for Flash Attention varlen.
             max_seqlen: Optional maximum sequence length in the packed batch.
 
@@ -378,7 +329,7 @@ class RotarySelfAttention(nn.Module):
             xq = self.q_norm(xq)
             xk = self.k_norm(xk)
 
-        xq, xk = apply_rotary_emb(xq, xk, freqs_cis, position_ids=position_ids)
+        xq, xk = self.apply_pos_emb(xq, xk, freqs_cis, position_ids=position_ids)
 
         is_dtensor = isinstance(xq, DTensor)
         if is_dtensor:
@@ -563,3 +514,79 @@ class RotarySelfAttention(nn.Module):
             y = y.redistribute(sp_mesh, sp_placements)
 
         return y
+
+
+class CausalSelfAttention(BaseSelfAttention):
+    """Standard causal self-attention layer as used in GPT-2, but with modern features.
+
+    Now supports GQA, QK-norm, sliding window, and optimized kernels.
+
+    Attributes:
+        wq: Linear projection for Query.
+        wk: Linear projection for Key.
+        wv: Linear projection for Value.
+        wo: Linear projection for Output.
+        n_head: Number of attention heads.
+        dropout: Dropout probability.
+    """
+
+    def __init__(self, config):
+        super().__init__(
+            n_embd=config.n_embd,
+            n_head=config.n_head,
+            n_kv_head=getattr(config, "n_kv_head", None),
+            head_dim=getattr(config, "head_dim", None),
+            dropout=config.dropout,
+            bias=config.bias,
+            use_qk_norm=getattr(config, "use_qk_norm", False),
+            qk_norm_per_head=getattr(config, "qk_norm_per_head", True),
+            rmsnorm_eps=getattr(config, "rmsnorm_eps", 1e-5),
+            sliding_window=getattr(config, "sliding_window", None),
+        )
+
+
+class RotarySelfAttention(BaseSelfAttention):
+    """Generalized Rotary Self-Attention.
+
+    Supports GQA, RoPE, Q/K normalization, Sliding Window, Flex Attention,
+    and optimized variable-length kernels.
+    """
+
+    def __init__(
+        self,
+        n_embd: int,
+        n_head: int,
+        n_kv_head: int | None = None,
+        head_dim: int | None = None,
+        dropout: float = 0.0,
+        bias: bool = False,
+        use_qk_norm: bool = False,
+        qk_norm_per_head: bool = True,
+        rmsnorm_eps: float = 1e-5,
+        sliding_window: int | None = None,
+    ):
+        super().__init__(
+            n_embd=n_embd,
+            n_head=n_head,
+            n_kv_head=n_kv_head,
+            head_dim=head_dim,
+            dropout=dropout,
+            bias=bias,
+            use_qk_norm=use_qk_norm,
+            qk_norm_per_head=qk_norm_per_head,
+            rmsnorm_eps=rmsnorm_eps,
+            sliding_window=sliding_window,
+        )
+
+    def apply_pos_emb(
+        self,
+        xq: torch.Tensor,
+        xk: torch.Tensor,
+        freqs_cis: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Apply Rotary Positional Embeddings (RoPE)."""
+        assert (
+            freqs_cis is not None
+        ), "freqs_cis must be provided for RotarySelfAttention"
+        return apply_rotary_emb(xq, xk, freqs_cis, position_ids=position_ids)

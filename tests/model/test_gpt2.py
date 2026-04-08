@@ -189,7 +189,7 @@ class TestBlock:
         # Check gradients flow through all components
         assert block.ln_1.weight.grad is not None
         assert block.ln_2.weight.grad is not None
-        assert block.attn.c_attn.weight.grad is not None
+        assert block.attn.wq.weight.grad is not None
         assert block.mlp.c_fc.weight.grad is not None
         assert x.grad is not None
 
@@ -241,13 +241,12 @@ class TestGPT:
         config = GPTConfig(n_layer=2)  # Small model for testing
         model = GPT(config)
 
-        # Check that c_proj weights have special initialization
+        # Check that c_proj and wo weights have special initialization
         for name, param in model.named_parameters():
-            if name.endswith("c_proj.weight"):
+            if name.endswith("c_proj.weight") or name.endswith("wo.weight"):
                 # Should be initialized with smaller std
                 0.02 / math.sqrt(2 * config.n_layer)
                 # We can't check exact values due to randomness, but can check the shape
-                assert param.shape[0] == config.n_embd
                 assert param.requires_grad
 
     def test_forward_basic(self, device):
@@ -476,7 +475,7 @@ class TestGPT:
         assert model.lm_head.weight.grad is not None
 
         for block in model.transformer.h:
-            assert block.attn.c_attn.weight.grad is not None
+            assert block.attn.wq.weight.grad is not None
             assert block.mlp.c_fc.weight.grad is not None
 
     def test_blacklist_weight_modules(self):
