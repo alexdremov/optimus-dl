@@ -143,7 +143,14 @@ class TestAttentionModesEquivalence:
                 max_seqlen=d["max_seqlen"],
             )
 
-        torch.testing.assert_close(out_flat, out_varlen, rtol=1e-5, atol=1e-5)
+        if device.type == "cuda":
+            atol = 1e-3  # Looser tolerance for FP16
+            rtol = 1e-3
+        else:
+            atol = 1e-5
+            rtol = 1e-5
+
+        torch.testing.assert_close(out_flat, out_varlen, rtol=rtol, atol=atol)
 
     def test_invalid_inputs(self, setup_data, device):
         """Test that asserts catch invalid combinations of inputs."""
