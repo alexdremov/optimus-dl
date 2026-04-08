@@ -190,6 +190,17 @@ class TestBlock:
         assert block.ln_1.weight.grad is not None
         assert block.ln_2.weight.grad is not None
         assert block.attn.wq.weight.grad is not None
+        assert block.attn.wk.weight.grad is not None
+        assert block.attn.wv.weight.grad is not None
+        assert block.attn.wo.weight.grad is not None
+        if block.attn.wq.bias is not None:
+            assert block.attn.wq.bias.grad is not None
+        if block.attn.wk.bias is not None:
+            assert block.attn.wk.bias.grad is not None
+        if block.attn.wv.bias is not None:
+            assert block.attn.wv.bias.grad is not None
+        if block.attn.wo.bias is not None:
+            assert block.attn.wo.bias.grad is not None
         assert block.mlp.c_fc.weight.grad is not None
         assert x.grad is not None
 
@@ -241,13 +252,26 @@ class TestGPT:
         config = GPTConfig(n_layer=2)  # Small model for testing
         model = GPT(config)
 
+        expected_std = 0.02 / math.sqrt(2 * config.n_layer)
+
         # Check that c_proj and wo weights have special initialization
+        found_c_proj = False
+        found_wo = False
         for name, param in model.named_parameters():
             if name.endswith("c_proj.weight") or name.endswith("wo.weight"):
+                if name.endswith("c_proj.weight"):
+                    found_c_proj = True
+                if name.endswith("wo.weight"):
+                    found_wo = True
                 # Should be initialized with smaller std
-                0.02 / math.sqrt(2 * config.n_layer)
-                # We can't check exact values due to randomness, but can check the shape
+                # We check if std is reasonably close to expected_std
+                # Since it's random, we use a broad tolerance but much tighter than standard 0.02
+                actual_std = param.std().item()
+                assert math.isclose(actual_std, expected_std, rel_tol=0.3)
                 assert param.requires_grad
+
+        assert found_c_proj, "c_proj.weight not found in named_parameters"
+        assert found_wo, "wo.weight not found in named_parameters"
 
     def test_forward_basic(self, device):
         config = GPTConfig(
@@ -476,6 +500,9 @@ class TestGPT:
 
         for block in model.transformer.h:
             assert block.attn.wq.weight.grad is not None
+            assert block.attn.wk.weight.grad is not None
+            assert block.attn.wv.weight.grad is not None
+            assert block.attn.wo.weight.grad is not None
             assert block.mlp.c_fc.weight.grad is not None
 
     def test_blacklist_weight_modules(self):

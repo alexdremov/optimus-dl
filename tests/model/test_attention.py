@@ -67,12 +67,16 @@ class TestCausalSelfAttention:
         config_with_bias = MockConfig(bias=True)
         attention_with_bias = CausalSelfAttention(config_with_bias)
         assert attention_with_bias.wq.bias is not None
+        assert attention_with_bias.wk.bias is not None
+        assert attention_with_bias.wv.bias is not None
         assert attention_with_bias.wo.bias is not None
 
         # Test with bias=False
         config_no_bias = MockConfig(bias=False)
         attention_no_bias = CausalSelfAttention(config_no_bias)
         assert attention_no_bias.wq.bias is None
+        assert attention_no_bias.wk.bias is None
+        assert attention_no_bias.wv.bias is None
         assert attention_no_bias.wo.bias is None
 
     def test_forward_shape_consistency(self, device):

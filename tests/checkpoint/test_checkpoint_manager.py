@@ -62,6 +62,20 @@ def test_save_checkpoint_persistent_paths(tmp_checkpoint_dir):
     model = MagicMock()
     optimizer = MagicMock()
 
+    def mock_save(obj, path):
+        # path might be a string or Path object
+        from pathlib import Path
+
+        Path(path).touch()
+
+    def mock_dcp_save(*args, **kwargs):
+        # dcp_save(state_dict=..., storage_writer=FileSystemWriter(path), ...)
+        from pathlib import Path
+
+        writer = kwargs.get("storage_writer")
+        if writer and hasattr(writer, "path"):
+            Path(writer.path).mkdir(parents=True, exist_ok=True)
+
     with (
         patch(
             "torch.distributed.checkpoint.state_dict.get_model_state_dict",
@@ -71,21 +85,17 @@ def test_save_checkpoint_persistent_paths(tmp_checkpoint_dir):
             "torch.distributed.checkpoint.state_dict.get_optimizer_state_dict",
             return_value={},
         ),
-        patch("optimus_dl.modules.checkpoint.checkpoint_manager.dcp_save"),
-        patch("torch.save"),
+        patch(
+            "optimus_dl.modules.checkpoint.checkpoint_manager.dcp_save",
+            side_effect=mock_dcp_save,
+        ),
+        patch("torch.save", side_effect=mock_save),
         patch("optimus_dl.modules.metrics.state_dict", return_value={}),
     ):
         iteration = 10
         expected_checkpoint_id = tmp_checkpoint_dir / f"checkpoint_{iteration:09d}"
-        expected_metadata_path = tmp_checkpoint_dir / f"metadata_{iteration:09d}.pt"
-        expected_per_rank = (
-            tmp_checkpoint_dir / f"per_rank_metadata_0_{iteration:09d}.pt"
-        )
-
-        # Pre-create files to satisfy symlink logic
-        expected_checkpoint_id.mkdir(parents=True, exist_ok=True)
-        expected_metadata_path.touch()
-        expected_per_rank.touch()
+        tmp_checkpoint_dir / f"metadata_{iteration:09d}.pt"
+        (tmp_checkpoint_dir / f"per_rank_metadata_0_{iteration:09d}.pt")
 
         mgr.save_checkpoint(
             checkpoint_path=tmp_checkpoint_dir,
@@ -120,6 +130,18 @@ def test_save_checkpoint_last_only_paths(tmp_checkpoint_dir):
     # Pre-create as dir
     latest_cp.mkdir()
 
+    def mock_save(obj, path):
+        from pathlib import Path
+
+        Path(path).touch()
+
+    def mock_dcp_save(*args, **kwargs):
+        from pathlib import Path
+
+        writer = kwargs.get("storage_writer")
+        if writer and hasattr(writer, "path"):
+            Path(writer.path).mkdir(parents=True, exist_ok=True)
+
     with (
         patch(
             "torch.distributed.checkpoint.state_dict.get_model_state_dict",
@@ -129,13 +151,13 @@ def test_save_checkpoint_last_only_paths(tmp_checkpoint_dir):
             "torch.distributed.checkpoint.state_dict.get_optimizer_state_dict",
             return_value={},
         ),
-        patch("optimus_dl.modules.checkpoint.checkpoint_manager.dcp_save") as mock_dcp,
-        patch("torch.save"),
+        patch(
+            "optimus_dl.modules.checkpoint.checkpoint_manager.dcp_save",
+            side_effect=mock_dcp_save,
+        ),
+        patch("torch.save", side_effect=mock_save),
         patch("optimus_dl.modules.metrics.state_dict", return_value={}),
     ):
-        # Mock dcp_save to create the directory since we are testing existence
-        mock_dcp.side_effect = lambda *args, **kwargs: latest_cp.mkdir(exist_ok=True)
-
         mgr.save_checkpoint(
             checkpoint_path=tmp_checkpoint_dir,
             model=model,
@@ -148,6 +170,9 @@ def test_save_checkpoint_last_only_paths(tmp_checkpoint_dir):
         )
 
         # Should have targeted "latest" directly
+        assert (tmp_checkpoint_dir / "checkpoint_latest").is_dir()
+        assert (tmp_checkpoint_dir / "metadata_latest.pt").exists()
+        assert (tmp_checkpoint_dir / "per_rank_metadata_0_latest.pt").exists()
         numbered_dirs = list(tmp_checkpoint_dir.glob("checkpoint_0*"))
         assert len(numbered_dirs) == 0
 
