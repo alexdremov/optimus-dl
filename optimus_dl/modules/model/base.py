@@ -107,11 +107,15 @@ class BaseModel(torch.nn.Module):
     def post_optimizer_step(self):
         """Hook for any operations that need to be performed after each optimizer step."""
         for module in self.modules():
+            if module is self:
+                continue
             if hasattr(module, "post_optimizer_step"):
                 module.post_optimizer_step()
 
     def pre_optimizer_step(self):
         """Hook for any operations that need to be performed before each optimizer step."""
         for module in self.modules():
+            if module is self:
+                continue
             if hasattr(module, "pre_optimizer_step"):
                 module.pre_optimizer_step()
