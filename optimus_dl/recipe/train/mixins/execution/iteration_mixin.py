@@ -160,7 +160,6 @@ class TrainingIterationMixin:
         Returns:
             OptimizerStepResult with execution time and the computed gradient norm.
         """
-        model.pre_optimizer_step()
         scaler.unscale_(optimizer)
 
         grad_norm = None
@@ -178,7 +177,9 @@ class TrainingIterationMixin:
         @functools.wraps(optimizer.step)
         def optimizer_step(*args, **kwargs):
             nonlocal made_step
+            model.pre_optimizer_step()
             res = optimizer_step_orig(*args, **kwargs)
+            model.post_optimizer_step()
             made_step = True
             return res
 
@@ -195,8 +196,6 @@ class TrainingIterationMixin:
         if not made_step:
             log_summed("optimizer_step_skipped", 1, reset=False)
             logger.warning("Optimizer step was skipped due to unscale overflow.")
-        else:
-            model.post_optimizer_step()
 
         return OptimizerStepResult(elapsed_time=elapsed, grad_norm=grad_norm)
 
