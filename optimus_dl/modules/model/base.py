@@ -103,3 +103,33 @@ class BaseModel(torch.nn.Module):
             **kwargs: Additional model-specific TP flags (e.g., sequence_parallel).
         """
         ...
+
+    def post_optimizer_step(self):
+        """Hook for any operations that need to be performed after each optimizer step."""
+        _cached_modules = getattr(
+            self.post_optimizer_step, "_post_optimizer_step_modules", None
+        )
+        if _cached_modules is None:
+            _cached_modules = [
+                module
+                for module in self.modules()
+                if hasattr(module, "post_optimizer_step") and module is not self
+            ]
+            self.post_optimizer_step._post_optimizer_step_modules = _cached_modules
+        for module in _cached_modules:
+            module.post_optimizer_step()
+
+    def pre_optimizer_step(self):
+        """Hook for any operations that need to be performed before each optimizer step."""
+        _cached_modules = getattr(
+            self.pre_optimizer_step, "_pre_optimizer_step_modules", None
+        )
+        if _cached_modules is None:
+            _cached_modules = [
+                module
+                for module in self.modules()
+                if hasattr(module, "pre_optimizer_step") and module is not self
+            ]
+            self.pre_optimizer_step._pre_optimizer_step_modules = _cached_modules
+        for module in _cached_modules:
+            module.pre_optimizer_step()

@@ -143,7 +143,7 @@ class TrainingIterationMixin:
         self,
         optimizer: Optimizer,
         model: BaseModel,
-        scaler: Any,
+        scaler: torch.GradScaler,
         clip_grad_norm: float | None = None,
     ) -> OptimizerStepResult:
         """Perform the optimization step.
@@ -171,11 +171,31 @@ class TrainingIterationMixin:
                     model.parameters(), max_norm=clip_grad_norm
                 )
 
-        elapsed, _ = measured_lambda(lambda: scaler.step(optimizer))
-        scaler.update()
+        made_step = False
+        optimizer_step_orig = optimizer.step
+
+        @functools.wraps(optimizer.step)
+        def optimizer_step(*args, **kwargs):
+            nonlocal made_step
+            model.pre_optimizer_step()
+            res = optimizer_step_orig(*args, **kwargs)
+            model.post_optimizer_step()
+            made_step = True
+            return res
+
+        try:
+            optimizer.step = optimizer_step
+            elapsed, _ = measured_lambda(lambda: scaler.step(optimizer))
+            scaler.update()
+        finally:
+            optimizer.step = optimizer_step_orig
 
         if scaler.is_enabled():
             log_averaged("grad_scale", scaler.get_scale())
+
+        if not made_step:
+            log_summed("optimizer_step_skipped", 1, reset=False)
+            logger.warning("Optimizer step was skipped due to unscale overflow.")
 
         return OptimizerStepResult(elapsed_time=elapsed, grad_norm=grad_norm)
 
