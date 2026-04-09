@@ -75,4 +75,6 @@ jobs:
           uv pip install '.[docs]'
 
       - name: Deploy documentation
-        run: PYTHONPATH=. uv run mkdocs gh-deploy --force
+        run: |
+          export PATH=.venv/bin:$PATH
+          PYTHONPATH=. mkdocs gh-deploy --force
