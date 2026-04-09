@@ -34,7 +34,7 @@ RUN sh ./uv-installer.sh && rm uv-installer.sh
 
 COPY ./ /setup/optimus_dl
 RUN --mount=type=cache,target=/root/.cache/uv cd /setup/optimus_dl/ && \
-    TORCH_CUDA_ARCH_LIST="7.0;8.0;9.0" \
+    TORCH_CUDA_ARCH_LIST="8.0;9.0" \
     GROUPED_GEMM_CUTLASS=1 \
     pip install .[dev] \
         --no-cache \
