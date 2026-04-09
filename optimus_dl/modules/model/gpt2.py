@@ -202,6 +202,33 @@ class GPT(BaseModel):
 
         return {"logits": logits}
 
+    def is_decay_param(self, module, param_name: str) -> bool | None:
+        """Determine if a parameter should be decayed based on its name."""
+        whitelist_weight_modules = (torch.nn.Linear,)
+
+        # Note: because named_modules and named_parameters are recursive,
+        # we will see the same tensors multiple times. We use the parent module
+        # to determine the weight decay strategy.
+        if param_name.endswith("weight_clip_val"):
+            # quant params are not decayed
+            return False
+        if param_name.endswith("bias"):
+            # all biases will not be decayed
+            return False
+        elif param_name.endswith("weight") and isinstance(
+            module, whitelist_weight_modules
+        ):
+            # weights of whitelist modules will be weight decayed
+            return True
+        elif param_name.endswith("weight") and isinstance(
+            module, BLACKLIST_WEIGHT_MODULES
+        ):
+            # weights of blacklist modules will NOT be weight decayed
+            return False
+        elif param_name.endswith("gate_up_proj") or param_name.endswith("down_proj"):
+            return True
+        return None  # unknown
+
     def make_parameter_groups(self):
         """Divide parameters into decayed and non-decayed groups.
 
@@ -215,25 +242,16 @@ class GPT(BaseModel):
         # separate out all parameters to those that will and won't experience regularizing weight decay
         decay = set()
         no_decay = set()
-        whitelist_weight_modules = (torch.nn.Linear,)
 
         for mn, m in self.named_modules():
-            for pn, _p in m.named_parameters():
+            for pn, _ in m.named_parameters():
                 fpn = f"{mn}.{pn}" if mn else pn  # full param name
-                # Note: because named_modules and named_parameters are recursive,
-                # we will see the same tensors multiple times. We use the parent module
-                # to determine the weight decay strategy.
-                if pn.endswith("weight_clip_val"):
-                    # quant params are not decayed
-                    no_decay.add(fpn)
-                if pn.endswith("bias"):
-                    # all biases will not be decayed
-                    no_decay.add(fpn)
-                elif pn.endswith("weight") and isinstance(m, whitelist_weight_modules):
-                    # weights of whitelist modules will be weight decayed
+                should_decay = self.is_decay_param(m, pn)
+                if should_decay is None:
+                    continue
+                elif should_decay:
                     decay.add(fpn)
-                elif pn.endswith("weight") and isinstance(m, BLACKLIST_WEIGHT_MODULES):
-                    # weights of blacklist modules will NOT be weight decayed
+                else:
                     no_decay.add(fpn)
 
         # subtle: 'transformer.wte.weight' and 'lm_head.weight' are tied, so they
