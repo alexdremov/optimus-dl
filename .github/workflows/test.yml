@@ -142,14 +142,14 @@ jobs:
     - name: Check style
       run: |
         (rm optimus_dl/_version.py && touch optimus_dl/_version.py) || true  # just in case
-        uv run ruff check .
-        uv run black --check .
-        uv run isort --check-only --skip-gitignore .
+        ruff check .
+        black --check .
+        isort --check-only --skip-gitignore .
 
     - name: Test with pytest
       run: |
         export CI=true
-        uv run pytest -n 4 \
+        pytest -n 4 \
           --durations=0 \
           --cov=optimus_dl \
           --junitxml=pytest-coverage.xml \
