@@ -137,8 +137,7 @@ jobs:
     - name: Install the project
       run: |
         uv venv
-        uv pip install setuptools
-        TORCH_CUDA_ARCH_LIST="8.0;9.0"  GROUPED_GEMM_SKIP_CUDA_BUILD=TRUE uv sync --no-build-isolation --extra dev
+        uv pip install '.[dev]'
 
     - name: Check style
       run: |
