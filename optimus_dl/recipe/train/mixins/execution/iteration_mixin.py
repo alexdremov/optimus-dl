@@ -160,6 +160,7 @@ class TrainingIterationMixin:
         Returns:
             OptimizerStepResult with execution time and the computed gradient norm.
         """
+        model.pre_optimizer_step()
         scaler.unscale_(optimizer)
 
         grad_norm = None
@@ -177,6 +178,7 @@ class TrainingIterationMixin:
         if scaler.is_enabled():
             log_averaged("grad_scale", scaler.get_scale())
 
+        model.post_optimizer_step()
         return OptimizerStepResult(elapsed_time=elapsed, grad_norm=grad_norm)
 
     def log_batch_metrics(
