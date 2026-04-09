@@ -34,9 +34,12 @@ RUN sh ./uv-installer.sh && rm uv-installer.sh
 
 COPY ./ /setup/optimus_dl
 RUN --mount=type=cache,target=/root/.cache/uv cd /setup/optimus_dl/ && \
+    TORCH_CUDA_ARCH_LIST="7.0;8.0;9.0" \
+    GROUPED_GEMM_CUTLASS=1 \
     pip install .[dev] \
         --no-cache \
         --no-build-isolation \
+        --no-binary grouped_gemm \
     && chmod -R 777 /usr/local/lib/python3.12/dist-packages && rm -rf /setup
 
 COPY docker/deps/install_dcgm.sh /setup/install_dcgm.sh
