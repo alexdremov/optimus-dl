@@ -135,7 +135,7 @@ jobs:
           ${{ runner.os }}-uv-
 
     - name: Install the project
-      run: TORCH_CUDA_ARCH_LIST="8.0;9.0"  GROUPED_GEMM_SKIP_CUDA_BUILD=TRUE uv sync --no-build-isolation --extra dev
+      run: uv pip install setuptools && TORCH_CUDA_ARCH_LIST="8.0;9.0"  GROUPED_GEMM_SKIP_CUDA_BUILD=TRUE uv sync --no-build-isolation --extra dev
 
     - name: Check style
       run: |
