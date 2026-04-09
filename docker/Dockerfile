@@ -33,6 +33,7 @@ ADD https://astral.sh/uv/install.sh uv-installer.sh
 RUN sh ./uv-installer.sh && rm uv-installer.sh
 
 COPY ./ /setup/optimus_dl
+
 RUN --mount=type=cache,target=/root/.cache/uv cd /setup/optimus_dl/ && \
     TORCH_CUDA_ARCH_LIST="8.0;9.0" \
     GROUPED_GEMM_CUTLASS=1 \
