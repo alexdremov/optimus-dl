@@ -1060,7 +1060,7 @@ class TestMeterUtilityFunctions:
     def test_reset_meters(self):
         self.setUp()
 
-        with meters_group("test_group"):
+        with meters_group("test_group", log_logger_overhead=False):
             log_averaged("reset_meter", value=10.0, weight=1.0, reset=True)
             log_averaged("keep_meter", value=20.0, weight=1.0, reset=False)
 

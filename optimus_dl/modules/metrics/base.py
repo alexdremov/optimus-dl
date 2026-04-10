@@ -146,8 +146,10 @@ class MeterGroup:
         log_logger_overhead: bool | None = None,
     ):
         self.name = name
-        self.log_freq = log_freq or 1
-        self.log_logger_overhead = log_logger_overhead or True
+        self.log_freq = log_freq if log_freq is not None else 1
+        self.log_logger_overhead = (
+            log_logger_overhead if log_logger_overhead is not None else True
+        )
         self._meters: OrderedDict[str, MeterEntry] = OrderedDict()
         self._keys_sorted: list[str] = []
         self._iteration_counter: int = 0
