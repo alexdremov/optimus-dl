@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 import logging
 from abc import (
     ABC,
@@ -12,10 +13,9 @@ from collections import (
 )
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import (
-    Any,
-)
+from typing import Any
 
+from optimus_dl.core.profile import measured_lambda
 from optimus_dl.modules.distributed import Collective
 
 logger = logging.getLogger(__name__)
@@ -627,6 +627,7 @@ def log_meter(
     reset: bool = True,
     priority: int = 100,
     force_log: bool = False,
+    __skip_overhead_logging: bool = False,
     **kwargs: Any,
 ):
     """Log data point(s) to all currently active meter groups.
@@ -666,8 +667,25 @@ def log_meter(
         # Only evaluate expensive callables if we should log or are forcing a log
         if group.should_log() or force_log:
             # Evaluate any callable values in kwargs lazily, only if logging is active
-            evaluated_kwargs = {k: _evaluate_value(v) for k, v in kwargs.items()}
+            evaluated_kwargs = {
+                k: measured_lambda(
+                    functools.partial(_evaluate_value, value_or_callable=v)
+                )
+                for k, v in kwargs.items()
+            }
+            if not __skip_overhead_logging:
+                # private __skip_overhead_logging arg is used to prevent infinite recursion when logging the overhead of logging itself
+                from optimus_dl.modules.metrics.common import SummedMeter
 
+                logging_overhead_ms = sum(v[0] for v in evaluated_kwargs.values())
+                log_meter(
+                    name="ms_spent_logging",
+                    meter_factory=lambda: SummedMeter(),
+                    value=logging_overhead_ms,
+                    __skip_overhead_logging=True,
+                )
+
+            evaluated_kwargs = {k: v[1] for k, v in evaluated_kwargs.items()}
             if name not in group.meters:
                 # If meter doesn't exist, create it using the factory and add to group
                 group.add_meter(
