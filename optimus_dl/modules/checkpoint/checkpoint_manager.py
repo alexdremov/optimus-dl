@@ -31,9 +31,7 @@ from optimus_dl.core.registry import (
 )
 from optimus_dl.modules.distributed import Collective
 from optimus_dl.modules.lr_scheduler import BaseLRScheduler
-from optimus_dl.modules.metrics import (
-    state_dict as metrics_state_dict,
-)
+from optimus_dl.modules.metrics import state_dict as metrics_state_dict
 from optimus_dl.modules.model.base import BaseModel
 
 from .load_strategy import LoadStrategy
@@ -478,6 +476,7 @@ class CheckpointManager:
         logger.info(
             f"{per_rank_metadata.keys() = } {metadata.keys() = } {state_dict.keys() = }"
         )
+        torch.cuda.empty_cache()
 
     def load_checkpoint(
         self,
