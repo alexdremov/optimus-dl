@@ -925,7 +925,7 @@ class TestLogMeterFunctions:
     def test_log_event_start(self):
         self.setUp()
 
-        with meters_group("test_group"):
+        with meters_group("test_group", log_logger_overhead=False):
             with patch("time.perf_counter_ns", return_value=1000000):
                 log_event_start("test_event")
 
@@ -937,7 +937,7 @@ class TestLogMeterFunctions:
     def test_log_event_end(self):
         self.setUp()
 
-        with meters_group("test_group"):
+        with meters_group("test_group", log_logger_overhead=False):
             with patch("time.perf_counter_ns", side_effect=[1000000, 2000000]):
                 log_event_start("test_event")
                 log_event_end("test_event")
@@ -1015,6 +1015,9 @@ class TestMeterUtilityFunctions:
             log_averaged("test_meter", value=10.0, weight=1.0)
 
         result = compute_meters("test_group", aggregate=False)
+
+        assert "ms_spent_logging" in result  # Should include logging time
+        result.pop("ms_spent_logging", None)  # Remove logging time if present
         assert result == {"test_meter": 10.0}
 
     def test_compute_meters_with_collective(self):
@@ -1057,7 +1060,7 @@ class TestMeterUtilityFunctions:
     def test_reset_meters(self):
         self.setUp()
 
-        with meters_group("test_group"):
+        with meters_group("test_group", log_logger_overhead=False):
             log_averaged("reset_meter", value=10.0, weight=1.0, reset=True)
             log_averaged("keep_meter", value=20.0, weight=1.0, reset=False)
 
