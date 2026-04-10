@@ -720,7 +720,7 @@ def log_meter(
                 log_to_group(
                     group=group,
                     _name="ms_spent_logging",
-                    _meter=lambda: SummedMeter(),
+                    _meter=SummedMeter(),
                     _reset=True,
                     _priority=100,
                     kwargs=dict(
