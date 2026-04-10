@@ -133,14 +133,21 @@ class MeterGroup:
         name: Unique name for the group.
         log_freq: Frequency (in iterations) at which to trigger logging.
                   If None, defaults to 1 (log every iteration).
+        log_logger_overhead: If True, automatically log the time spent in logging itself under
+                             the 'ms_spent_logging' metric. This can help monitor the overhead of logging,
+                             especially if it involves expensive computations.
+                             Defaults to True.
     """
 
     def __init__(
-        self, name: str, log_freq: int | None = None, log_logger_overhead: bool = True
+        self,
+        name: str,
+        log_freq: int | None = None,
+        log_logger_overhead: bool | None = None,
     ):
         self.name = name
         self.log_freq = log_freq or 1
-        self.log_logger_overhead = log_logger_overhead
+        self.log_logger_overhead = log_logger_overhead or True
         self._meters: OrderedDict[str, MeterEntry] = OrderedDict()
         self._keys_sorted: list[str] = []
         self._iteration_counter: int = 0
@@ -415,7 +422,7 @@ def meters_group(
     name: str,
     log_freq: int | None = None,
     force_recreate: bool = False,
-    log_logger_overhead: bool = True,
+    log_logger_overhead: bool | None = None,
 ):
     """Context manager for activating a metrics group.
 
@@ -448,6 +455,9 @@ def meters_group(
     )
     if log_freq is not None:
         _meter_groups[name].log_freq = log_freq
+    if log_logger_overhead is not None:
+        _meter_groups[name].log_logger_overhead = log_logger_overhead
+
     _active_meter_groups[name] += 1
 
     # Return whether we should log at current iteration
@@ -642,7 +652,6 @@ def log_meter(
     reset: bool = True,
     priority: int = 100,
     force_log: bool = False,
-    __skip_overhead_logging: bool = False,
     **kwargs: Any,
 ):
     """Log data point(s) to all currently active meter groups.
@@ -674,6 +683,21 @@ def log_meter(
                   to the `log()` method of the `BaseMeter` instance. These
                   typically represent the actual data points (e.g., `value`, `weight`).
     """
+
+    def log_to_group(group, _name, _meter, _reset, _priority, kwargs):
+        if _name not in group.meters:
+            # If meter doesn't exist, create it using the factory and add to group
+            group.add_meter(
+                _name,
+                MeterEntry(
+                    meter=_meter,
+                    reset=_reset,
+                    priority=_priority,
+                ),
+            )
+        # Log the evaluated data to the meter
+        group.meters[_name].meter.log(**kwargs)
+
     force_log |= not reset
 
     for group_name in _active_meter_groups:
@@ -683,37 +707,37 @@ def log_meter(
         if group.should_log() or force_log:
             # Evaluate any callable values in kwargs lazily, only if logging is active
             if group.log_logger_overhead:
+                from optimus_dl.modules.metrics.common import SummedMeter
+
                 evaluated_kwargs = {
                     k: measured_lambda(
                         functools.partial(_evaluate_value, value_or_callable=v)
                     )
                     for k, v in kwargs.items()
                 }
-                if not __skip_overhead_logging:
-                    # private __skip_overhead_logging arg is used to prevent infinite recursion when logging the overhead of logging itself
-                    from optimus_dl.modules.metrics.common import SummedMeter
 
-                    logging_overhead_ms = sum(v[0] for v in evaluated_kwargs.values())
-                    log_meter(
-                        name="ms_spent_logging",
-                        meter_factory=lambda: SummedMeter(),
+                logging_overhead_ms = sum(v[0] for v in evaluated_kwargs.values())
+                log_to_group(
+                    group=group,
+                    _name="ms_spent_logging",
+                    _meter=lambda: SummedMeter(),
+                    _reset=True,
+                    _priority=100,
+                    kwargs=dict(
                         value=logging_overhead_ms,
-                        __skip_overhead_logging=True,
-                    )
+                    ),
+                )
 
                 evaluated_kwargs = {k: v[1] for k, v in evaluated_kwargs.items()}
             else:
                 # If we're not logging overhead, just evaluate callables without measuring time
                 evaluated_kwargs = {k: _evaluate_value(v) for k, v in kwargs.items()}
-            if name not in group.meters:
-                # If meter doesn't exist, create it using the factory and add to group
-                group.add_meter(
-                    name,
-                    MeterEntry(
-                        meter=meter_factory(),
-                        reset=reset,
-                        priority=priority,
-                    ),
-                )
-            # Log the evaluated data to the meter
-            group.meters[name].meter.log(**evaluated_kwargs)
+
+            log_to_group(
+                group=group,
+                _name=name,
+                _meter=meter_factory(),
+                _reset=reset,
+                _priority=priority,
+                kwargs=evaluated_kwargs,
+            )
