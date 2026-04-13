@@ -5,6 +5,7 @@ model and optimizer states using PyTorch's Distributed Checkpoint (DCP) API.
 It also manages metadata, learning rate scheduler states, and data loader positions.
 """
 
+import gc
 import logging
 import os
 import pathlib
@@ -21,7 +22,9 @@ from torch.distributed.checkpoint.filesystem import (
     FileSystemWriter,
 )
 from torch.distributed.checkpoint.state_dict_loader import load as dcp_load
-from torch.distributed.checkpoint.state_dict_saver import save as dcp_save
+from torch.distributed.checkpoint.state_dict_saver import (
+    save as dcp_save,
+)
 from torch.optim import Optimizer
 
 from optimus_dl.core.registry import (
@@ -63,7 +66,7 @@ class CheckpointPath:
 class CheckpointManagerConfig(RegistryConfig):
     """Configuration for CheckpointManager."""
 
-    pass
+    async_save: bool = False
 
 
 class CheckpointManager:
@@ -476,6 +479,7 @@ class CheckpointManager:
         logger.info(
             f"{per_rank_metadata.keys() = } {metadata.keys() = } {state_dict.keys() = }"
         )
+        gc.collect()
         torch.cuda.empty_cache()
 
     def load_checkpoint(
