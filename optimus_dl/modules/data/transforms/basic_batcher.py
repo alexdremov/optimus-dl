@@ -30,6 +30,7 @@ class BasicBatcherConfig(RegistryConfigStrict):
     pad_token_id: int = MISSING
     field: str = "input_ids"
     flatten: bool = False
+    add_document_ids: bool = True
 
 
 class BasicBatcherNode(BaseNode):
@@ -140,7 +141,9 @@ class BasicBatcherNode(BaseNode):
                     self.cfg.field: input_ids[None, :],
                     "labels": labels[None, :],
                     "position_ids": position_ids[None, :],
-                    "document_ids": document_ids[None, :],
+                    "document_ids": (
+                        document_ids[None, :] if self.cfg.add_document_ids else None
+                    ),
                     "seq_lens": torch.tensor([len(input_ids)], device=device),
                     "cu_seqlens": torch.cumsum(
                         torch.tensor([0] + shifted_lengths, device=device), dim=0
@@ -163,7 +166,11 @@ class BasicBatcherNode(BaseNode):
                     self.cfg.field: input_ids[None, :].astype(np.int64),
                     "labels": labels[None, :].astype(np.int64),
                     "position_ids": position_ids[None, :].astype(np.int64),
-                    "document_ids": document_ids[None, :].astype(np.int64),
+                    "document_ids": (
+                        document_ids[None, :].astype(np.int64)
+                        if self.cfg.add_document_ids
+                        else None
+                    ),
                     "seq_lens": np.array([len(input_ids)], dtype=np.int64),
                     "cu_seqlens": np.cumsum([0] + shifted_lengths).astype(np.int32),
                     "max_seqlen": int(max(shifted_lengths)),
@@ -227,7 +234,7 @@ class BasicBatcherNode(BaseNode):
             self.cfg.field: batched_seqs,
             "seq_lens": batched_lens,
             "position_ids": batched_pos,
-            "document_ids": batched_docs,
+            "document_ids": batched_docs if self.cfg.add_document_ids else None,
         }
 
 

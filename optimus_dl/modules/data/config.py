@@ -56,13 +56,7 @@ class EvalDataPipelineConfig(DataPipelineConfig):
 
 
 @dataclass
-class DataConfig:
-    train_datasets: DataPipelineConfig = field(
-        default=MISSING,
-        metadata={
-            "description": "Config for the training batches: dataset and transforms"
-        },
-    )
+class EvalDataConfig:
     eval_datasets: dict[str, EvalDataPipelineConfig] = field(
         default_factory=dict,
         metadata={
@@ -78,5 +72,15 @@ class DataConfig:
         default=None,
         metadata={
             "description": "Any data whatsoever to be used in dataset configs with config interpolations like ${data.scratch.my_config} to reduce duplication"
+        },
+    )
+
+
+@dataclass
+class DataConfig(EvalDataConfig):
+    train_datasets: DataPipelineConfig = field(
+        default=MISSING,
+        metadata={
+            "description": "Config for the training batches: dataset and transforms"
         },
     )

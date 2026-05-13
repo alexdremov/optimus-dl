@@ -10,7 +10,6 @@ from optimus_dl.core.log import (
     setup_logging,
     trange,
 )
-from optimus_dl.core.multiprocess import finalize_process
 from optimus_dl.core.registry import build as build_component
 from optimus_dl.core.seed import set_seed
 from optimus_dl.modules.checkpoint import CheckpointManager
@@ -283,24 +282,24 @@ class TrainRecipe(
 
     def evaluate_and_log(
         self,
-        training_context,
         iteration,
         model,
         criterion,
         eval_datapipeline,
         collective,
+        device,
     ):
-        with training_context["amp_ctx"]:
-            metrics = self.run_evaluation_if_needed(
-                iteration=iteration,
-                model=model,
-                criterion=criterion,
-                eval_data_dict={
-                    k: v for k, v in eval_datapipeline.items() if v is not None
-                },
-                collective=collective,
-                all_metrics_configs=self.cfg.metrics,
-            )
+        metrics = self.run_evaluation_if_needed(
+            iteration=iteration,
+            model=model,
+            criterion=criterion,
+            eval_data_dict={
+                k: v for k, v in eval_datapipeline.items() if v is not None
+            },
+            collective=collective,
+            all_metrics_configs=self.cfg.metrics,
+            device=device,
+        )
         if metrics and collective.is_master:
             for eval_name, eval_metrics in metrics.items():
                 self.log_metrics_to_loggers(eval_metrics, iteration, eval_name)
@@ -543,12 +542,12 @@ class TrainRecipe(
                         f"Running evaluation if needed for iteration {iteration}"
                     )
                     self.evaluate_and_log(
-                        training_context=training_context,
                         iteration=iteration,
                         model=model,
                         criterion=criterion,
                         eval_datapipeline=eval_datapipeline,
                         collective=collective,
+                        device=device,
                     )
 
                     logger.debug(
@@ -575,12 +574,12 @@ class TrainRecipe(
         else:
             logger.info("As finished run was resumed, assuming evaluation objective.")
             self.evaluate_and_log(
-                training_context=training_context,
                 iteration=start_iteration,
                 model=model,
                 criterion=criterion,
                 eval_datapipeline=eval_datapipeline,
                 collective=collective,
+                device=device,
             )
 
         # Close loggers at the end of training
@@ -591,4 +590,3 @@ class TrainRecipe(
         gc.collect()
         collective.close()
         logger.info("Training run complete")
-        finalize_process()

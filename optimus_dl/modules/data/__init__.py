@@ -26,6 +26,7 @@ from optimus_dl.modules.data.transforms import (
 from .config import (
     DataConfig,
     DataPipelineConfig,
+    EvalDataConfig,
     EvalDataPipelineConfig,
 )
 

@@ -8,6 +8,7 @@ import hydra
 from omegaconf import DictConfig
 
 from optimus_dl.core.log import setup_logging
+from optimus_dl.core.multiprocess import finalize_process
 from optimus_dl.core.omegaconf import non_resolving_instantiate
 from optimus_dl.recipe.eval import (
     EvalConfig,
@@ -64,8 +65,8 @@ def evaluate(cfg: DictConfig) -> None:
     # Convert to structured config
     from omegaconf import OmegaConf
 
-    cfg = non_resolving_instantiate(cfg)
     eval_cfg: EvalConfig = OmegaConf.merge(OmegaConf.structured(EvalConfig), cfg)
+    eval_cfg = non_resolving_instantiate(eval_cfg)
 
     logger.info("Starting LLM Baselines Evaluation")
     logger.info(f"Checkpoint: {eval_cfg.common.checkpoint_path}")
@@ -90,6 +91,8 @@ def evaluate(cfg: DictConfig) -> None:
     except Exception as e:
         logger.error(f"Evaluation failed: {e}")
         raise
+    finally:
+        finalize_process()
 
 
 if __name__ == "__main__":

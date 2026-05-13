@@ -5,6 +5,7 @@ model and optimizer states using PyTorch's Distributed Checkpoint (DCP) API.
 It also manages metadata, learning rate scheduler states, and data loader positions.
 """
 
+import gc
 import logging
 import os
 import pathlib
@@ -21,7 +22,9 @@ from torch.distributed.checkpoint.filesystem import (
     FileSystemWriter,
 )
 from torch.distributed.checkpoint.state_dict_loader import load as dcp_load
-from torch.distributed.checkpoint.state_dict_saver import save as dcp_save
+from torch.distributed.checkpoint.state_dict_saver import (
+    save as dcp_save,
+)
 from torch.optim import Optimizer
 
 from optimus_dl.core.registry import (
@@ -31,9 +34,7 @@ from optimus_dl.core.registry import (
 )
 from optimus_dl.modules.distributed import Collective
 from optimus_dl.modules.lr_scheduler import BaseLRScheduler
-from optimus_dl.modules.metrics import (
-    state_dict as metrics_state_dict,
-)
+from optimus_dl.modules.metrics import state_dict as metrics_state_dict
 from optimus_dl.modules.model.base import BaseModel
 
 from .load_strategy import LoadStrategy
@@ -64,8 +65,6 @@ class CheckpointPath:
 @dataclass
 class CheckpointManagerConfig(RegistryConfig):
     """Configuration for CheckpointManager."""
-
-    pass
 
 
 class CheckpointManager:
@@ -277,6 +276,8 @@ class CheckpointManager:
 
         logger.info("Waiting for all ranks to reach checkpoint saving point...")
         collective.barrier()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         logger.info(f"Saving state for model and optimizer at iteration {iteration}")
         model_state_dict = dcp_state_dict.get_model_state_dict(
@@ -373,6 +374,8 @@ class CheckpointManager:
             "All ranks are checking for existing checkpoint files before saving..."
         )
         collective.barrier()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         logger.info(
             "All ranks have checked for existing checkpoint files, proceeding with saving..."
         )
@@ -476,6 +479,9 @@ class CheckpointManager:
         logger.info(
             f"{per_rank_metadata.keys() = } {metadata.keys() = } {state_dict.keys() = }"
         )
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def load_checkpoint(
         self,

@@ -11,6 +11,7 @@ from omegaconf import (
 )
 
 from optimus_dl.core.log import setup_logging
+from optimus_dl.core.multiprocess import finalize_process
 from optimus_dl.core.omegaconf import non_resolving_instantiate
 from optimus_dl.recipe.metrics import (
     MetricsConfig,
@@ -53,10 +54,10 @@ def evaluate(cfg: DictConfig) -> None:
     setup_logging()
 
     # Convert to structured config
-    cfg = non_resolving_instantiate(cfg)
     metrics_cfg: MetricsConfig = OmegaConf.merge(
         OmegaConf.structured(MetricsConfig), cfg
     )
+    metrics_cfg = non_resolving_instantiate(metrics_cfg)
 
     logger.info("Starting LLM Baselines Metrics Evaluation")
     if metrics_cfg.common.checkpoint_path:
@@ -78,6 +79,8 @@ def evaluate(cfg: DictConfig) -> None:
     except Exception as e:
         logger.error(f"Evaluation failed: {e}")
         raise
+    finally:
+        finalize_process()
 
 
 if __name__ == "__main__":

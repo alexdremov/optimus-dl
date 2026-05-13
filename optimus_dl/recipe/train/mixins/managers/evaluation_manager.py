@@ -1,13 +1,21 @@
 """Evaluation mixin for evaluation functionality."""
 
+import contextlib
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import (
+    dataclass,
+    field,
+)
 from typing import Any
 
 import torch
 
-from optimus_dl.core.log import tqdm
+from optimus_dl.core.dtype import str_to_dtype
+from optimus_dl.core.log import (
+    info_once,
+    tqdm,
+)
 from optimus_dl.core.profile import measured_next
 from optimus_dl.core.registry import (
     RegistryConfig,
@@ -27,6 +35,7 @@ from optimus_dl.modules.metrics import (
     step_meters,
 )
 from optimus_dl.modules.model.base import BaseModel
+from optimus_dl.modules.optim import AmpConfig
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +44,7 @@ logger = logging.getLogger(__name__)
 class EvaluatorConfig(RegistryConfig):
     """Configuration for the Evaluator."""
 
-    pass
+    amp: AmpConfig = field(default_factory=AmpConfig)
 
 
 class Evaluator:
@@ -69,12 +78,32 @@ class Evaluator:
         self.eval_iterations = eval_iterations
         self.eval_guaranteed_same_batches = eval_guaranteed_same_batches
 
+    @contextlib.contextmanager
+    def forward_context(self, device: torch.device):
+        """Context manager for evaluation forward pass.
+
+        Can be used to set up any necessary context (e.g., mixed precision) for the
+        forward pass during evaluation.
+
+        Returns:
+            A context manager (e.g., from contextlib) that sets up the desired context.
+        """
+        if self.cfg.amp.enabled:
+            amp_cfg = self.cfg.amp
+            dtype = str_to_dtype(amp_cfg.dtype)
+            amp_ctx = torch.autocast(device.type, dtype=dtype, enabled=amp_cfg.enabled)
+            with amp_ctx:
+                yield
+        else:
+            yield
+
     def run_evaluation_if_needed(
         self,
         iteration: int,
         model: BaseModel,
         criterion: BaseCriterion,
         eval_data_dict: dict[str, EvalDataPipeline],
+        device: torch.device,
         collective: Collective | None = None,
         all_metrics_configs: dict[str, list[dict]] | None = None,
     ) -> None | dict:
@@ -123,6 +152,7 @@ class Evaluator:
                     collective=collective,
                     all_metrics_configs=all_metrics_configs,
                     show_progress=True,
+                    device=device,
                 )
             except Exception:
                 logger.exception(f"Evaluation for {eval_name} failed.")
@@ -136,6 +166,7 @@ class Evaluator:
         model: BaseModel,
         criterion: BaseCriterion,
         eval_data_dict: dict,
+        device: torch.device,
         max_iterations: int | None = None,
         collective: Collective | None = None,
         all_metrics_configs: dict[str, list[dict]] | None = None,
@@ -252,6 +283,7 @@ class Evaluator:
                                 f"Eval {eval_name}: Fetching batch for iteration {iterations}"
                             )
                             elapsed_batch_get, batch = measured_next(eval_iter)
+                            info_once(logger, f"Batch has keys {batch.keys()}")
                         except StopIteration:
                             logger.debug(
                                 f"Eval {eval_name}: Dataloader exhausted on this rank"
@@ -287,9 +319,10 @@ class Evaluator:
                         logger.debug(
                             f"Eval {eval_name}: Running forward pass for iteration {iterations}"
                         )
-                        loss, exposed = criterion(
-                            model, batch, requested_protocols=requested_protocols
-                        )
+                        with self.forward_context(device=device):
+                            loss, exposed = criterion(
+                                model, batch, requested_protocols=requested_protocols
+                            )
 
                         if engine:
                             logger.debug(f"Eval {eval_name}: Updating metric engine")
