@@ -91,8 +91,8 @@ def evaluate(cfg: DictConfig) -> None:
     except Exception as e:
         logger.error(f"Evaluation failed: {e}")
         raise
-
-    finalize_process()
+    finally:
+        finalize_process()
 
 
 if __name__ == "__main__":

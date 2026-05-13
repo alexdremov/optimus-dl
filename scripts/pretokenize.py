@@ -27,8 +27,10 @@ def prepare_data(cfg: DictConfig) -> None:
     data_prep_cfg = OmegaConf.merge(OmegaConf.structured(DataPrepConfig), cfg)
 
     recipe = DataPrepRecipe(data_prep_cfg)
-    recipe.run()
-    finalize_process()
+    try:
+        recipe.run()
+    finally:
+        finalize_process()
 
 
 if __name__ == "__main__":

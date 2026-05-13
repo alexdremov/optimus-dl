@@ -61,8 +61,10 @@ def train(cfg_raw):
     cfg_raw = non_resolving_instantiate(cfg_raw)
     recipe = build("train_recipe", cfg_raw)
     assert isinstance(recipe, TrainRecipe)
-    recipe.run()
-    finalize_process()
+    try:
+        recipe.run()
+    finally:
+        finalize_process()
 
 
 if __name__ == "__main__":

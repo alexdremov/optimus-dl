@@ -37,8 +37,10 @@ def serve(cfg: DictConfig) -> None:
 
     # Create recipe and run server
     recipe = ServeRecipe(serve_cfg)
-    recipe.run()
-    finalize_process()
+    try:
+        recipe.run()
+    finally:
+        finalize_process()
 
 
 if __name__ == "__main__":
