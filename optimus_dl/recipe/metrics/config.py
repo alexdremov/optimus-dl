@@ -15,7 +15,7 @@ from optimus_dl.modules.checkpoint import (
     CheckpointManagerConfig,
 )
 from optimus_dl.modules.criterion import CriterionConfig
-from optimus_dl.modules.data import DataConfig
+from optimus_dl.modules.data import EvalDataConfig
 from optimus_dl.modules.distributed.config import DistributedConfig
 from optimus_dl.modules.loggers import MetricsLoggerConfig
 from optimus_dl.modules.model import ModelConfig
@@ -79,7 +79,7 @@ class MetricsConfig(RegistryConfigStrict):
     common: MetricsRecipeConfig = field(default_factory=MetricsRecipeConfig)
 
     model: ModelConfig | None = field(default=None)
-    data: DataConfig = field(default=MISSING)
+    data: EvalDataConfig = field(default=MISSING)
     criterion: CriterionConfig = field(default=MISSING)
 
     # Metrics configuration for MetricEngine, mapped by dataset name

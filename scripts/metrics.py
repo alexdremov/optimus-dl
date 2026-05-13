@@ -53,10 +53,10 @@ def evaluate(cfg: DictConfig) -> None:
     setup_logging()
 
     # Convert to structured config
-    cfg = non_resolving_instantiate(cfg)
     metrics_cfg: MetricsConfig = OmegaConf.merge(
         OmegaConf.structured(MetricsConfig), cfg
     )
+    metrics_cfg = non_resolving_instantiate(metrics_cfg)
 
     logger.info("Starting LLM Baselines Metrics Evaluation")
     if metrics_cfg.common.checkpoint_path:

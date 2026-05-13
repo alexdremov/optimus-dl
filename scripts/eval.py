@@ -64,8 +64,8 @@ def evaluate(cfg: DictConfig) -> None:
     # Convert to structured config
     from omegaconf import OmegaConf
 
-    cfg = non_resolving_instantiate(cfg)
     eval_cfg: EvalConfig = OmegaConf.merge(OmegaConf.structured(EvalConfig), cfg)
+    eval_cfg = non_resolving_instantiate(eval_cfg)
 
     logger.info("Starting LLM Baselines Evaluation")
     logger.info(f"Checkpoint: {eval_cfg.common.checkpoint_path}")
