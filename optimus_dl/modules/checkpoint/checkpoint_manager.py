@@ -276,7 +276,8 @@ class CheckpointManager:
 
         logger.info("Waiting for all ranks to reach checkpoint saving point...")
         collective.barrier()
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         logger.info(f"Saving state for model and optimizer at iteration {iteration}")
         model_state_dict = dcp_state_dict.get_model_state_dict(
@@ -373,7 +374,8 @@ class CheckpointManager:
             "All ranks are checking for existing checkpoint files before saving..."
         )
         collective.barrier()
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         logger.info(
             "All ranks have checked for existing checkpoint files, proceeding with saving..."
         )
@@ -478,7 +480,8 @@ class CheckpointManager:
             f"{per_rank_metadata.keys() = } {metadata.keys() = } {state_dict.keys() = }"
         )
         gc.collect()
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def load_checkpoint(
         self,
