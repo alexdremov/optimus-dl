@@ -1,7 +1,10 @@
 from optimus_dl.core.bootstrap import bootstrap_module
 from optimus_dl.core.registry import make_registry
 
-from .config import OptimizationConfig
+from .config import (
+    AmpConfig,
+    OptimizationConfig,
+)
 
 _OPTIMIZER_REGISTRY, register_optimizer, build_optimizer = make_registry("optimizer")
 

@@ -289,6 +289,7 @@ class TrainRecipe(
         criterion,
         eval_datapipeline,
         collective,
+        device,
     ):
         with training_context["amp_ctx"]:
             metrics = self.run_evaluation_if_needed(
@@ -300,6 +301,7 @@ class TrainRecipe(
                 },
                 collective=collective,
                 all_metrics_configs=self.cfg.metrics,
+                device=device,
             )
         if metrics and collective.is_master:
             for eval_name, eval_metrics in metrics.items():
@@ -549,6 +551,7 @@ class TrainRecipe(
                         criterion=criterion,
                         eval_datapipeline=eval_datapipeline,
                         collective=collective,
+                        device=device,
                     )
 
                     logger.debug(

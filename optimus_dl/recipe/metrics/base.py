@@ -151,6 +151,7 @@ class MetricsRecipe:
                 all_metrics_configs=self.cfg.metrics,
                 metrics_prefix="metrics",
                 show_progress=True,
+                device=device,
             )
 
             # 6. Log results to loggers

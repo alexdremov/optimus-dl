@@ -58,10 +58,7 @@ class TrainingContextMixin:
             "bfloat16": torch.bfloat16,
         }
 
-        dtype = dtype_map.get(amp_cfg.dtype, torch.float16)
-        if amp_cfg.dtype not in dtype_map:
-            logger.warning(f"Unknown dtype '{amp_cfg.dtype}', defaulting to float16")
-
+        dtype = dtype_map[amp_cfg.dtype]
         amp_ctx = torch.autocast(device.type, dtype=dtype, enabled=amp_cfg.enabled)
 
         return {
