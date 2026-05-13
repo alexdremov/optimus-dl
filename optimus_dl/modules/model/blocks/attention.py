@@ -9,7 +9,10 @@ from torch.distributed.tensor import (
     Shard,
 )
 
-from optimus_dl.core.log import warn_once
+from optimus_dl.core.log import (
+    info_once,
+    warn_once,
+)
 from optimus_dl.modules.model.blocks.layer_norms import RMSNorm
 from optimus_dl.modules.model.blocks.rope import apply_rotary_emb
 
@@ -341,6 +344,15 @@ class BaseSelfAttention(nn.Module):
             xv = xv.to_local()
 
         enable_gqa = self.n_rep > 1
+
+        info_once(
+            logger,
+            f"{FLASH_ATTENTION_AVAILABLE = }, {FLEX_ATTENTION_AVAILABLE = }, {xq.device = }",
+        )
+        info_once(
+            logger,
+            f"{cu_seqlens is None = }, {seq_lens is None = }, {document_ids is None = }, {max_seqlen is None = }",
+        )
 
         y = None
         if cu_seqlens is not None:
