@@ -5,11 +5,11 @@ import logging
 import time
 from dataclasses import (
     dataclass,
+    field,
 )
 from typing import Any
 
 import torch
-from omegaconf import II
 
 from optimus_dl.core.log import (
     info_once,
@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 class EvaluatorConfig(RegistryConfig):
     """Configuration for the Evaluator."""
 
-    amp: AmpConfig = II("optimization.amp")
+    amp: AmpConfig = field(default_factory=AmpConfig)
 
 
 class Evaluator:

@@ -3,6 +3,9 @@ defaults:
   - override hydra/hydra_logging: disabled
   - override hydra/job_logging: disabled
 
+evaluator:
+  amp: ${optimization.amp}
+
 hydra:
   output_subdir: null
   run:
