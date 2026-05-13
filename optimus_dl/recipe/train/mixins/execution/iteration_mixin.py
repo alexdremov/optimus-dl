@@ -15,7 +15,10 @@ from torch.distributed.tensor import DTensor
 from torch.distributed.tensor.parallel import loss_parallel
 from torch.optim import Optimizer
 
-from optimus_dl.core.log import warn_once
+from optimus_dl.core.log import (
+    info_once,
+    warn_once,
+)
 from optimus_dl.core.profile import (
     get_sm_metrics,
     measured_lambda,
@@ -294,6 +297,7 @@ class TrainingIterationMixin:
                         f"Fetching microbatch {microbatch_idx+1}/{self.optimization_config.acc_steps}"
                     )
                     elapsed_batch_get, batch = measured_next(train_data_iter)
+                    info_once(logger, f"Batch has keys {batch.keys()}")
                 except StopIteration:
                     logger.error("Training data iterator exhausted unexpectedly")
                     break

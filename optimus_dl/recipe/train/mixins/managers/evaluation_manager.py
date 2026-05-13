@@ -11,7 +11,10 @@ from typing import Any
 import torch
 from omegaconf import II
 
-from optimus_dl.core.log import tqdm
+from optimus_dl.core.log import (
+    info_once,
+    tqdm,
+)
 from optimus_dl.core.profile import measured_next
 from optimus_dl.core.registry import (
     RegistryConfig,
@@ -288,6 +291,7 @@ class Evaluator:
                                 f"Eval {eval_name}: Fetching batch for iteration {iterations}"
                             )
                             elapsed_batch_get, batch = measured_next(eval_iter)
+                            info_once(logger, f"Batch has keys {batch.keys()}")
                         except StopIteration:
                             logger.debug(
                                 f"Eval {eval_name}: Dataloader exhausted on this rank"
