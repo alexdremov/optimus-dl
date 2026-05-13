@@ -112,7 +112,14 @@ class MetricsRecipe:
         model.eval()
         model.to(device)
 
-        logger.info(f"Model built:\n{model}")
+        if collective.is_master:
+            param_count = sum(p.numel() for p in model.parameters())
+            logger.info(
+                "Model built: %s (parameters=%d)",
+                model.__class__.__name__,
+                param_count,
+            )
+            logger.info("Model:\n%s", model)
 
         # 2. Build Criterion
         criterion: BaseCriterion = self.criterion_builder.build_criterion(
