@@ -66,8 +66,6 @@ class CheckpointPath:
 class CheckpointManagerConfig(RegistryConfig):
     """Configuration for CheckpointManager."""
 
-    async_save: bool = False
-
 
 class CheckpointManager:
     """Manages saving and loading of distributed checkpoints.
