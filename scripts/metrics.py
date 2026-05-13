@@ -11,6 +11,7 @@ from omegaconf import (
 )
 
 from optimus_dl.core.log import setup_logging
+from optimus_dl.core.multiprocess import finalize_process
 from optimus_dl.core.omegaconf import non_resolving_instantiate
 from optimus_dl.recipe.metrics import (
     MetricsConfig,
@@ -78,6 +79,8 @@ def evaluate(cfg: DictConfig) -> None:
     except Exception as e:
         logger.error(f"Evaluation failed: {e}")
         raise
+
+    finalize_process()
 
 
 if __name__ == "__main__":

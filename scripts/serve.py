@@ -10,6 +10,7 @@ from omegaconf import (
 )
 
 from optimus_dl.core.log import setup_logging
+from optimus_dl.core.multiprocess import finalize_process
 from optimus_dl.core.omegaconf import non_resolving_instantiate
 from optimus_dl.recipe.serve import (
     ServeConfig,
@@ -37,6 +38,7 @@ def serve(cfg: DictConfig) -> None:
     # Create recipe and run server
     recipe = ServeRecipe(serve_cfg)
     recipe.run()
+    finalize_process()
 
 
 if __name__ == "__main__":

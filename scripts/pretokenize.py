@@ -10,6 +10,7 @@ from omegaconf import (
 )
 
 from optimus_dl.core.log import setup_logging
+from optimus_dl.core.multiprocess import finalize_process
 from optimus_dl.recipe.pretokenize.config import DataPrepConfig
 from optimus_dl.recipe.pretokenize.recipe import DataPrepRecipe
 
@@ -27,6 +28,7 @@ def prepare_data(cfg: DictConfig) -> None:
 
     recipe = DataPrepRecipe(data_prep_cfg)
     recipe.run()
+    finalize_process()
 
 
 if __name__ == "__main__":
