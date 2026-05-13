@@ -11,6 +11,7 @@ from typing import Any
 
 import torch
 
+from optimus_dl.core.dtype import str_to_dtype
 from optimus_dl.core.log import (
     info_once,
     tqdm,
@@ -89,16 +90,7 @@ class Evaluator:
         """
         if self.cfg.amp.enabled:
             amp_cfg = self.cfg.amp
-            dtype_map = {
-                "torch.float16": torch.float16,
-                "torch.float32": torch.float32,
-                "torch.bfloat16": torch.bfloat16,
-                "float16": torch.float16,
-                "float32": torch.float32,
-                "bfloat16": torch.bfloat16,
-            }
-
-            dtype = dtype_map[amp_cfg.dtype]
+            dtype = str_to_dtype(amp_cfg.dtype)
             amp_ctx = torch.autocast(device.type, dtype=dtype, enabled=amp_cfg.enabled)
             with amp_ctx:
                 yield

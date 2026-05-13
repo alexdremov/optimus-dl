@@ -16,6 +16,7 @@ from torch.distributed.fsdp import (
 )
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+from optimus_dl.core.dtype import str_to_dtype
 from optimus_dl.modules.distributed import Collective
 from optimus_dl.modules.distributed.mesh import MeshCollective
 from optimus_dl.modules.model.base import BaseModel
@@ -250,19 +251,13 @@ class FullyShardTransform(BaseDistributedTransform):
 
             # Convert string dtype names to torch dtypes
             param_dtype = (
-                self._str_to_dtype(mp_config.param_dtype)
-                if mp_config.param_dtype
-                else None
+                str_to_dtype(mp_config.param_dtype) if mp_config.param_dtype else None
             )
             reduce_dtype = (
-                self._str_to_dtype(mp_config.reduce_dtype)
-                if mp_config.reduce_dtype
-                else None
+                str_to_dtype(mp_config.reduce_dtype) if mp_config.reduce_dtype else None
             )
             output_dtype = (
-                self._str_to_dtype(mp_config.output_dtype)
-                if mp_config.output_dtype
-                else None
+                str_to_dtype(mp_config.output_dtype) if mp_config.output_dtype else None
             )
 
             mp_policy = MixedPrecisionPolicy(
@@ -306,27 +301,6 @@ class FullyShardTransform(BaseDistributedTransform):
         # The return type will be the FSDP-wrapped model
         fsdp_model.accumulation_context = accumulation_context
         return fsdp_model
-
-    def _str_to_dtype(self, dtype_str: str) -> torch.dtype:
-        """Convert string dtype name to torch.dtype."""
-        dtype_map = {
-            "float32": torch.float32,
-            "float16": torch.float16,
-            "bfloat16": torch.bfloat16,
-            "float64": torch.float64,
-            "double": torch.float64,
-            "half": torch.float16,
-            "fp32": torch.float32,
-            "fp16": torch.float16,
-            "bf16": torch.bfloat16,
-        }
-
-        if dtype_str not in dtype_map:
-            raise ValueError(
-                f"Unsupported dtype: {dtype_str}. Supported dtypes: {list(dtype_map.keys())}"
-            )
-
-        return dtype_map[dtype_str]
 
     def _create_hybrid_mesh(self):
         """Create a hybrid sharding mesh (HSDP) from the collective's DP mesh."""

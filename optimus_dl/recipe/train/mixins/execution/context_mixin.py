@@ -5,6 +5,7 @@ from typing import Any
 
 import torch
 
+from optimus_dl.core.dtype import str_to_dtype
 from optimus_dl.recipe.train.config import OptimizationConfig
 
 logger = logging.getLogger(__name__)
@@ -49,16 +50,7 @@ class TrainingContextMixin:
         )
         logger.info(f"Using grad scaler: {scaler.is_enabled()}")
         # Safe dtype conversion without eval()
-        dtype_map = {
-            "torch.float16": torch.float16,
-            "torch.float32": torch.float32,
-            "torch.bfloat16": torch.bfloat16,
-            "float16": torch.float16,
-            "float32": torch.float32,
-            "bfloat16": torch.bfloat16,
-        }
-
-        dtype = dtype_map[amp_cfg.dtype]
+        dtype = str_to_dtype(amp_cfg.dtype)
         amp_ctx = torch.autocast(device.type, dtype=dtype, enabled=amp_cfg.enabled)
 
         return {
