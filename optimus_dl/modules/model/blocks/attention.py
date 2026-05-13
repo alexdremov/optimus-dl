@@ -354,6 +354,8 @@ class BaseSelfAttention(nn.Module):
             f"{cu_seqlens is None = }, {seq_lens is None = }, {document_ids is None = }, {max_seqlen is None = }",
         )
 
+        used_backend = ""
+
         y = None
         if cu_seqlens is not None:
             # Use optimized variable-length kernels on CUDA
@@ -384,6 +386,7 @@ class BaseSelfAttention(nn.Module):
                     if self.sliding_window is not None
                     else (-1, -1)
                 )
+                used_backend = "Flash Attention"
                 y = flash_attn_varlen_func(
                     xq_varlen,
                     xk_varlen,
@@ -415,6 +418,7 @@ class BaseSelfAttention(nn.Module):
                     if max_seqlen is not None
                     else int((cu_seqlens[1:] - cu_seqlens[:-1]).max().item())
                 )
+                used_backend = "CPU Varlen Fallback"
                 y = self._varlen_attn_fallback(
                     xq, xk, xv, cu_seqlens=cu_seqlens, max_seqlen=max_q
                 )
@@ -469,6 +473,7 @@ class BaseSelfAttention(nn.Module):
                         message="Dropout is not supported in flex attention. Ignoring dropout.",
                     )
 
+                used_backend = "Flex Attention"
                 y = _flex_attention(
                     xq, xk, xv, block_mask=block_mask, enable_gqa=enable_gqa
                 )
@@ -503,6 +508,7 @@ class BaseSelfAttention(nn.Module):
                         else:
                             mask = mask & doc_mask
 
+                used_backend = "Torch Scaled Dot-Product Attention"
                 y = torch.nn.functional.scaled_dot_product_attention(
                     xq,
                     xk,
@@ -524,6 +530,8 @@ class BaseSelfAttention(nn.Module):
         # if it was SP, keep it SP
         if is_sp:
             y = y.redistribute(sp_mesh, sp_placements)
+
+        info_once(logger, f"Used {used_backend} for attention")
 
         return y
 
