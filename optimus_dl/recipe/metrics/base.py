@@ -112,6 +112,8 @@ class MetricsRecipe:
         model.eval()
         model.to(device)
 
+        logger.info(f"Model built:\n{model}")
+
         # 2. Build Criterion
         criterion: BaseCriterion = self.criterion_builder.build_criterion(
             collective=collective
