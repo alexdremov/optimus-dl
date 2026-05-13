@@ -198,9 +198,10 @@ def log_once(logger: logging.Logger, level: int, message: str) -> None:
     """
     if not hasattr(log_once, "logged_messages"):
         log_once.logged_messages = set()
-    if message not in log_once.logged_messages:
+    key = (logger.name, level, message)
+    if key not in log_once.logged_messages:
         logger.log(level, message)
-        log_once.logged_messages.add(message)
+        log_once.logged_messages.add(key)
 
 
 def warn_once(logger: logging.Logger, message: str) -> None:
