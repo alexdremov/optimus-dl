@@ -29,7 +29,7 @@ def test_default_optimizers_decrease_loss(optimizer_config):
     model = nn.Linear(5, 1, bias=not is_muon)
     criterion = nn.MSELoss()
 
-    optimizer = build_optimizer(optimizer_config, params=model.parameters())
+    optimizer = build_optimizer(optimizer_config, params=model.named_parameters())
 
     # Perform a few optimization steps
     initial_loss = None

@@ -1,4 +1,5 @@
 import torch
+import pytest
 import torch.nn as nn
 
 from optimus_dl.modules.optim.adamw import AdamWConfig
@@ -84,13 +85,8 @@ class TestMuonOptimizer:
         config = MuonConfig(
             _name="muon", lr=1e-3, support_optimizer=AdamWConfig(_name="adamw", lr=1e-2)
         )
-        # It should fail or just create support optimizer? Wait, looking at the code:
-        # matrix_params = get_subgroup(...)
-        # if not matrix_params, Muon might throw an error because it expects params.
-        # Let's see what happens.
-        # Actually Muon might allow empty params, but torch.optim.Muon might complain.
-        try:
+        with pytest.raises(ValueError) as exc_info:
             make_muon(config, params=model.named_parameters())
-        except ValueError as e:
-            # torch.optim.Muon might raise "optimizer got an empty parameter list"
-            assert "empty parameter list" in str(e)
+        assert "Muon optimizer requires at least one 2D parameter" in str(
+            exc_info.value
+        )

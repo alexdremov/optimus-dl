@@ -3,6 +3,7 @@ Muon optimizer
 """
 
 from dataclasses import (
+    asdict,
     dataclass,
     field,
 )
@@ -65,11 +66,13 @@ class MuonConfig(RegistryConfigStrict):
     adjust_lr_fn: str | None = None
 
     support_optimizer: RegistryConfig = field(
-        default_factory=lambda: AdamWConfig(
-            _name="adamw",
-            lr=II("..lr"),
-            weight_decay=II("..weight_decay"),
-            eps=II("..eps"),
+        default_factory=lambda: asdict(
+            AdamWConfig(
+                _name="adamw",
+                lr=II("..lr"),
+                weight_decay=II("..weight_decay"),
+                eps=II("..eps"),
+            )
         )
     )
 
@@ -86,6 +89,9 @@ def make_muon(cfg, params, **kwargs):
 
     matrix_params = get_subgroup(params, matrix_predicate)
     other_params = get_subgroup(params, non_matrix_predicate)
+
+    if not matrix_params:
+        raise ValueError("Muon optimizer requires at least one 2D parameter (matrix).")
 
     muon = torch.optim.Muon(
         matrix_params,
