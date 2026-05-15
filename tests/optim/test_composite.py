@@ -1,4 +1,5 @@
 import torch
+import pytest
 import torch.nn as nn
 
 from optimus_dl.modules.optim.adamw import AdamWConfig
@@ -154,3 +155,187 @@ class TestCompositeOptimizer:
 
         # Sub-optimizer should reflect this change
         assert optimizer2.optimizers["weight_opt"].param_groups[0]["lr"] == 1.0
+
+    def test_overlapping_regexes(self):
+        model = nn.Linear(10, 5)
+        config = CompositeOptimizerConfig(
+            optimizers={
+                "opt1": CompositeOptimizerConfigEntry(
+                    params_regexp=".*weight",
+                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-2),
+                ),
+                "opt2": CompositeOptimizerConfigEntry(
+                    params_regexp=".*weigh.*",  # Overlaps with weight
+                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-3),
+                ),
+            }
+        )
+        with pytest.raises(ValueError, match="matched by multiple optimizers"):
+            make_composite_optimizer(config, params=model.named_parameters())
+
+    def test_unmatched_parameters(self):
+        model = nn.Linear(10, 5)
+        config = CompositeOptimizerConfig(
+            optimizers={
+                "opt1": CompositeOptimizerConfigEntry(
+                    params_regexp=".*weight",  # bias is unmatched
+                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-2),
+                ),
+            }
+        )
+        with pytest.raises(ValueError, match="not matched by any optimizer regex"):
+            make_composite_optimizer(config, params=model.named_parameters())
+
+    def test_empty_matches(self):
+        model = nn.Linear(10, 5)
+        config = CompositeOptimizerConfig(
+            optimizers={
+                "opt1": CompositeOptimizerConfigEntry(
+                    params_regexp=".*weight",
+                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-2),
+                ),
+                "opt2": CompositeOptimizerConfigEntry(
+                    params_regexp=".*bias",
+                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-3),
+                ),
+                "opt3": CompositeOptimizerConfigEntry(
+                    params_regexp=".*nonexistent.*",
+                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-3),
+                ),
+            }
+        )
+        with pytest.raises(ValueError, match="did not match any parameters"):
+            make_composite_optimizer(config, params=model.named_parameters())
+
+    def test_empty_optimizer_dict(self):
+        model = nn.Linear(10, 5)
+        config = CompositeOptimizerConfig(optimizers={})
+
+        with pytest.raises(ValueError):
+            make_composite_optimizer(config, params=model.named_parameters())
+
+        with pytest.raises(
+            ValueError, match="At least one optimizer must be provided."
+        ):
+            make_composite_optimizer(config, params=[])
+
+    def test_step_execution(self):
+        model = nn.Linear(10, 5)
+        config = CompositeOptimizerConfig(
+            optimizers={
+                "weight_opt": CompositeOptimizerConfigEntry(
+                    params_regexp=".*weight",
+                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-2),
+                ),
+                "bias_opt": CompositeOptimizerConfigEntry(
+                    params_regexp=".*bias",
+                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-3),
+                ),
+            }
+        )
+        optimizer = make_composite_optimizer(config, params=model.named_parameters())
+
+        initial_weight = model.weight.clone().detach()
+        initial_bias = model.bias.clone().detach()
+
+        loss = model(torch.randn(3, 10)).sum()
+        loss.backward()
+        optimizer.step()
+
+        assert not torch.allclose(model.weight, initial_weight)
+        assert not torch.allclose(model.bias, initial_bias)
+
+    def test_zero_grad_behavior(self):
+        model = nn.Linear(10, 5)
+        config = CompositeOptimizerConfig(
+            optimizers={
+                "weight_opt": CompositeOptimizerConfigEntry(
+                    params_regexp=".*weight",
+                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-2),
+                ),
+                "bias_opt": CompositeOptimizerConfigEntry(
+                    params_regexp=".*bias",
+                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-3),
+                ),
+            }
+        )
+        optimizer = make_composite_optimizer(config, params=model.named_parameters())
+
+        loss = model(torch.randn(3, 10)).sum()
+        loss.backward()
+
+        assert model.weight.grad is not None
+        assert model.bias.grad is not None
+
+        optimizer.zero_grad(set_to_none=True)
+
+        assert model.weight.grad is None
+        assert model.bias.grad is None
+
+    def test_scheduler_integration(self):
+        model = nn.Linear(10, 5)
+        config = CompositeOptimizerConfig(
+            optimizers={
+                "weight_opt": CompositeOptimizerConfigEntry(
+                    params_regexp=".*weight",
+                    optimizer_config=AdamWConfig(_name="adamw", lr=1.0),
+                ),
+                "bias_opt": CompositeOptimizerConfigEntry(
+                    params_regexp=".*bias",
+                    optimizer_config=AdamWConfig(_name="adamw", lr=0.1),
+                ),
+            }
+        )
+        optimizer = make_composite_optimizer(config, params=model.named_parameters())
+
+        scheduler = torch.optim.lr_scheduler.LinearLR(
+            optimizer, start_factor=1.0, end_factor=0.1, total_iters=10
+        )
+
+        scheduler.step()
+
+        comp_weight_lr = None
+        for group in optimizer.param_groups:
+            if group["composite_optimizer_name"] == "weight_opt":
+                comp_weight_lr = group["lr"]
+
+        sub_weight_lr = optimizer.optimizers["weight_opt"].param_groups[0]["lr"]
+
+        assert comp_weight_lr == sub_weight_lr
+        assert comp_weight_lr != 1.0
+
+    def test_complex_parameter_group_inputs(self):
+        model = nn.Sequential(nn.Linear(10, 5), nn.Linear(5, 2))
+
+        # Add custom keys to param groups
+        params = [
+            {
+                "params": list(model[0].named_parameters()),
+                "my_custom_key": "layer1",
+                "lr": 0.5,
+            },
+            {"params": list(model[1].named_parameters()), "my_custom_key": "layer2"},
+        ]
+
+        config = CompositeOptimizerConfig(
+            optimizers={
+                "all_opt": CompositeOptimizerConfigEntry(
+                    params_regexp=".*",
+                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-2),
+                ),
+            }
+        )
+
+        optimizer = make_composite_optimizer(config, params=params)
+
+        # Composite should have 2 groups
+        assert len(optimizer.param_groups) == 2
+
+        group1 = optimizer.param_groups[0]
+        group2 = optimizer.param_groups[1]
+
+        assert group1.get("my_custom_key") == "layer1"
+        assert group2.get("my_custom_key") == "layer2"
+
+        assert group1["lr"] == 0.5  # should inherit override
+        assert group2["lr"] == 1e-2  # should fallback to config defaults

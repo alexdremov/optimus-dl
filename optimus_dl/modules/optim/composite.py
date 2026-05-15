@@ -197,15 +197,18 @@ def make_composite_optimizer(cfg, params: ParamsT, **kwargs):
     optimizers = {}
     used_params = set()
     all_params = set()
+    all_params_names = {}
 
     is_single_group = any(isinstance(param, tuple) for param in params)
     for param_group in params:
         if is_single_group:
-            param_name, _ = param_group
-            all_params.add(param_name)
+            param_name, param = param_group
+            all_params.add(id(param))
+            all_params_names[id(param)] = param_name
         else:
-            for param_name, _ in param_group["params"]:
-                all_params.add(param_name)
+            for param_name, param in param_group["params"]:
+                all_params.add(id(param))
+                all_params_names[id(param)] = param_name
 
     for name, entry in cfg.optimizers.items():
         filtered_groups = get_subgroup(
@@ -223,22 +226,20 @@ def make_composite_optimizer(cfg, params: ParamsT, **kwargs):
             )
 
         if is_single_group:
-            for param_name, _ in filtered_groups:
-                if param_name in used_params:
+            for param_name, param in filtered_groups:
+                if id(param) in used_params:
                     raise ValueError(
                         f"Parameter '{param_name}' matched by multiple optimizers (currently matched by '{name}')."
                     )
-            used_params.update(param_name for param_name, _ in filtered_groups)
+            used_params.update(id(param) for _, param in filtered_groups)
         else:
             for param_group in filtered_groups:
-                for param_name, _ in param_group["params"]:
-                    if param_name in used_params:
+                for param_name, param in param_group["params"]:
+                    if id(param) in used_params:
                         raise ValueError(
                             f"Parameter '{param_name}' matched by multiple optimizers (currently matched by '{name}')."
                         )
-                used_params.update(
-                    param_name for param_name, _ in param_group["params"]
-                )
+                used_params.update(id(param) for _, param in param_group["params"])
 
         optimizers[name] = build_optimizer(
             entry.optimizer_config,
@@ -248,8 +249,9 @@ def make_composite_optimizer(cfg, params: ParamsT, **kwargs):
 
     unused_params = all_params - used_params
     if unused_params:
+        unused_names = [all_params_names[pid] for pid in unused_params]
         raise ValueError(
-            f"The following parameters were not matched by any optimizer regex: {unused_params}"
+            f"The following parameters were not matched by any optimizer regex: {unused_names}"
         )
 
     return CompositeOptimizer(optimizers, **kwargs)
