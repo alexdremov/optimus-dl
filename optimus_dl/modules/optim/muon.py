@@ -2,10 +2,15 @@
 Muon optimizer
 """
 
-from dataclasses import dataclass
+from dataclasses import (
+    asdict,
+    dataclass,
+    field,
+)
 
 import torch
 import torch.optim
+from omegaconf import II
 from torch.optim._muon import (
     DEFAULT_A,
     DEFAULT_B,
@@ -14,8 +19,19 @@ from torch.optim._muon import (
     EPS,
 )
 
-from optimus_dl.core.registry import RegistryConfigStrict
-from optimus_dl.modules.optim import register_optimizer
+from optimus_dl.core.registry import (
+    RegistryConfig,
+    RegistryConfigStrict,
+)
+from optimus_dl.modules.optim import (
+    build_optimizer,
+    register_optimizer,
+)
+from optimus_dl.modules.optim.adamw import AdamWConfig
+from optimus_dl.modules.optim.composite import (
+    CompositeOptimizer,
+    get_subgroup,
+)
 
 
 @dataclass
@@ -49,11 +65,36 @@ class MuonConfig(RegistryConfigStrict):
     ns_steps: int = DEFAULT_NS_STEPS
     adjust_lr_fn: str | None = None
 
+    support_optimizer: RegistryConfig = field(
+        default_factory=lambda: asdict(
+            AdamWConfig(
+                _name="adamw",
+                lr=II("..lr"),
+                weight_decay=II("..weight_decay"),
+                eps=II("..eps"),
+            )
+        )
+    )
+
 
 @register_optimizer("muon", MuonConfig)
-def make_muon(cfg, params, **_):
-    return torch.optim.Muon(
-        params,
+def make_muon(cfg, params, **kwargs):
+    params = list(params)
+
+    def matrix_predicate(_, param):
+        return param.ndim == 2
+
+    def non_matrix_predicate(name, param):
+        return not matrix_predicate(name, param)
+
+    matrix_params = get_subgroup(params, matrix_predicate)
+    other_params = get_subgroup(params, non_matrix_predicate)
+
+    if not matrix_params:
+        raise ValueError("Muon optimizer requires at least one 2D parameter (matrix).")
+
+    muon = torch.optim.Muon(
+        matrix_params,
         lr=cfg.lr,
         weight_decay=cfg.weight_decay,
         momentum=cfg.momentum,
@@ -63,3 +104,14 @@ def make_muon(cfg, params, **_):
         ns_steps=cfg.ns_steps,
         adjust_lr_fn=cfg.adjust_lr_fn,
     )
+    if other_params:
+        support_optimizer = build_optimizer(
+            cfg.support_optimizer, params=other_params, **kwargs
+        )
+        return CompositeOptimizer(
+            optimizers={
+                "muon": muon,
+                "support": support_optimizer,
+            }
+        )
+    return muon
