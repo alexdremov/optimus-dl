@@ -12,6 +12,25 @@ from optimus_dl.modules.optim.composite import (
 )
 
 
+@pytest.fixture(
+    params=[
+        {"_name": "adamw", "lr": 1e-2},
+        {"_name": "muon", "lr": 1e-2},
+    ]
+)
+def weight_opt_cfg(request):
+    return request.param
+
+
+@pytest.fixture(
+    params=[
+        {"_name": "adamw", "lr": 1e-3},
+    ]
+)
+def bias_opt_cfg(request):
+    return request.param
+
+
 class TestCompositeOptimizer:
     def test_get_subgroup_single_group(self):
         model = nn.Linear(10, 5)
@@ -42,18 +61,18 @@ class TestCompositeOptimizer:
         assert weight_groups[0]["lr"] == 0.1
         assert weight_groups[1]["lr"] == 0.01
 
-    def test_make_composite_optimizer(self):
+    def test_make_composite_optimizer(self, weight_opt_cfg, bias_opt_cfg):
         model = nn.Linear(10, 5)
 
         config = CompositeOptimizerConfig(
             optimizers={
                 "weight_opt": CompositeOptimizerConfigEntry(
                     params_regexp=".*weight",
-                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-2),
+                    optimizer_config=weight_opt_cfg,
                 ),
                 "bias_opt": CompositeOptimizerConfigEntry(
                     params_regexp=".*bias",
-                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-3),
+                    optimizer_config=bias_opt_cfg,
                 ),
             }
         )
@@ -66,17 +85,17 @@ class TestCompositeOptimizer:
         assert optimizer.optimizers["weight_opt"].param_groups[0]["lr"] == 1e-2
         assert optimizer.optimizers["bias_opt"].param_groups[0]["lr"] == 1e-3
 
-    def test_param_groups_reference(self):
+    def test_param_groups_reference(self, weight_opt_cfg, bias_opt_cfg):
         model = nn.Linear(10, 5)
         config = CompositeOptimizerConfig(
             optimizers={
                 "weight_opt": CompositeOptimizerConfigEntry(
                     params_regexp=".*weight",
-                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-2),
+                    optimizer_config=weight_opt_cfg,
                 ),
                 "bias_opt": CompositeOptimizerConfigEntry(
                     params_regexp=".*bias",
-                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-3),
+                    optimizer_config=bias_opt_cfg,
                 ),
             }
         )
@@ -90,17 +109,17 @@ class TestCompositeOptimizer:
         # Check if underlying optimizer's lr changed
         assert optimizer.optimizers["weight_opt"].param_groups[0]["lr"] == 5e-2
 
-    def test_state_dict_loading(self):
+    def test_state_dict_loading(self, weight_opt_cfg, bias_opt_cfg):
         model = nn.Linear(10, 5)
         config = CompositeOptimizerConfig(
             optimizers={
                 "weight_opt": CompositeOptimizerConfigEntry(
                     params_regexp=".*weight",
-                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-2),
+                    optimizer_config=weight_opt_cfg,
                 ),
                 "bias_opt": CompositeOptimizerConfigEntry(
                     params_regexp=".*bias",
-                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-3),
+                    optimizer_config=bias_opt_cfg,
                 ),
             }
         )
@@ -123,17 +142,17 @@ class TestCompositeOptimizer:
             # The state of sub-optimizer should reference the composite's state
             assert sub_opt.state is optimizer2.state
 
-    def test_param_groups_reference_after_load(self):
+    def test_param_groups_reference_after_load(self, weight_opt_cfg, bias_opt_cfg):
         model = nn.Linear(10, 5)
         config = CompositeOptimizerConfig(
             optimizers={
                 "weight_opt": CompositeOptimizerConfigEntry(
                     params_regexp=".*weight",
-                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-2),
+                    optimizer_config=weight_opt_cfg,
                 ),
                 "bias_opt": CompositeOptimizerConfigEntry(
                     params_regexp=".*bias",
-                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-3),
+                    optimizer_config=bias_opt_cfg,
                 ),
             }
         )
@@ -219,17 +238,17 @@ class TestCompositeOptimizer:
         ):
             make_composite_optimizer(config, params=[])
 
-    def test_step_execution(self):
+    def test_step_execution(self, weight_opt_cfg, bias_opt_cfg):
         model = nn.Linear(10, 5)
         config = CompositeOptimizerConfig(
             optimizers={
                 "weight_opt": CompositeOptimizerConfigEntry(
                     params_regexp=".*weight",
-                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-2),
+                    optimizer_config=weight_opt_cfg,
                 ),
                 "bias_opt": CompositeOptimizerConfigEntry(
                     params_regexp=".*bias",
-                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-3),
+                    optimizer_config=bias_opt_cfg,
                 ),
             }
         )
@@ -245,17 +264,17 @@ class TestCompositeOptimizer:
         assert not torch.allclose(model.weight, initial_weight)
         assert not torch.allclose(model.bias, initial_bias)
 
-    def test_zero_grad_behavior(self):
+    def test_zero_grad_behavior(self, weight_opt_cfg, bias_opt_cfg):
         model = nn.Linear(10, 5)
         config = CompositeOptimizerConfig(
             optimizers={
                 "weight_opt": CompositeOptimizerConfigEntry(
                     params_regexp=".*weight",
-                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-2),
+                    optimizer_config=weight_opt_cfg,
                 ),
                 "bias_opt": CompositeOptimizerConfigEntry(
                     params_regexp=".*bias",
-                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-3),
+                    optimizer_config=bias_opt_cfg,
                 ),
             }
         )
@@ -278,11 +297,11 @@ class TestCompositeOptimizer:
             optimizers={
                 "weight_opt": CompositeOptimizerConfigEntry(
                     params_regexp=".*weight",
-                    optimizer_config=AdamWConfig(_name="adamw", lr=1.0),
+                    optimizer_config={"_name": "adamw", "lr": 1.0},
                 ),
                 "bias_opt": CompositeOptimizerConfigEntry(
                     params_regexp=".*bias",
-                    optimizer_config=AdamWConfig(_name="adamw", lr=0.1),
+                    optimizer_config={"_name": "adamw", "lr": 0.1},
                 ),
             }
         )
@@ -321,7 +340,7 @@ class TestCompositeOptimizer:
             optimizers={
                 "all_opt": CompositeOptimizerConfigEntry(
                     params_regexp=".*",
-                    optimizer_config=AdamWConfig(_name="adamw", lr=1e-2),
+                    optimizer_config={"_name": "adamw", "lr": 1e-2},
                 ),
             }
         )
@@ -339,3 +358,54 @@ class TestCompositeOptimizer:
 
         assert group1["lr"] == 0.5  # should inherit override
         assert group2["lr"] == 1e-2  # should fallback to config defaults
+
+    def test_nested_composite_optimizer(self):
+        model = nn.Linear(10, 5)
+        config = CompositeOptimizerConfig(
+            optimizers={
+                "nested_opt": CompositeOptimizerConfigEntry(
+                    params_regexp=".*weight",
+                    optimizer_config={
+                        "_name": "composite",
+                        "optimizers": {
+                            "inner_opt": {
+                                "params_regexp": ".*",
+                                "optimizer_config": {"_name": "adamw", "lr": 1e-2},
+                            }
+                        },
+                    },
+                ),
+                "bias_opt": CompositeOptimizerConfigEntry(
+                    params_regexp=".*bias",
+                    optimizer_config={"_name": "adamw", "lr": 1e-3},
+                ),
+            }
+        )
+        optimizer = make_composite_optimizer(config, params=model.named_parameters())
+        assert isinstance(optimizer.optimizers["nested_opt"], CompositeOptimizer)
+        assert "inner_opt" in optimizer.optimizers["nested_opt"].optimizers
+
+        # Step
+        loss = model(torch.randn(3, 10)).sum()
+        loss.backward()
+        optimizer.step()
+
+        state_dict = optimizer.state_dict()
+
+        # Load
+        model2 = nn.Linear(10, 5)
+        optimizer2 = make_composite_optimizer(config, params=model2.named_parameters())
+        optimizer2.load_state_dict(state_dict)
+
+        # Check references through outer -> nested -> inner
+        # We manually change the lr on the outermost composite group
+        for group in optimizer2.param_groups:
+            if group.get("composite_optimizer_name") == "nested_opt":
+                group["lr"] = 1.0
+
+        # Now verify it's propagated to the inner-most optimizer inside the nested structure
+        nested_opt = optimizer2.optimizers["nested_opt"]
+        assert nested_opt.param_groups[0]["lr"] == 1.0
+
+        inner_opt = nested_opt.optimizers["inner_opt"]
+        assert inner_opt.param_groups[0]["lr"] == 1.0
