@@ -1,4 +1,5 @@
 import re
+from collections import OrderedDict
 from collections.abc import (
     Callable,
     Iterable,
@@ -58,15 +59,17 @@ class CompositeOptimizer(Optimizer):
     standard torch.optim.Optimizer interface. Supports named optimizers via dictionary.
     """
 
-    optimizers: dict[str, Optimizer]
+    optimizers: OrderedDict[str, Optimizer]
 
     def __init__(
         self, optimizers: Iterable[Optimizer] | dict[str, Optimizer], **kwargs
     ):
         if isinstance(optimizers, dict):
-            self.optimizers = cast(dict, optimizers)
+            self.optimizers = OrderedDict(cast(dict[str, Optimizer], optimizers))
         else:
-            self.optimizers = {str(i): opt for i, opt in enumerate(optimizers)}
+            self.optimizers = OrderedDict(
+                (str(i), opt) for i, opt in enumerate(optimizers)
+            )
 
         if not self.optimizers:
             raise ValueError("At least one optimizer must be provided.")
@@ -75,7 +78,12 @@ class CompositeOptimizer(Optimizer):
         groups = []
         for name, opt in self.optimizers.items():
             for group in opt.param_groups:
-                group["composite_optimizer_name"] = name
+                # Add current name to the path (outermost names will be prepended when bubbled up)
+                if "composite_optimizer_path" not in group:
+                    group["composite_optimizer_path"] = []
+                # Prepend because inner optimizers are processed first and their paths
+                # are carried upward as outer optimizers process them.
+                group["composite_optimizer_path"].insert(0, name)
                 groups.append(group)
 
         # groups holds references to all parameter groups across all optimizers,
@@ -112,21 +120,34 @@ class CompositeOptimizer(Optimizer):
         Restores the state dict and repairs the state dictionary reference aliases.
         """
         super().load_state_dict(state_dict)
+        self._realias_sub_optimizers()
 
-        # super().load_state_dict() assigns a new object to self.state.
-        # We must re-alias the sub-optimizers to point to this newly loaded state.
-        for opt in self.optimizers.values():
+    def _realias_sub_optimizers(self) -> None:
+        """
+        Re-establishes the param_groups list for all nested sub-optimizers so
+        they point to the dict instances recreated by PyTorch's load_state_dict.
+        """
+        new_groups_for_opt = {}
+        group_idx = 0
+        for name, opt in self.optimizers.items():
+            count = len(opt.param_groups)
+            new_groups_for_opt[name] = self.param_groups[group_idx : group_idx + count]
+            group_idx += count
+
+        for name, opt in self.optimizers.items():
             opt.state = self.state
             opt.param_groups.clear()
+            for group in new_groups_for_opt[name]:
+                opt.add_param_group(group)
 
-        # Re-alias param_groups to point to the newly loaded dicts
-        for group in self.param_groups:
-            name = group.get("composite_optimizer_name")
-            assert name and name in self.optimizers, (
-                "Each parameter group must have a 'composite_optimizer_name' key that matches a sub-optimizer. "
-                f"Missing or invalid name: {name}"
-            )
-            self.optimizers[name].add_param_group(group)
+        # Cascade updates to nested composite optimizers
+        for opt in self.optimizers.values():
+            if isinstance(opt, CompositeOptimizer):
+                opt._realias_sub_optimizers()
+
+    def __repr__(self) -> str:
+        optimizer_reprs = {name: repr(opt) for name, opt in self.optimizers.items()}
+        return f"CompositeOptimizer(optimizers={optimizer_reprs})"
 
 
 def get_subgroup(
@@ -134,7 +155,7 @@ def get_subgroup(
 ) -> ParamsT:
     """
     Utility function to filter parameters based on a predicate applied to their names.
-    Expects params to be an iterable of (name, tensor) tuples.
+    Expects params to be an iterable of (name, tensor) tuples or iterable of dicts (subgroups).
     """
     if not isinstance(params, list):
         params = list(params)  # Ensure we can iterate multiple times
