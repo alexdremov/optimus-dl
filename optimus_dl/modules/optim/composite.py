@@ -85,6 +85,9 @@ class CompositeOptimizer(Optimizer):
                 # Prepend because inner optimizers are processed first and their paths
                 # are carried upward as outer optimizers process them.
                 group["composite_optimizer_path"].insert(0, name)
+                group["composite_optimizer_name"] = (
+                    name  # Add the name of the final optimizer for easy access
+                )
                 groups.append(group)
 
         # groups holds references to all parameter groups across all optimizers,

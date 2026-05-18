@@ -646,7 +646,7 @@ class TrainRecipe(
             pathlib.Path(self.cfg.common.output_path)
             / f"eval_checkpoints_iter_{iteration}"
         )
-        eval_chkp_dir.mkdir(exist_ok=True)
+        eval_chkp_dir.mkdir(exist_ok=True, parents=True)
         return str(eval_chkp_dir)
 
     def cleanup_eval_checkpoints(self, iteration: int, collective) -> None:
