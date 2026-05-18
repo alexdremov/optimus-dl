@@ -126,7 +126,7 @@ class Evaluator:
             eval_data_dict: Dictionary mapping dataset names to dataloaders.
             collective: Distributed collective for metric aggregation.
             all_metrics_configs: Root metrics configuration from TrainConfig.
-            save_checkpoint: Callable to save a checkpoint befare evaluation.
+            save_checkpoint: Callable to save a checkpoint before evaluation.
 
         Returns:
             Dictionary of computed metrics if evaluation ran, else None.
