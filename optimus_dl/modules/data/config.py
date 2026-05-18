@@ -54,6 +54,14 @@ class EvalDataPipelineConfig(DataPipelineConfig):
         },
     )
 
+    eval_checkpointing: int | None = field(
+        default=None,
+        metadata={
+            "description": "Frequency of saving checkpoints during evaluation. If None, do not save checkpoints during evaluation. "
+            "This is useful for long evaluations to be able to resume evaluation if it gets interrupted."
+        },
+    )
+
 
 @dataclass
 class EvalDataConfig:

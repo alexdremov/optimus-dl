@@ -93,6 +93,14 @@ class TrainRecipeConfig:
             "description": "Whether it is guaranteed that each DP rank sees the same number of batches during evaluation."
         },
     )
+    eval_checkpointing: int | None = field(
+        default=II(".save_freq"),
+        metadata={
+            "description": "Frequency of saving checkpoints during evaluation. If None, do not save checkpoints during evaluation. "
+            "This is useful for long evaluations to be able to resume evaluation if it gets interrupted."
+        },
+    )
+
     # Checkpointing
     save_freq: int = field(
         default=II(".eval_freq"),

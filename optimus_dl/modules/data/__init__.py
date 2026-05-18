@@ -44,6 +44,7 @@ class EvalDataPipeline(NamedTuple):
     eval_freq: int | None
     eval_iterations: int | None
     eval_guaranteed_same_batches: bool | None
+    eval_checkpointing: int | None
 
 
 class LoggingDataNode(BaseDataset):
@@ -105,6 +106,7 @@ def build_data_pipeline(
         hasattr(cfg, "eval_freq")
         or hasattr(cfg, "eval_iterations")
         or hasattr(cfg, "eval_guaranteed_same_batches")
+        or hasattr(cfg, "eval_checkpointing")
     ):
         return EvalDataPipeline(
             datasets=dataset,
@@ -114,6 +116,7 @@ def build_data_pipeline(
             eval_guaranteed_same_batches=getattr(
                 cfg, "eval_guaranteed_same_batches", None
             ),
+            eval_checkpointing=getattr(cfg, "eval_checkpointing", None),
         )
     else:
         return DataPipeline(datasets=dataset, dataloader=pipeline)

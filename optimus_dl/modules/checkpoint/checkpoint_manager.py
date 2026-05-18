@@ -253,6 +253,7 @@ class CheckpointManager:
         iteration: int = 0,
         lr_scheduler=None,
         data_loaders: dict | None = None,
+        extra_metadata: dict | None = None,
         **kwargs: Any,
     ) -> None:
         """Save training checkpoint using distributed checkpoint API.
@@ -313,6 +314,13 @@ class CheckpointManager:
         if lr_scheduler is not None:
             logger.info("Saving lr_scheduler")
             metadata["lr_scheduler"] = lr_scheduler.state_dict()
+
+        if extra_metadata is not None:
+            for key, value in extra_metadata.items():
+                assert (
+                    key not in metadata
+                ), f"Extra metadata key {key} conflicts with existing metadata keys"
+                metadata[key] = value
 
         # Save using distributed checkpoint API
         should_symlink_last = True
