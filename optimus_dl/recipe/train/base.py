@@ -1,6 +1,7 @@
 import gc
 import logging
 import pathlib
+import shutil
 
 import torch
 from torch.optim import Optimizer
@@ -308,6 +309,8 @@ class TrainRecipe(
             for eval_name, eval_metrics in metrics.items():
                 self.log_metrics_to_loggers(eval_metrics, iteration, eval_name)
 
+        return metrics
+
     def run(self):
         """Run the complete training pipeline."""
         self.setup_context()
@@ -504,10 +507,11 @@ class TrainRecipe(
                 )
                 self.save_checkpoint_if_needed(
                     iteration=iteration,
+                    force_save=True,
                     **common_chkp_kwargs,
                     extra_metadata={"eval_finished": True},
                 )
-                self.cleanup_eval_checkpoints(iteration, collective)
+                self.cleanup_all_eval_checkpoints(collective)
 
             pbar = trange(
                 start_iteration,
@@ -570,21 +574,17 @@ class TrainRecipe(
 
                     def save_checkpoint(iteration=iteration):
                         logger.debug(f"Saving checkpoint for iteration {iteration}...")
-                        is_persistent = (
-                            self.cfg.common.save_freq > 0
-                            and iteration % self.cfg.common.save_freq == 0
-                        )
-                        self.save_checkpoint(
+                        self.save_checkpoint_if_needed(
                             iteration=iteration,
+                            force_save=True,
                             **common_chkp_kwargs,
-                            is_save_persistent=is_persistent,
-                            is_save_last=True,
                             extra_metadata={"eval_finished": False},
                         )
-                        logger.debug(f"Checkpoint saved for iteration {iteration}")
+                        logger.debug(
+                            f"Pre-eval checkpoint saved for iteration {iteration}"
+                        )
 
-                    eval_path = self.eval_checkpoints_path(iteration)
-                    self.evaluate_and_log(
+                    metrics = self.evaluate_and_log(
                         iteration=iteration,
                         model=model,
                         criterion=criterion,
@@ -592,18 +592,21 @@ class TrainRecipe(
                         collective=collective,
                         device=device,
                         save_checkpoint=save_checkpoint,
-                        eval_checkpoints_path=eval_path,
+                        output_path=self.cfg.common.output_path,
                     )
+                    eval_finished = metrics is not None
 
                     logger.debug(
                         f"Saving checkpoint if needed for iteration {iteration}"
                     )
                     self.save_checkpoint_if_needed(
                         iteration=iteration,
+                        force_save=eval_finished,
                         **common_chkp_kwargs,
                         extra_metadata={"eval_finished": True},
                     )
-                    self.cleanup_eval_checkpoints(iteration, collective)
+                    if eval_finished:
+                        self.cleanup_all_eval_checkpoints(collective)
 
                 except KeyboardInterrupt:
                     logger.info("Training interrupted by user")
@@ -639,18 +642,13 @@ class TrainRecipe(
         collective.close()
         logger.info("Training run complete")
 
-    def cleanup_eval_checkpoints(self, iteration: int, collective) -> None:
-        """Cleanup evaluation checkpoints for a given iteration."""
+    def cleanup_all_eval_checkpoints(self, collective) -> None:
+        """Cleanup evaluation checkpoints for future iterations to prevent confusion."""
         if collective.is_master:
-            eval_chkp_dir = (
-                pathlib.Path(self.cfg.common.output_path)
-                / f"eval_checkpoints_iter_{iteration}"
-            )
-            if eval_chkp_dir.exists():
-                import shutil
-
+            output_path = pathlib.Path(self.cfg.common.output_path)
+            for eval_chkp_dir in output_path.glob("eval_checkpoints_iter_*"):
                 shutil.rmtree(eval_chkp_dir)
                 logger.info(
-                    f"Cleaned up evaluation checkpoints for iteration {iteration}"
+                    f"Cleaned up evaluation checkpoint directory: {eval_chkp_dir}"
                 )
         collective.barrier()
