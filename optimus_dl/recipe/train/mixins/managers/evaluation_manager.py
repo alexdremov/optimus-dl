@@ -191,7 +191,7 @@ class Evaluator:
         all_metrics_configs: dict[str, list[dict]] | None = None,
         metrics_prefix: str = "eval",
         show_progress: bool = False,
-        iteration: int | None = 0,
+        iteration: int | None = None,
     ):
         """Execute the evaluation loop for all provided datasets.
 

@@ -101,6 +101,10 @@ class EvaluationCheckpointManager:
         Returns:
             The number of iterations already processed, or 0 if no checkpoint exists.
         """
+        assert (
+            iteration is not None
+        ), "Iteration must be provided to load evaluation checkpoint"
+
         eval_dir = self.get_eval_checkpoints_dir(iteration)
         rank = collective.rank if collective is not None else 0
         checkpoint_path = eval_dir / f"{eval_name}_rank_{rank}.pt"
