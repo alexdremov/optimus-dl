@@ -35,6 +35,7 @@ class EvaluationCheckpointManager:
         dataloader_state: dict[str, Any],
         group_name: str,
         collective: Collective | None = None,
+        eval_iterations_processed: int = 0,
     ) -> None:
         """Save the current evaluation state for a specific rank.
 
@@ -44,6 +45,7 @@ class EvaluationCheckpointManager:
             dataloader_state: state_dict of the dataloader.
             group_name: Name of the metrics group (e.g., 'eval/dataset').
             collective: Distributed collective.
+            eval_iterations_processed: Number of evaluation batches processed so far.
         """
         eval_dir = self.get_eval_checkpoints_dir(iteration)
         eval_dir.mkdir(parents=True, exist_ok=True)
@@ -64,6 +66,7 @@ class EvaluationCheckpointManager:
             "rank": rank,
             "meters_state": all_meters_state[group_name],
             "dataloader_state": dataloader_state,
+            "eval_iterations_processed": eval_iterations_processed,
         }
 
         try:
@@ -123,9 +126,7 @@ class EvaluationCheckpointManager:
             ), "Dataloader does not support load_state_dict"
             dataloader.load_state_dict(state["dataloader_state"])
 
-            return state.get("iteration_count", 0) or state.get(
-                "iteration", 0
-            )  # Handle ambiguity in naming if any
+            return state.get("eval_iterations_processed", 0)
         except Exception as e:
             logger.error(
                 f"Failed to load evaluation checkpoint from {checkpoint_path}: {e}"

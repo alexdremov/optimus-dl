@@ -131,7 +131,7 @@ class Evaluator:
             eval_data_dict: Dictionary mapping dataset names to dataloaders.
             collective: Distributed collective for metric aggregation.
             all_metrics_configs: Root metrics configuration from TrainConfig.
-            save_checkpoint: Callable to save a checkpoint befare evaluation.
+            save_checkpoint: Callable to save a checkpoint before evaluation.
 
         Returns:
             Dictionary of computed metrics if evaluation ran, else None.
@@ -164,20 +164,17 @@ class Evaluator:
                 save_checkpoint()
                 saved_checkpoint = True
 
-            try:
-                result |= self.run_evaluation(
-                    iteration=iteration,
-                    model=model,
-                    criterion=criterion,
-                    eval_data_dict={eval_name: eval_data},
-                    max_iterations=max_iterations,
-                    collective=collective,
-                    all_metrics_configs=all_metrics_configs,
-                    show_progress=True,
-                    device=device,
-                )
-            except Exception:
-                logger.exception(f"Evaluation for {eval_name} failed.")
+            result |= self.run_evaluation(
+                iteration=iteration,
+                model=model,
+                criterion=criterion,
+                eval_data_dict={eval_name: eval_data},
+                max_iterations=max_iterations,
+                collective=collective,
+                all_metrics_configs=all_metrics_configs,
+                show_progress=True,
+                device=device,
+            )
 
         if len(result) == 0:
             return None
@@ -403,6 +400,7 @@ class Evaluator:
                                 dataloader_state=dataloader.state_dict(),
                                 group_name=group_name,
                                 collective=collective,
+                                eval_iterations_processed=iterations,
                             )
                             logger.info(
                                 f"Saved evaluation metrics checkpoint at iteration {iterations}"
