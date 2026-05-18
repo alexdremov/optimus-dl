@@ -10,7 +10,6 @@ from dataclasses import (
 )
 from typing import (
     Any,
-    cast,
 )
 
 import torch
@@ -65,7 +64,9 @@ class CompositeOptimizer(Optimizer):
         self, optimizers: Iterable[Optimizer] | dict[str, Optimizer], **kwargs
     ):
         if isinstance(optimizers, dict):
-            self.optimizers = OrderedDict(cast(dict[str, Optimizer], optimizers))
+            self.optimizers = OrderedDict(
+                sorted(optimizers.items(), key=lambda item: item[0])
+            )
         else:
             self.optimizers = OrderedDict(
                 (str(i), opt) for i, opt in enumerate(optimizers)
