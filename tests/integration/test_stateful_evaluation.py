@@ -10,6 +10,9 @@ import torch.multiprocessing as mp
 
 from optimus_dl.core.log import setup_logging
 from optimus_dl.core.registry import RegistryConfig
+from optimus_dl.modules.checkpoint.eval_checkpoint_manager import (
+    EvaluationCheckpointManager,
+)
 from optimus_dl.modules.criterion.cross_entropy import (
     CrossEntropyCriterion,
     CrossEntropyCriterionConfig,
@@ -95,6 +98,11 @@ class DummyDataset(BaseDataset):
 def _run_stateful_eval_test(rank, unique_port, world_size, temp_dir):
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = str(unique_port)
+    os.environ["RANK"] = str(rank)
+    os.environ["WORLD_SIZE"] = str(world_size)
+    os.environ["LOCAL_RANK"] = str(rank)
+    os.environ["LOCAL_WORLD_SIZE"] = str(world_size)
+
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
     setup_logging()
@@ -117,11 +125,19 @@ def _run_stateful_eval_test(rank, unique_port, world_size, temp_dir):
             eval_iterations=6,
             eval_guaranteed_same_batches=True,
             eval_checkpointing=eval_checkpointing,
+            output_path=temp_dir,
         )
 
         device = torch.device("cpu")
 
         def run_eval_with_crash(crash_at_batch=None, chkp_dir=None):
+            # Update evaluator's output path if needed for different runs in same test
+            if chkp_dir:
+                evaluator.output_path = chkp_dir
+                evaluator.eval_checkpoint_manager = EvaluationCheckpointManager(
+                    chkp_dir
+                )
+
             eval_pipeline_cfg = EvalDataPipelineConfig(
                 source=DummyDatasetConfig(
                     _name="dummy_dataset_stateful_test",
@@ -147,7 +163,6 @@ def _run_stateful_eval_test(rank, unique_port, world_size, temp_dir):
                 all_metrics_configs={},
                 metrics_prefix="eval",
                 show_progress=False,
-                eval_checkpoints_path=chkp_dir,
             )
 
         # 1. Run uninterrupted evaluation to get ground truth metrics
@@ -187,6 +202,10 @@ def _run_stateful_eval_test(rank, unique_port, world_size, temp_dir):
 def _run_eval_test_no_checkpoints(rank, unique_port, world_size, temp_dir):
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = str(unique_port)
+    os.environ["RANK"] = str(rank)
+    os.environ["WORLD_SIZE"] = str(world_size)
+    os.environ["LOCAL_RANK"] = str(rank)
+    os.environ["LOCAL_WORLD_SIZE"] = str(world_size)
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
     setup_logging()
@@ -206,11 +225,18 @@ def _run_eval_test_no_checkpoints(rank, unique_port, world_size, temp_dir):
             eval_iterations=6,
             eval_guaranteed_same_batches=True,
             eval_checkpointing=None,  # No checkpointing
+            output_path=temp_dir,
         )
 
         device = torch.device("cpu")
 
         def run_eval_with_crash(crash_at_batch=None, chkp_dir=None):
+            if chkp_dir:
+                evaluator.output_path = chkp_dir
+                evaluator.eval_checkpoint_manager = EvaluationCheckpointManager(
+                    chkp_dir
+                )
+
             eval_pipeline_cfg = EvalDataPipelineConfig(
                 source=DummyDatasetConfig(
                     _name="dummy_dataset_stateful_test",
@@ -234,7 +260,6 @@ def _run_eval_test_no_checkpoints(rank, unique_port, world_size, temp_dir):
                 all_metrics_configs={},
                 metrics_prefix="eval",
                 show_progress=False,
-                eval_checkpoints_path=chkp_dir,
             )
 
         uninterrupted_dir = os.path.join(temp_dir, "run1")
@@ -270,6 +295,10 @@ def _run_eval_test_no_checkpoints(rank, unique_port, world_size, temp_dir):
 def _run_eval_test_unequal_batches(rank, unique_port, world_size, temp_dir):
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = str(unique_port)
+    os.environ["RANK"] = str(rank)
+    os.environ["WORLD_SIZE"] = str(world_size)
+    os.environ["LOCAL_RANK"] = str(rank)
+    os.environ["LOCAL_WORLD_SIZE"] = str(world_size)
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
     setup_logging()
@@ -289,6 +318,7 @@ def _run_eval_test_unequal_batches(rank, unique_port, world_size, temp_dir):
             eval_iterations=10,  # Max limit
             eval_guaranteed_same_batches=False,  # Must synchronize exhaustion
             eval_checkpointing=None,
+            output_path=temp_dir,
         )
 
         device = torch.device("cpu")
@@ -318,14 +348,14 @@ def _run_eval_test_unequal_batches(rank, unique_port, world_size, temp_dir):
             all_metrics_configs={},
             metrics_prefix="eval",
             show_progress=False,
-            eval_checkpoints_path=None,
         )
 
         if rank == 0:
-            # We expect exactly 4 batches processed
+            # We expect exactly 4 batches processed on each rank, so 4 * world_size in total
+            expected_batches = 4 * world_size
             assert (
-                metrics["eval/dummy"]["num_batches"] == 4
-            ), f"Expected 4 batches, got {metrics['eval/dummy']['num_batches']}"
+                metrics["eval/dummy"]["num_batches"] == expected_batches
+            ), f"Expected {expected_batches} batches, got {metrics['eval/dummy']['num_batches']}"
 
     finally:
         dist.destroy_process_group()

@@ -25,19 +25,20 @@ from optimus_dl.core.registry import (
     RegistryConfig,
     make_registry,
 )
+from optimus_dl.modules.checkpoint.eval_checkpoint_manager import (
+    EvaluationCheckpointManager,
+)
 from optimus_dl.modules.criterion import BaseCriterion
 from optimus_dl.modules.data import EvalDataPipeline
 from optimus_dl.modules.distributed.base import Collective
 from optimus_dl.modules.metrics import (
     compute_meters,
-    load_state_dict as meters_load_state_dict,
     log_averaged,
     log_event_end,
     log_event_occurence,
     log_event_start,
     log_summed,
     meters_group,
-    state_dict as meters_state_dict,
     step_meters,
 )
 from optimus_dl.modules.model.base import BaseModel
@@ -78,6 +79,7 @@ class Evaluator:
         eval_iterations: int | None = None,
         eval_guaranteed_same_batches: bool = False,
         eval_checkpointing: int | None = None,
+        output_path: str | pathlib.Path | None = None,
         **kwargs: Any,
     ):
         self.cfg = cfg
@@ -85,6 +87,10 @@ class Evaluator:
         self.eval_iterations = eval_iterations
         self.eval_guaranteed_same_batches = eval_guaranteed_same_batches
         self.eval_checkpointing = eval_checkpointing
+        self.output_path = output_path
+        self.eval_checkpoint_manager = None
+        if output_path:
+            self.eval_checkpoint_manager = EvaluationCheckpointManager(output_path)
 
     @contextlib.contextmanager
     def forward_context(self, device: torch.device):
@@ -115,7 +121,6 @@ class Evaluator:
         collective: Collective | None = None,
         all_metrics_configs: dict[str, list[dict]] | None = None,
         save_checkpoint: Callable | None = None,
-        output_path: str | None = None,
     ) -> None | dict:
         """Run evaluation if the current iteration matches the frequency.
 
@@ -127,7 +132,6 @@ class Evaluator:
             collective: Distributed collective for metric aggregation.
             all_metrics_configs: Root metrics configuration from TrainConfig.
             save_checkpoint: Callable to save a checkpoint befare evaluation.
-            output_path: Base path for saving evaluation checkpoints.
 
         Returns:
             Dictionary of computed metrics if evaluation ran, else None.
@@ -171,7 +175,6 @@ class Evaluator:
                     all_metrics_configs=all_metrics_configs,
                     show_progress=True,
                     device=device,
-                    output_path=output_path,
                 )
             except Exception:
                 logger.exception(f"Evaluation for {eval_name} failed.")
@@ -191,7 +194,6 @@ class Evaluator:
         all_metrics_configs: dict[str, list[dict]] | None = None,
         metrics_prefix: str = "eval",
         show_progress: bool = False,
-        output_path: str | pathlib.Path | None = None,
         iteration: int | None = 0,
     ):
         """Execute the evaluation loop for all provided datasets.
@@ -208,7 +210,6 @@ class Evaluator:
             all_metrics_configs: Root metrics configuration mapping dataset names to configs.
             metrics_prefix: Prefix for metric groups (e.g., "eval" or "metrics").
             show_progress: Whether to show a progress bar.
-            output_path: Base path for saving evaluation checkpoints (if eval_checkpointing is set).
             iteration: Current training iteration, used for naming checkpoints.
 
         Returns:
@@ -217,15 +218,6 @@ class Evaluator:
         model.eval()
         total_metrics = {}
         all_metrics_configs = all_metrics_configs or {}
-
-        if output_path is not None:
-            output_path = pathlib.Path(output_path)
-            output_path.mkdir(parents=True, exist_ok=True)
-
-        eval_checkpoints_path = self.get_eval_checkpoints_path(
-            output_path=str(output_path),
-            iteration=iteration if iteration is not None else 0,
-        )
 
         eval_data_dict_keys = sorted(eval_data_dict.keys())
         for eval_name in eval_data_dict_keys:
@@ -270,25 +262,20 @@ class Evaluator:
                 torch.no_grad(),
                 meters_group(group_name, log_freq=1, force_recreate=True),
             ):
+                iterations = 0
+                if self.eval_checkpoint_manager is not None and iteration is not None:
+                    iterations = self.eval_checkpoint_manager.load_iteration_state(
+                        iteration=iteration,
+                        eval_name=eval_name,
+                        group_name=group_name,
+                        dataloader=dataloader,
+                        collective=collective,
+                    )
+
                 log_event_start("perf/total_run")
                 start_time = time.perf_counter()
 
-                checkpoint = self.get_metrics_checkpoint(
-                    eval_checkpoints_path=eval_checkpoints_path,
-                    eval_name=eval_name,
-                )
-                if checkpoint is not None:
-                    meters_load_state_dict(
-                        {
-                            group_name: checkpoint["state_dict"],
-                        }
-                    )
-                    dataloader.load_state_dict(checkpoint["dataloader_state"])
-                    eval_iter = iter(dataloader)
-                    iterations = checkpoint["iteration"]
-                else:
-                    eval_iter = iter(dataloader)
-                    iterations = 0
+                eval_iter = iter(dataloader)
 
                 pbar = None
                 if show_progress:
@@ -303,6 +290,7 @@ class Evaluator:
                             if max_iterations_local is not None
                             else None
                         ),
+                        initial=iterations,
                     )
 
                 check_exhaustion = (
@@ -401,23 +389,23 @@ class Evaluator:
                         )
 
                         if (
-                            eval_checkpoints_path is not None
+                            self.eval_checkpoint_manager is not None
                             and eval_checkpointing is not None
                             and eval_checkpointing > 0
                             and iterations % eval_checkpointing == 0
                         ):
-                            checkpoint_state = {
-                                "iteration": iterations,
-                                "state_dict": meters_state_dict()[group_name],
-                                "dataloader_state": dataloader.state_dict(),
-                            }
-                            checkpoint_path = (
-                                pathlib.Path(eval_checkpoints_path)
-                                / f"{eval_name}_metrics_checkpoint.pt"
+                            assert (
+                                iteration is not None
+                            ), "Iteration must be provided for checkpointing"
+                            self.eval_checkpoint_manager.save_iteration_state(
+                                iteration=iteration,
+                                eval_name=eval_name,
+                                dataloader_state=dataloader.state_dict(),
+                                group_name=group_name,
+                                collective=collective,
                             )
-                            torch.save(checkpoint_state, checkpoint_path)
                             logger.info(
-                                f"Saved evaluation metrics checkpoint at iteration {iterations} to {checkpoint_path}"
+                                f"Saved evaluation metrics checkpoint at iteration {iterations}"
                             )
 
                 except StopIteration:
@@ -451,35 +439,23 @@ class Evaluator:
             total_metrics[f"{metrics_prefix}/{eval_name}"] = eval_metrics
         return total_metrics
 
-    def get_metrics_checkpoint(
-        self,
-        eval_checkpoints_path: str | None,
-        eval_name: str,
-        collective: Collective | None = None,
-    ) -> dict | None:
-        """Load checkpoint for evaluation."""
-        if eval_checkpoints_path is not None:
-            rank = collective.rank if collective is not None else 0
-            checkpoint_path = (
-                pathlib.Path(eval_checkpoints_path)
-                / f"{eval_name}_metrics_checkpoint_rank_{rank}.pt"
-            )
-            if checkpoint_path.exists():
-                logger.info(
-                    f"Loading evaluation metrics checkpoint from {checkpoint_path}"
-                )
-                return torch.load(checkpoint_path, weights_only=False)
-            else:
-                logger.debug(
-                    f"No evaluation metrics checkpoint found at {checkpoint_path}"
-                )
-        return None
+    def cleanup_all_eval_checkpoints(
+        self, iteration: int | None = None, exclude_iteration: int | None = None
+    ) -> None:
+        """Cleanup evaluation checkpoints.
 
-    def get_eval_checkpoints_path(self, output_path: str, iteration: int) -> str:
-        """Construct checkpoint path for evaluation checkpoints."""
-        eval_chkp_dir = pathlib.Path(output_path) / f"eval_checkpoints_iter_{iteration}"
-        eval_chkp_dir.mkdir(exist_ok=True, parents=True)
-        return str(eval_chkp_dir)
+        If iteration is provided, cleans up checkpoints for that iteration only.
+        If iteration is None, cleans up ALL evaluation checkpoints in the output path,
+        optionally excluding one specific iteration.
+        """
+        if self.eval_checkpoint_manager is not None:
+            self.eval_checkpoint_manager.cleanup(
+                iteration=iteration, exclude_iteration=exclude_iteration
+            )
+        else:
+            logger.debug(
+                "No evaluation checkpoint manager initialized, skipping cleanup."
+            )
 
 
 _, register_evaluator, build_evaluator = make_registry("evaluator", Evaluator)

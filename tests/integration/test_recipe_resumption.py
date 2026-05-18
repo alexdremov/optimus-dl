@@ -19,10 +19,9 @@ class MockTrainRecipe(TrainRecipe):
         self.logger_manager = MagicMock()
         self.evaluate_and_log = MagicMock()
         self.save_checkpoint_if_needed = MagicMock()
-        self.cleanup_eval_checkpoints = MagicMock()
-        self.eval_checkpoints_path = MagicMock(
-            return_value="/tmp/mock/eval_checkpoints_iter_4"
-        )
+
+        self.evaluator = MagicMock()
+        self.evaluator.cleanup_all_eval_checkpoints = MagicMock()
 
         self.build_model = MagicMock()
         self.build_optimizer = MagicMock()
@@ -80,11 +79,12 @@ def test_dirty_checkpoint_resumption():
     ].kwargs  # first call should be for resumption
     assert kwargs["iteration"] == 4
     assert kwargs["save_checkpoint"] is None
-    assert kwargs["eval_checkpoints_path"] == "/tmp/mock/eval_checkpoints_iter_4"
 
     assert recipe.save_checkpoint_if_needed.called
     save_kwargs = recipe.save_checkpoint_if_needed.call_args_list[0].kwargs
     assert save_kwargs["iteration"] == 4
     assert save_kwargs["extra_metadata"] == {"eval_finished": True}
+    assert save_kwargs["metadata_only"] is True
 
-    assert recipe.cleanup_eval_checkpoints.called
+    assert recipe.evaluator.cleanup_all_eval_checkpoints.called
+    recipe.evaluator.cleanup_all_eval_checkpoints.assert_called_with(4)

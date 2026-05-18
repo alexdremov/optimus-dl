@@ -1,7 +1,6 @@
 import gc
 import logging
 import pathlib
-import shutil
 
 import torch
 from torch.optim import Optimizer
@@ -137,6 +136,7 @@ class TrainRecipe(
             eval_freq=cfg.common.eval_freq,
             eval_iterations=cfg.common.eval_iterations,
             eval_guaranteed_same_batches=cfg.common.eval_guaranteed_same_batches,
+            output_path=cfg.common.output_path,
         )
         assert self.evaluator is not None, "Evaluator not initialized"
 
@@ -290,7 +290,6 @@ class TrainRecipe(
         collective,
         device,
         save_checkpoint=None,
-        output_path=None,
     ):
         metrics = self.run_evaluation_if_needed(
             iteration=iteration,
@@ -303,7 +302,6 @@ class TrainRecipe(
             all_metrics_configs=self.cfg.metrics,
             device=device,
             save_checkpoint=save_checkpoint,
-            output_path=output_path,
         )
         if metrics and collective.is_master:
             for eval_name, eval_metrics in metrics.items():
@@ -490,28 +488,39 @@ class TrainRecipe(
         logger.info("All ranks are ready")
 
         if not finished_run:
+            # Determine if we need to keep any evaluation checkpoints for resumption
+            iteration_to_keep = None
             if metadata is not None and not metadata.get("eval_finished", True):
-                logger.info(
-                    "Previous checkpoint was saved before evaluation, running evaluation before resuming training..."
+                iteration_to_keep = metadata["iteration"]
+
+            # Global cleanup of evaluation checkpoints, preserving only the one needed for resumption
+            if collective.is_master:
+                self.evaluator.cleanup_all_eval_checkpoints(
+                    exclude_iteration=iteration_to_keep
                 )
-                iteration = metadata["iteration"]
+            collective.barrier()
+
+            if iteration_to_keep is not None:
+                logger.info(
+                    f"Previous checkpoint (iter {iteration_to_keep}) was saved before evaluation, running evaluation before resuming training..."
+                )
                 self.evaluate_and_log(
-                    iteration=iteration,
+                    iteration=iteration_to_keep,
                     model=model,
                     criterion=criterion,
                     eval_datapipeline=eval_datapipeline,
                     collective=collective,
                     device=device,
-                    save_checkpoint=None,  # Avoid saving another checkpoint before evaluation
-                    output_path=self.cfg.common.output_path,
+                    save_checkpoint=None,  # Avoid saving another heavy checkpoint
                 )
                 self.save_checkpoint_if_needed(
-                    iteration=iteration,
+                    iteration=iteration_to_keep,
                     force_save=True,
                     **common_chkp_kwargs,
                     extra_metadata={"eval_finished": True},
+                    metadata_only=True,
                 )
-                self.cleanup_all_eval_checkpoints(collective)
+                self.evaluator.cleanup_all_eval_checkpoints(iteration_to_keep)
 
             pbar = trange(
                 start_iteration,
@@ -572,8 +581,10 @@ class TrainRecipe(
                         f"Running evaluation if needed for iteration {iteration}"
                     )
 
-                    def save_checkpoint(iteration=iteration):
-                        logger.debug(f"Saving checkpoint for iteration {iteration}...")
+                    def save_checkpoint_callback(iteration=iteration):
+                        logger.debug(
+                            f"Saving pre-evaluation checkpoint for iteration {iteration}..."
+                        )
                         self.save_checkpoint_if_needed(
                             iteration=iteration,
                             force_save=True,
@@ -591,22 +602,29 @@ class TrainRecipe(
                         eval_datapipeline=eval_datapipeline,
                         collective=collective,
                         device=device,
-                        save_checkpoint=save_checkpoint,
-                        output_path=self.cfg.common.output_path,
+                        save_checkpoint=save_checkpoint_callback,
                     )
-                    eval_finished = metrics is not None
+                    eval_ran = metrics is not None
 
-                    logger.debug(
-                        f"Saving checkpoint if needed for iteration {iteration}"
-                    )
-                    self.save_checkpoint_if_needed(
-                        iteration=iteration,
-                        force_save=eval_finished,
-                        **common_chkp_kwargs,
-                        extra_metadata={"eval_finished": True},
-                    )
-                    if eval_finished:
-                        self.cleanup_all_eval_checkpoints(collective)
+                    if eval_ran:
+                        logger.debug(
+                            f"Saving post-evaluation metadata-only checkpoint for iteration {iteration}"
+                        )
+                        self.save_checkpoint_if_needed(
+                            iteration=iteration,
+                            force_save=True,
+                            **common_chkp_kwargs,
+                            extra_metadata={"eval_finished": True},
+                            metadata_only=True,
+                        )
+                        self.evaluator.cleanup_all_eval_checkpoints(iteration)
+                    else:
+                        # Regular checkpointing if no evaluation ran
+                        self.save_checkpoint_if_needed(
+                            iteration=iteration,
+                            **common_chkp_kwargs,
+                            extra_metadata={"eval_finished": True},
+                        )
 
                 except KeyboardInterrupt:
                     logger.info("Training interrupted by user")
@@ -641,14 +659,3 @@ class TrainRecipe(
         gc.collect()
         collective.close()
         logger.info("Training run complete")
-
-    def cleanup_all_eval_checkpoints(self, collective) -> None:
-        """Cleanup evaluation checkpoints for future iterations to prevent confusion."""
-        if collective.is_master:
-            output_path = pathlib.Path(self.cfg.common.output_path)
-            for eval_chkp_dir in output_path.glob("eval_checkpoints_iter_*"):
-                shutil.rmtree(eval_chkp_dir)
-                logger.info(
-                    f"Cleaned up evaluation checkpoint directory: {eval_chkp_dir}"
-                )
-        collective.barrier()
