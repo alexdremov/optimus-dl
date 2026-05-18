@@ -289,7 +289,7 @@ class TrainRecipe(
         collective,
         device,
         save_checkpoint=None,
-        eval_checkpoints_path=None,
+        output_path=None,
     ):
         metrics = self.run_evaluation_if_needed(
             iteration=iteration,
@@ -302,7 +302,7 @@ class TrainRecipe(
             all_metrics_configs=self.cfg.metrics,
             device=device,
             save_checkpoint=save_checkpoint,
-            eval_checkpoints_path=eval_checkpoints_path,
+            output_path=output_path,
         )
         if metrics and collective.is_master:
             for eval_name, eval_metrics in metrics.items():
@@ -492,7 +492,6 @@ class TrainRecipe(
                     "Previous checkpoint was saved before evaluation, running evaluation before resuming training..."
                 )
                 iteration = metadata["iteration"]
-                eval_path = self.eval_checkpoints_path(iteration)
                 self.evaluate_and_log(
                     iteration=iteration,
                     model=model,
@@ -501,7 +500,7 @@ class TrainRecipe(
                     collective=collective,
                     device=device,
                     save_checkpoint=None,  # Avoid saving another checkpoint before evaluation
-                    eval_checkpoints_path=eval_path,
+                    output_path=self.cfg.common.output_path,
                 )
                 self.save_checkpoint_if_needed(
                     iteration=iteration,
@@ -639,15 +638,6 @@ class TrainRecipe(
         gc.collect()
         collective.close()
         logger.info("Training run complete")
-
-    def eval_checkpoints_path(self, iteration: int) -> str:
-        """Construct checkpoint path for evaluation checkpoints."""
-        eval_chkp_dir = (
-            pathlib.Path(self.cfg.common.output_path)
-            / f"eval_checkpoints_iter_{iteration}"
-        )
-        eval_chkp_dir.mkdir(exist_ok=True, parents=True)
-        return str(eval_chkp_dir)
 
     def cleanup_eval_checkpoints(self, iteration: int, collective) -> None:
         """Cleanup evaluation checkpoints for a given iteration."""
