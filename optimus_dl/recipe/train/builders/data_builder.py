@@ -153,10 +153,13 @@ class DataBuilder:
             }
             actual_keys = set(v._asdict().keys())
 
-            assert expected_keys == actual_keys, (
-                f"EvalDataPipeline for dataset '{k}' is missing expected keys. "
-                f"Expected keys: {expected_keys}, actual keys: {actual_keys}"
-            )
+            if not expected_keys.issubset(actual_keys):
+                missing_keys = expected_keys - actual_keys
+                raise ValueError(
+                    f"EvalDataPipeline for dataset '{k}' is missing required keys. "
+                    f"Missing keys: {missing_keys}, expected keys: {expected_keys}, "
+                    f"actual keys: {actual_keys}"
+                )
 
         logger.debug(f"Built {len(eval_data)} eval data pipelines")
         return eval_data
