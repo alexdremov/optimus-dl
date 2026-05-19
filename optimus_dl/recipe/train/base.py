@@ -322,7 +322,7 @@ class TrainRecipe(
 
             return metrics
         except Exception as e:
-            logger.error(f"Evaluation failed at iteration {iteration}: {e}")
+            logger.exception(f"Evaluation failed at iteration {iteration}: {e}")
             raise
 
     def run(self):
