@@ -399,13 +399,17 @@ class TrainRecipe(
 
             # Try to resume from checkpoint in output paths
             logger.debug("Checking for existing checkpoints to load...")
+            common_chkp_kwargs = {
+                "model": model,
+                "optimizer": optimizer,
+                "collective": collective,
+                "lr_scheduler": lr_scheduler,
+                "data_loaders": data_loaders,
+                "data_sources": train_datapipeline.datasets,
+                "grad_scaler": training_context["scaler"],
+            }
             start_iteration, metadata = self.load_checkpoint_if_exists(
-                model=model,
-                optimizer=optimizer,
-                lr_scheduler=lr_scheduler,
-                data_loaders=data_loaders,
-                collective=collective,
-                data_sources=train_datapipeline.datasets,
+                **common_chkp_kwargs
             )
             if is_restart:
                 # cases when training run but did not produce any artifacts is
@@ -420,12 +424,7 @@ class TrainRecipe(
                     f"Loading checkpoint from {self.cfg.common.load_checkpoint}..."
                 )
                 metadata = self.load_checkpoint(
-                    model=model,
-                    optimizer=optimizer,
-                    lr_scheduler=lr_scheduler,
-                    data_loaders=data_loaders,
-                    data_sources=train_datapipeline.datasets,
-                    collective=collective,
+                    **common_chkp_kwargs,
                     load_strategy=self.cfg.common.load_checkpoint_strategy,
                     checkpoint_path=self.cfg.common.load_checkpoint,
                 )
@@ -462,16 +461,6 @@ class TrainRecipe(
         )
         if collective.is_local_master:
             self.log_metrics_to_loggers(init_metrics, start_iteration, "init")
-
-        common_chkp_kwargs = {
-            "model": model,
-            "optimizer": optimizer,
-            "collective": collective,
-            "lr_scheduler": lr_scheduler,
-            "data_loaders": data_loaders,
-            "data_sources": train_datapipeline.datasets,
-            "grad_scaler": training_context["scaler"],
-        }
 
         logger.debug("Initializing training data iterator...")
         train_data_iter = iter(train_datapipeline.dataloader)
