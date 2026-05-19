@@ -101,7 +101,7 @@ class DummyDataset(BaseDataset):
         x = torch.arange(1, 10, dtype=torch.long).broadcast_to((2, -1)) * (
             (self.current + self.rank) % 100
         )
-        target = torch.zeros(2, 10, dtype=torch.long)
+        target = torch.zeros_like(x)
         batch = {"input_ids": x, "labels": target}
         self.current += 1
         return batch

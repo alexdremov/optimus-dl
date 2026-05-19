@@ -113,7 +113,7 @@ class Evaluator:
     def should_run_evaluation(
         self,
         iteration: int,
-        eval_data_dict: dict[str, EvalDataPipeline],
+        eval_data_dict: dict[str, EvalDataPipeline | None],
     ) -> bool:
         """Check if any of the evaluation datasets match the current iteration frequency.
 
@@ -125,6 +125,8 @@ class Evaluator:
             True if at least one evaluation should run, False otherwise.
         """
         for eval_data in eval_data_dict.values():
+            if eval_data is None:
+                continue
             eval_freq = (
                 eval_data.eval_freq
                 if eval_data.eval_freq is not None

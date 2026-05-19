@@ -137,7 +137,7 @@ class EvaluationCheckpointManager:
             # Restore dataloader state
             assert hasattr(
                 eval_iter, "reset"
-            ), "Dataloader does not support load_state_dict"
+            ), "eval_iter must be a valid torchdata iterator with a reset() method to load dataloader state"
             eval_iter.reset(state["dataloader_state"])
 
             logger.info(
