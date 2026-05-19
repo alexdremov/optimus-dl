@@ -23,7 +23,10 @@ from optimus_dl.modules.data.datasets import register_dataset
 from optimus_dl.modules.data.datasets.base import BaseDataset
 from optimus_dl.modules.distributed import build_best_collective
 from optimus_dl.modules.distributed.config import DistributedConfig
-from optimus_dl.modules.metrics import reset_meters
+from optimus_dl.modules.metrics import (
+    log_gathered,
+    reset_meters,
+)
 from optimus_dl.modules.model.base import BaseModel
 from optimus_dl.recipe.train.mixins.managers.evaluation_manager import (
     Evaluator,
@@ -39,15 +42,17 @@ class DummyModel(BaseModel):
 
     def forward(self, batch=None, input_ids=None, **kwargs):
         if batch is not None and "input_ids" in batch:
-            from optimus_dl.modules.metrics.common import log_gathered
-
-            # Log the tokens mean in the batch to identify it
-            # Use reset=False so it accumulates across the entire evaluation run
-            log_gathered("batch_ids", batch["input_ids"][0].mean().item(), reset=False)
-            x = batch["input_ids"]
+            ids = batch["input_ids"]
+        elif input_ids is not None:
+            ids = input_ids
         else:
-            x = input_ids
-        x = self.embedding(x)
+            ids = kwargs.get("input_ids")
+
+        # Log the tokens mean in the batch to identify it
+        # Use reset=False so it accumulates across the entire evaluation run
+        log_gathered("batch_ids", ids.float().mean().item(), reset=False)
+
+        x = self.embedding(ids)
         return {"logits": self.linear(x)}
 
     def apply_tp(self, mesh, **kwargs):
