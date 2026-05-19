@@ -1,5 +1,6 @@
 import logging
 import pathlib
+import shutil
 from typing import Any
 
 import torch
@@ -117,9 +118,18 @@ class EvaluationCheckpointManager:
             logger.info(f"Loading evaluation checkpoint from {checkpoint_path}")
             state = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
-            assert state["iteration"] == iteration, "Checkpoint iteration mismatch"
-            assert state["eval_name"] == eval_name, "Checkpoint eval_name mismatch"
-            assert state["rank"] == rank, "Checkpoint rank mismatch"
+            assert (
+                state["iteration"] == iteration
+            ), f"Checkpoint iteration mismatch: expected {iteration}, got {state['iteration']}"
+            assert (
+                state["eval_name"] == eval_name
+            ), f"Checkpoint eval_name mismatch: expected {eval_name}, got {state['eval_name']}"
+            assert (
+                state["rank"] == rank
+            ), f"Checkpoint rank mismatch: expected {rank}, got {state['rank']}"
+            assert (
+                state["group_name"] == group_name
+            ), f"Checkpoint group_name mismatch: expected {group_name}, got {state['group_name']}"
 
             # Restore meters state
             meters_load_state_dict({group_name: state["meters_state"]})
@@ -155,8 +165,6 @@ class EvaluationCheckpointManager:
             if iteration is not None:
                 eval_dir = self.get_eval_checkpoints_dir(iteration)
                 if eval_dir.exists():
-                    import shutil
-
                     shutil.rmtree(eval_dir)
                     logger.info(
                         f"Cleaned up evaluation checkpoints for iteration {iteration}"
@@ -179,9 +187,6 @@ class EvaluationCheckpointManager:
                         logger.warning(
                             f"Could not parse iteration from directory name: {eval_dir}"
                         )
-
-                    import shutil
-
                     shutil.rmtree(eval_dir)
                     logger.info(
                         f"Cleaned up evaluation checkpoint directory: {eval_dir}"
