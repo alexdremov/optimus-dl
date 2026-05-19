@@ -358,8 +358,6 @@ class Evaluator:
                                 f"Eval {eval_name}: Fetching batch for iteration {eval_iterations_processed}"
                             )
                             elapsed_batch_get, batch = measured_next(eval_iter)
-                            if eval_iterations_processed == 13:
-                                print([i.sum().item() for i in batch["labels"]])
                             info_once(logger, f"Batch has keys {batch.keys()}")
                         except StopIteration:
                             logger.debug(
