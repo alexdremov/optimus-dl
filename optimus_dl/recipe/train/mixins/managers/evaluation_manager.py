@@ -4,7 +4,6 @@ import contextlib
 import logging
 import pathlib
 import time
-from collections.abc import Callable
 from dataclasses import (
     dataclass,
     field,
@@ -111,6 +110,30 @@ class Evaluator:
         else:
             yield
 
+    def should_run_evaluation(
+        self,
+        iteration: int,
+        eval_data_dict: dict[str, EvalDataPipeline],
+    ) -> bool:
+        """Check if any of the evaluation datasets match the current iteration frequency.
+
+        Args:
+            iteration: Current training step.
+            eval_data_dict: Dictionary mapping dataset names to eval data pipelines.
+
+        Returns:
+            True if at least one evaluation should run, False otherwise.
+        """
+        for eval_data in eval_data_dict.values():
+            eval_freq = (
+                eval_data.eval_freq
+                if eval_data.eval_freq is not None
+                else self.eval_freq
+            )
+            if eval_freq > 0 and iteration % eval_freq == 0:
+                return True
+        return False
+
     def run_evaluation_if_needed(
         self,
         iteration: int,
@@ -120,9 +143,8 @@ class Evaluator:
         device: torch.device,
         collective: Collective | None = None,
         all_metrics_configs: dict[str, list[dict]] | None = None,
-        save_checkpoint: Callable | None = None,
     ) -> None | dict:
-        """Run evaluation if the current iteration matches the frequency.
+        """Run evaluation if the current iteration matches the frequency for any dataset.
 
         Args:
             iteration: Current training step.
@@ -131,7 +153,6 @@ class Evaluator:
             eval_data_dict: Dictionary mapping dataset names to dataloaders.
             collective: Distributed collective for metric aggregation.
             all_metrics_configs: Root metrics configuration from TrainConfig.
-            save_checkpoint: Callable to save a checkpoint before evaluation.
 
         Returns:
             Dictionary of computed metrics if evaluation ran, else None.
@@ -140,7 +161,6 @@ class Evaluator:
 
         # deterministic order
         eval_data_dict_keys = sorted(eval_data_dict.keys())
-        saved_checkpoint = False
         for eval_name in eval_data_dict_keys:
             eval_data = eval_data_dict[eval_name]
 
@@ -159,10 +179,6 @@ class Evaluator:
             )
             if eval_freq <= 0 or iteration % eval_freq != 0:
                 continue
-
-            if not saved_checkpoint and save_checkpoint is not None:
-                save_checkpoint()
-                saved_checkpoint = True
 
             result |= self.run_evaluation(
                 iteration=iteration,
@@ -294,21 +310,36 @@ class Evaluator:
                     collective is not None and not guaranteed_same_batches_local
                 )
 
-                stop_flag = None
-                if check_exhaustion:
-                    assert collective is not None
-                    stop_flag = torch.tensor(
-                        [False],
-                        device=collective.default_device,
-                        dtype=torch.int32,
+                def should_stop(_iterations, max_iterations_local=max_iterations_local):
+                    return (
+                        max_iterations_local is not None
+                        and max_iterations_local > 0
+                        and _iterations >= max_iterations_local
                     )
 
                 try:
-                    while (
-                        max_iterations_local is None
-                        or max_iterations_local < 0
-                        or iterations < max_iterations_local
-                    ):
+                    # Consider we loaded state where one rank is already exhausted.
+                    # We should check it before starting the loop to have the same collectives set.
+
+                    stop_flag = None
+                    if check_exhaustion:
+                        assert collective is not None
+                        stop_flag = torch.tensor(
+                            [int(should_stop(iterations))],
+                            device=collective.default_device,
+                            dtype=torch.int32,
+                        )
+                        collective.all_reduce(
+                            stop_flag,
+                            op=Collective.ReduceOp.MAX,
+                        )
+                        if stop_flag.item() == 1:
+                            logger.info(
+                                "Some ranks have already finished evaluation before starting the loop, stopping immediately."
+                            )
+                            raise StopIteration
+
+                    while not should_stop(iterations):
                         logger.debug(
                             f"Eval {eval_name}: Starting iteration {iterations}"
                         )

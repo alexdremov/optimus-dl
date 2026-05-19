@@ -98,7 +98,9 @@ class DummyDataset(BaseDataset):
         if self.current >= self.size:
             raise StopIteration
         # deterministic output based on current
-        x = torch.ones(2, 10, dtype=torch.long) * ((self.current + self.rank) % 100)
+        x = torch.arange(1, 10, dtype=torch.long).broadcast_to((2, -1)) * (
+            (self.current + self.rank) % 100
+        )
         target = torch.zeros(2, 10, dtype=torch.long)
         batch = {"input_ids": x, "labels": target}
         self.current += 1
