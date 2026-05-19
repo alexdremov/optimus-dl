@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 from dataclasses import (
@@ -279,8 +280,10 @@ class TokenizedDataset(BaseDataset):
 
     def get_state(self):
         """Return state for checkpointing."""
-        return {
-            "rank": self.rank,
-            "world_size": self.world_size,
-            "strategy_state": self.strategy.get_state(),
-        }
+        return copy.deepcopy(
+            {
+                "rank": self.rank,
+                "world_size": self.world_size,
+                "strategy_state": self.strategy.get_state(),
+            }
+        )

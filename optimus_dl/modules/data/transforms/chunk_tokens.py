@@ -1,3 +1,4 @@
+import copy
 import logging
 from dataclasses import dataclass
 
@@ -53,11 +54,13 @@ class ChunkTransformNode(BaseNode):
 
     def get_state(self):
         """Collect current buffer and source state for checkpointing."""
-        return {
-            "buffer": self.buffer,
-            "cfg": self.cfg,
-            "source_state": self.node.state_dict(),
-        }
+        return copy.deepcopy(
+            {
+                "buffer": self.buffer,
+                "cfg": self.cfg,
+                "source_state": self.node.state_dict(),
+            }
+        )
 
     def next(self):
         """Yield the next chunk of tokens, refilling the buffer if empty."""
