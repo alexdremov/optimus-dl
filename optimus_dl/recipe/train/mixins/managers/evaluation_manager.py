@@ -193,7 +193,7 @@ class Evaluator:
                     device=device,
                 )
             except Exception as e:
-                logger.error(
+                logger.exception(
                     f"Error during evaluation of {eval_name} at iteration {iteration}: {e}"
                 )
                 raise
