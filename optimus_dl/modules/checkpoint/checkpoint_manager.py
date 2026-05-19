@@ -215,10 +215,13 @@ class CheckpointManager:
         checkpoint_path: str | Path,
         save_freq: int,
         last_save_freq: int | None,
+        force_save: bool = False,
         **kwargs: Any,
     ) -> bool:
         """Save checkpoint if iteration matches save_freq."""
-        is_save_persistent = save_freq > 0 and iteration % save_freq == 0
+        is_save_persistent = (
+            save_freq > 0 and iteration % save_freq == 0
+        ) or force_save
         if last_save_freq is None:
             is_save_last = is_save_persistent
         else:
@@ -253,6 +256,8 @@ class CheckpointManager:
         iteration: int = 0,
         lr_scheduler=None,
         data_loaders: dict | None = None,
+        extra_metadata: dict | None = None,
+        metadata_only: bool = False,
         **kwargs: Any,
     ) -> None:
         """Save training checkpoint using distributed checkpoint API.
@@ -266,7 +271,9 @@ class CheckpointManager:
             iteration: Current training iteration
             lr_scheduler: Optional LR scheduler to save
             data_loaders: Optional data loaders to save state
-            **kwargs: Additional metadata to save
+            extra_metadata: Extra metadata to save in global metadata file
+            metadata_only: If True, only save metadata (skip model/optimizer save)
+            **kwargs: Additional metadata to save per-rank
         """
         if not isinstance(checkpoint_path, Path):
             checkpoint_path = Path(checkpoint_path)
@@ -279,18 +286,24 @@ class CheckpointManager:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        logger.info(f"Saving state for model and optimizer at iteration {iteration}")
-        model_state_dict = dcp_state_dict.get_model_state_dict(
-            model, options=dcp_state_dict.StateDictOptions()
-        )
-
-        state_dict = {
-            "model": model_state_dict,
-        }
-        if optimizer is not None:
-            state_dict["optimizer"] = dcp_state_dict.get_optimizer_state_dict(
-                model, optimizer, options=dcp_state_dict.StateDictOptions()
+        if not metadata_only:
+            logger.info(
+                f"Saving state for model and optimizer at iteration {iteration}"
             )
+            model_state_dict = dcp_state_dict.get_model_state_dict(
+                model, options=dcp_state_dict.StateDictOptions()
+            )
+
+            state_dict = {
+                "model": model_state_dict,
+            }
+            if optimizer is not None:
+                state_dict["optimizer"] = dcp_state_dict.get_optimizer_state_dict(
+                    model, optimizer, options=dcp_state_dict.StateDictOptions()
+                )
+        else:
+            logger.info(f"Saving metadata only at iteration {iteration}")
+            state_dict = {}
 
         # Add metadata
         kwargs_states = {}
@@ -313,6 +326,13 @@ class CheckpointManager:
         if lr_scheduler is not None:
             logger.info("Saving lr_scheduler")
             metadata["lr_scheduler"] = lr_scheduler.state_dict()
+
+        if extra_metadata is not None:
+            for key, value in extra_metadata.items():
+                assert (
+                    key not in metadata
+                ), f"Extra metadata key {key} conflicts with existing metadata keys"
+                metadata[key] = value
 
         # Save using distributed checkpoint API
         should_symlink_last = True
@@ -343,11 +363,17 @@ class CheckpointManager:
 
         tmp_paths_to_check = (per_rank_metadata_tmp,)
         if collective.is_master:
-            tmp_paths_to_check = (
-                checkpoint_id_tmp,
-                metadata_path_tmp,
-                per_rank_metadata_tmp,
-            )
+            if not metadata_only:
+                tmp_paths_to_check = (
+                    checkpoint_id_tmp,
+                    metadata_path_tmp,
+                    per_rank_metadata_tmp,
+                )
+            else:
+                tmp_paths_to_check = (
+                    metadata_path_tmp,
+                    per_rank_metadata_tmp,
+                )
 
         for path in tmp_paths_to_check:
             if path.exists():
@@ -362,12 +388,9 @@ class CheckpointManager:
         tmp_mappings = [(per_rank_metadata_path, per_rank_metadata_tmp)]
         if collective.is_master:
             # Only master does final renaming of metadata and checkpoint
-            tmp_mappings.extend(
-                [
-                    (metadata_path, metadata_path_tmp),
-                    (checkpoint_id, checkpoint_id_tmp),
-                ]
-            )
+            tmp_mappings.append((metadata_path, metadata_path_tmp))
+            if not metadata_only:
+                tmp_mappings.append((checkpoint_id, checkpoint_id_tmp))
 
         # Ensure all ranks have checked for existing files before any rank starts writing
         logger.info(
@@ -380,12 +403,26 @@ class CheckpointManager:
             "All ranks have checked for existing checkpoint files, proceeding with saving..."
         )
 
-        # All ranks save to temporary paths first
-        dcp_save(
-            state_dict=state_dict,
-            storage_writer=FileSystemWriter(checkpoint_id_tmp),
-            process_group=collective.process_group,
-        )
+        if not metadata_only:
+            # All ranks save to temporary paths first
+            dcp_save(
+                state_dict=state_dict,
+                storage_writer=FileSystemWriter(checkpoint_id_tmp),
+                process_group=collective.process_group,
+            )
+        else:
+            # If metadata only, we must ensure that checkpoint_id directory exists if we are going to symlink it
+            # But usually it should already exist from the pre-evaluation save.
+            # If it doesn't exist (e.g. force metadata-only save on first step), we might have issues.
+            if (
+                is_save_persistent
+                and not checkpoint_id.exists()
+                and collective.is_master
+            ):
+                checkpoint_id.mkdir(parents=True, exist_ok=True)
+                logger.warning(
+                    f"Metadata-only save: Created empty checkpoint directory {checkpoint_id}"
+                )
 
         if collective.is_master:
             # Save metadata separately
@@ -408,7 +445,7 @@ class CheckpointManager:
         # Save per-rank metadata
         torch.save(per_rank_metadata, per_rank_metadata_tmp)
         logger.info(
-            f"Checkpoint saved to {checkpoint_id_tmp} / {metadata_path_tmp} / {per_rank_metadata_tmp}"
+            f"Checkpoint saved to {checkpoint_id_tmp if not metadata_only else 'N/A'} / {metadata_path_tmp} / {per_rank_metadata_tmp}"
         )
 
         # Ensure all ranks have finished saving before renaming
@@ -422,11 +459,17 @@ class CheckpointManager:
             per_rank_metadata_path,
         )  # ranks check their own per-rank metadata path to avoid race conditions
         if collective.is_master:
-            final_paths_to_check = (
-                checkpoint_id,
-                metadata_path,
-                per_rank_metadata_path,
-            )  # master checks all paths to ensure they don't exist before saving, to prevent accidental overwrites
+            if metadata_only:
+                final_paths_to_check = (
+                    metadata_path,
+                    per_rank_metadata_path,
+                )
+            else:
+                final_paths_to_check = (
+                    checkpoint_id,
+                    metadata_path,
+                    per_rank_metadata_path,
+                )
 
         for path in final_paths_to_check:
             if path.exists():
@@ -451,9 +494,12 @@ class CheckpointManager:
                 checkpoint_path / f"per_rank_metadata_{rank}_latest.pt"
             )
 
-            to_delete = (latest_checkpoint, latest_metadata, latest_per_rank_metadata)
+            to_delete = [latest_metadata, latest_per_rank_metadata]
+            if not metadata_only:
+                to_delete.append(latest_checkpoint)
+
             if not collective.is_master:
-                to_delete = (latest_per_rank_metadata,)
+                to_delete = [latest_per_rank_metadata]
 
             for future_link in to_delete:
                 if future_link.is_symlink():
@@ -465,17 +511,19 @@ class CheckpointManager:
                         os.remove(future_link)
 
             if collective.is_master:
-                latest_checkpoint.symlink_to(checkpoint_id.name)
+                if not metadata_only:
+                    latest_checkpoint.symlink_to(checkpoint_id.name)
                 latest_metadata.symlink_to(metadata_path.name)
             latest_per_rank_metadata.symlink_to(per_rank_metadata_path.name)
 
             logger.info(
-                f"Symlinked: {latest_checkpoint} -> {checkpoint_id}, {latest_metadata} -> {metadata_path}, {latest_per_rank_metadata} -> {per_rank_metadata_path}"
+                f"Symlinked: {latest_checkpoint if not metadata_only else 'N/A'} -> {checkpoint_id if not metadata_only else 'N/A'}, {latest_metadata} -> {metadata_path}, {latest_per_rank_metadata} -> {per_rank_metadata_path}"
             )
 
         logger.info(
-            f"Checkpoint saved successfully, {checkpoint_id}, {per_rank_metadata_path}, {metadata_path}"
+            f"Checkpoint saved successfully, {checkpoint_id if not metadata_only else 'N/A'}, {per_rank_metadata_path}, {metadata_path}"
         )
+
         logger.info(
             f"{per_rank_metadata.keys() = } {metadata.keys() = } {state_dict.keys() = }"
         )

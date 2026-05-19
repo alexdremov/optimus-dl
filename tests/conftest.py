@@ -102,8 +102,9 @@ def is_port_in_use(port: int) -> bool:
 def unique_port(worker_id):
     if worker_id == "master":
         port = 29500
-    worker_num = int(worker_id.replace("gw", ""))
-    port = 29600 + worker_num
+    else:
+        worker_num = int(worker_id.replace("gw", ""))
+        port = 29600 + worker_num
 
     retries = 30
     while is_port_in_use(port):

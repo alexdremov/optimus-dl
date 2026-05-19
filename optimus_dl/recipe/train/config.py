@@ -93,6 +93,29 @@ class TrainRecipeConfig:
             "description": "Whether it is guaranteed that each DP rank sees the same number of batches during evaluation."
         },
     )
+    eval_checkpointing: int | None = field(
+        default=None,
+        metadata={
+            "description": "Frequency of saving checkpoints during evaluation. If None or non-positive (for example, 0), "
+            "do not save checkpoints during evaluation. This is useful for long evaluations to be able to resume "
+            "evaluation if it gets interrupted. "
+            "Saves are fast and light, as they only contain the state of the meters and dataloader, not the model or optimizer states."
+        },
+    )
+    eval_resumable: bool = field(
+        default=True,
+        metadata={
+            "description": "Whether to make evaluation resumable by saving a checkpoint before evaluation starts. "
+            "If True, a full checkpoint is saved before evaluation and a metadata-only checkpoint is saved after "
+            "evaluation completes. This ensures that if evaluation is interrupted, it can be resumed from the same "
+            "iteration without re-running training. "
+            "**Related**: `eval_checkpointing` should be set to a positive integer to save checkpoints during evaluation, "
+            "which allows resuming evaluation even if it gets interrupted in the middle of evaluation. "
+            "If `eval_checkpointing` is None or non-positive, no checkpoints will be saved during evaluation, "
+            "and if evaluation gets interrupted, it will have to be restarted from the beginning of evaluation."
+        },
+    )
+
     # Checkpointing
     save_freq: int = field(
         default=II(".eval_freq"),

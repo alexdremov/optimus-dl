@@ -3,9 +3,9 @@ Handles writing tokenized documents into sized-shards on disk
 and creating the final index file.
 """
 
+import copy
 import json
 import logging
-from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -58,13 +58,15 @@ class Sharder:
 
     def get_state(self) -> dict[str, Any]:
         """Returns the sharder's current state for checkpointing."""
-        return {
-            "shard_idx": self.shard_idx,
-            "file_metadata": self.file_metadata,
-            "total_tokens": self.total_tokens,
-            "current_shard_tokens": deepcopy(self.current_shard_tokens),
-            "current_shard_doc_lens": deepcopy(self.current_shard_doc_lens),
-        }
+        return copy.deepcopy(
+            {
+                "shard_idx": self.shard_idx,
+                "file_metadata": self.file_metadata,
+                "total_tokens": self.total_tokens,
+                "current_shard_tokens": self.current_shard_tokens,
+                "current_shard_doc_lens": self.current_shard_doc_lens,
+            }
+        )
 
     def load_state(self, state: dict[str, Any]):
         """Restores the sharder's state from a checkpoint."""

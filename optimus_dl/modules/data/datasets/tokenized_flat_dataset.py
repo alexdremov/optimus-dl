@@ -1,3 +1,4 @@
+import copy
 import math
 from dataclasses import (
     dataclass,
@@ -125,15 +126,17 @@ class TokenizedFlatDataset(BaseDataset):
 
     def get_state(self):
         """Return current token offset for checkpointing."""
-        return {
-            "files": self.files,
-            "index": self.index,
-            "limit": self.limit,
-            "seq_len": self.seq_len,
-            "batch_size": self.batch_size,
-            "rank": self.rank,
-            "world_size": self.world_size,
-        }
+        return copy.deepcopy(
+            {
+                "files": self.files,
+                "index": self.index,
+                "limit": self.limit,
+                "seq_len": self.seq_len,
+                "batch_size": self.batch_size,
+                "rank": self.rank,
+                "world_size": self.world_size,
+            }
+        )
 
     def _take_at_most(self, size):
         """Read at most `size` tokens from the current file, advancing the pointer."""

@@ -2,12 +2,15 @@
 
 import contextlib
 import logging
+import pathlib
 import time
 from dataclasses import (
     dataclass,
     field,
 )
-from typing import Any
+from typing import (
+    Any,
+)
 
 import torch
 
@@ -20,6 +23,9 @@ from optimus_dl.core.profile import measured_next
 from optimus_dl.core.registry import (
     RegistryConfig,
     make_registry,
+)
+from optimus_dl.modules.checkpoint.eval_checkpoint_manager import (
+    EvaluationCheckpointManager,
 )
 from optimus_dl.modules.criterion import BaseCriterion
 from optimus_dl.modules.data import EvalDataPipeline
@@ -71,12 +77,19 @@ class Evaluator:
         eval_freq: int = 0,
         eval_iterations: int | None = None,
         eval_guaranteed_same_batches: bool = False,
+        eval_checkpointing: int | None = None,
+        output_path: str | pathlib.Path | None = None,
         **kwargs: Any,
     ):
         self.cfg = cfg
         self.eval_freq = eval_freq
         self.eval_iterations = eval_iterations
         self.eval_guaranteed_same_batches = eval_guaranteed_same_batches
+        self.eval_checkpointing = eval_checkpointing
+        self.output_path = output_path
+        self.eval_checkpoint_manager = None
+        if output_path:
+            self.eval_checkpoint_manager = EvaluationCheckpointManager(output_path)
 
     @contextlib.contextmanager
     def forward_context(self, device: torch.device):
@@ -97,6 +110,32 @@ class Evaluator:
         else:
             yield
 
+    def should_run_evaluation(
+        self,
+        iteration: int,
+        eval_data_dict: dict[str, EvalDataPipeline | None],
+    ) -> bool:
+        """Check if any of the evaluation datasets match the current iteration frequency.
+
+        Args:
+            iteration: Current training step.
+            eval_data_dict: Dictionary mapping dataset names to eval data pipelines.
+
+        Returns:
+            True if at least one evaluation should run, False otherwise.
+        """
+        for eval_data in eval_data_dict.values():
+            if eval_data is None:
+                continue
+            eval_freq = (
+                eval_data.eval_freq
+                if eval_data.eval_freq is not None
+                else self.eval_freq
+            )
+            if eval_freq > 0 and iteration % eval_freq == 0:
+                return True
+        return False
+
     def run_evaluation_if_needed(
         self,
         iteration: int,
@@ -107,7 +146,7 @@ class Evaluator:
         collective: Collective | None = None,
         all_metrics_configs: dict[str, list[dict]] | None = None,
     ) -> None | dict:
-        """Run evaluation if the current iteration matches the frequency.
+        """Run evaluation if the current iteration matches the frequency for any dataset.
 
         Args:
             iteration: Current training step.
@@ -145,6 +184,7 @@ class Evaluator:
 
             try:
                 result |= self.run_evaluation(
+                    iteration=iteration,
                     model=model,
                     criterion=criterion,
                     eval_data_dict={eval_name: eval_data},
@@ -154,8 +194,11 @@ class Evaluator:
                     show_progress=True,
                     device=device,
                 )
-            except Exception:
-                logger.exception(f"Evaluation for {eval_name} failed.")
+            except Exception as e:
+                logger.exception(
+                    f"Error during evaluation of {eval_name} at iteration {iteration}: {e}"
+                )
+                raise
 
         if len(result) == 0:
             return None
@@ -165,13 +208,14 @@ class Evaluator:
         self,
         model: BaseModel,
         criterion: BaseCriterion,
-        eval_data_dict: dict,
+        eval_data_dict: dict[str, EvalDataPipeline],
         device: torch.device,
         max_iterations: int | None = None,
         collective: Collective | None = None,
         all_metrics_configs: dict[str, list[dict]] | None = None,
         metrics_prefix: str = "eval",
         show_progress: bool = False,
+        iteration: int | None = None,
     ):
         """Execute the evaluation loop for all provided datasets.
 
@@ -187,6 +231,7 @@ class Evaluator:
             all_metrics_configs: Root metrics configuration mapping dataset names to configs.
             metrics_prefix: Prefix for metric groups (e.g., "eval" or "metrics").
             show_progress: Whether to show a progress bar.
+            iteration: Current training iteration, used for naming checkpoints.
 
         Returns:
             Nested dictionary of results: {dataset_name: {metric_name: value}}.
@@ -211,6 +256,12 @@ class Evaluator:
             if max_iterations_local is not None and max_iterations_local < 0:
                 max_iterations_local = None
 
+            eval_checkpointing = (
+                eval_data.eval_checkpointing
+                if eval_data.eval_checkpointing is not None
+                else self.eval_checkpointing
+            )
+
             logger.info(
                 f"Running evaluation {eval_name} for {max_iterations_local if max_iterations_local is not None else 'unlimited'} iterations (on each rank)"
             )
@@ -227,17 +278,27 @@ class Evaluator:
                 engine = MetricEngine(f"{metrics_prefix}/{eval_name}", dataset_metrics)
                 requested_protocols = engine.required_external_protocols
 
+            group_name = f"{metrics_prefix}/{eval_name}"
             with (
                 torch.no_grad(),
-                meters_group(
-                    f"{metrics_prefix}/{eval_name}", log_freq=1, force_recreate=True
-                ),
+                meters_group(group_name, log_freq=1, force_recreate=True),
             ):
+                eval_iter = iter(dataloader)
+
+                eval_iterations_processed = 0
+                if self.eval_checkpoint_manager is not None and iteration is not None:
+                    eval_iterations_processed = (
+                        self.eval_checkpoint_manager.load_iteration_state(
+                            iteration=iteration,
+                            eval_name=eval_name,
+                            group_name=group_name,
+                            eval_iter=eval_iter,
+                            collective=collective,
+                        )
+                    )
+
                 log_event_start("perf/total_run")
                 start_time = time.perf_counter()
-
-                eval_iter = iter(dataloader)
-                iterations = 0
 
                 pbar = None
                 if show_progress:
@@ -252,35 +313,51 @@ class Evaluator:
                             if max_iterations_local is not None
                             else None
                         ),
+                        initial=eval_iterations_processed,
                     )
 
                 check_exhaustion = (
                     collective is not None and not guaranteed_same_batches_local
                 )
 
-                stop_flag = None
-                if check_exhaustion:
-                    assert collective is not None
-                    stop_flag = torch.tensor(
-                        [False],
-                        device=collective.default_device,
-                        dtype=torch.int32,
+                def should_stop(_iterations, max_iterations_local=max_iterations_local):
+                    return (
+                        max_iterations_local is not None
+                        and max_iterations_local > 0
+                        and _iterations >= max_iterations_local
                     )
 
                 try:
-                    while (
-                        max_iterations_local is None
-                        or max_iterations_local < 0
-                        or iterations < max_iterations_local
-                    ):
+                    # Consider we loaded state where one rank is already exhausted.
+                    # We should check it before starting the loop to have the same collectives set.
+
+                    stop_flag = None
+                    if check_exhaustion:
+                        assert collective is not None
+                        stop_flag = torch.tensor(
+                            [int(should_stop(eval_iterations_processed))],
+                            device=collective.default_device,
+                            dtype=torch.int32,
+                        )
+                        collective.all_reduce(
+                            stop_flag,
+                            op=Collective.ReduceOp.MAX,
+                        )
+                        if stop_flag.item() == 1:
+                            logger.info(
+                                "Some ranks have already finished evaluation before starting the loop, stopping immediately."
+                            )
+                            raise StopIteration
+
+                    while not should_stop(eval_iterations_processed):
                         logger.debug(
-                            f"Eval {eval_name}: Starting iteration {iterations}"
+                            f"Eval {eval_name}: Starting iteration {eval_iterations_processed}"
                         )
                         log_event_occurence("perf/full_iteration")
                         exhausted = False
                         try:
                             logger.debug(
-                                f"Eval {eval_name}: Fetching batch for iteration {iterations}"
+                                f"Eval {eval_name}: Fetching batch for iteration {eval_iterations_processed}"
                             )
                             elapsed_batch_get, batch = measured_next(eval_iter)
                             info_once(logger, f"Batch has keys {batch.keys()}")
@@ -317,7 +394,7 @@ class Evaluator:
                                 raise StopIteration
 
                         logger.debug(
-                            f"Eval {eval_name}: Running forward pass for iteration {iterations}"
+                            f"Eval {eval_name}: Running forward pass for iteration {eval_iterations_processed}"
                         )
                         with self.forward_context(device=device):
                             loss, exposed = criterion(
@@ -339,15 +416,36 @@ class Evaluator:
                             elapsed_batch_get,
                         )
 
-                        iterations += 1
+                        eval_iterations_processed += 1
                         if pbar is not None:
                             pbar.update(1)
 
                         # Step metrics for each evaluation iteration
                         step_meters(f"{metrics_prefix}/{eval_name}")
                         logger.debug(
-                            f"Eval {eval_name}: Finished iteration {iterations-1}"
+                            f"Eval {eval_name}: Finished iteration {eval_iterations_processed-1}"
                         )
+
+                        if (
+                            self.eval_checkpoint_manager is not None
+                            and eval_checkpointing is not None
+                            and eval_checkpointing > 0
+                            and eval_iterations_processed % eval_checkpointing == 0
+                        ):
+                            assert (
+                                iteration is not None
+                            ), "Iteration must be provided for checkpointing"
+                            self.eval_checkpoint_manager.save_iteration_state(
+                                iteration=iteration,
+                                eval_name=eval_name,
+                                dataloader_state=eval_iter.state_dict(),
+                                group_name=group_name,
+                                collective=collective,
+                                eval_iterations_processed=eval_iterations_processed,
+                            )
+                            logger.info(
+                                f"Saved evaluation metrics checkpoint at iteration {eval_iterations_processed}"
+                            )
 
                 except StopIteration:
                     pass
@@ -371,14 +469,34 @@ class Evaluator:
 
             # Add basic performance stats
             eval_metrics["perf/total_run_ms"] = total_time * 1000
-            if iterations > 0:
-                eval_metrics["perf/ms_per_batch"] = (total_time / iterations) * 1000
+            if eval_iterations_processed > 0:
+                eval_metrics["perf/ms_per_batch"] = (
+                    total_time / eval_iterations_processed
+                ) * 1000
 
             logger.info(
                 f"Finished eval {eval_name}: {eval_metrics} in {total_time:.1f}s"
             )
             total_metrics[f"{metrics_prefix}/{eval_name}"] = eval_metrics
         return total_metrics
+
+    def cleanup_all_eval_checkpoints(
+        self, iteration: int | None = None, exclude_iteration: int | None = None
+    ) -> None:
+        """Cleanup evaluation checkpoints.
+
+        If iteration is provided, cleans up checkpoints for that iteration only.
+        If iteration is None, cleans up ALL evaluation checkpoints in the output path,
+        optionally excluding one specific iteration.
+        """
+        if self.eval_checkpoint_manager is not None:
+            self.eval_checkpoint_manager.cleanup(
+                iteration=iteration, exclude_iteration=exclude_iteration
+            )
+        else:
+            logger.debug(
+                "No evaluation checkpoint manager initialized, skipping cleanup."
+            )
 
 
 _, register_evaluator, build_evaluator = make_registry("evaluator", Evaluator)

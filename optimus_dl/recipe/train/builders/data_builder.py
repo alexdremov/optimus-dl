@@ -133,12 +133,34 @@ class DataBuilder:
                     eval_freq=v.eval_freq,
                     eval_iterations=v.eval_iterations,
                     eval_guaranteed_same_batches=v.eval_guaranteed_same_batches,
+                    eval_checkpointing=v.eval_checkpointing,
                 )
                 if v is not None
                 else None
             )
             for k, v in eval_data.items()
         }
+        for k, v in eval_data.items():
+            if v is None:
+                continue
+            expected_keys = {
+                "datasets",
+                "dataloader",
+                "eval_freq",
+                "eval_iterations",
+                "eval_guaranteed_same_batches",
+                "eval_checkpointing",
+            }
+            actual_keys = set(v._asdict().keys())
+
+            if not expected_keys.issubset(actual_keys):
+                missing_keys = expected_keys - actual_keys
+                raise ValueError(
+                    f"EvalDataPipeline for dataset '{k}' is missing required keys. "
+                    f"Missing keys: {missing_keys}, expected keys: {expected_keys}, "
+                    f"actual keys: {actual_keys}"
+                )
+
         logger.debug(f"Built {len(eval_data)} eval data pipelines")
         return eval_data
 

@@ -386,14 +386,18 @@ class CompositeDataset(BaseDataset):
 
     def get_state(self) -> dict[str, Any]:
         """Collect current state for checkpointing."""
-        return {
-            self.DATASETS_EXHAUSTED_KEY: copy.deepcopy(self._datasets_exhausted),
-            self.DATASET_NODE_STATES_KEY: {
-                k: v.state_dict() for k, v in self.datasets.items()
-            },
-            self.EPOCH_KEY: self._epoch,
-            self.NUM_YIELDED_KEY: self._num_yielded,
-            self.WEIGHTED_SAMPLER_STATE_KEY: (
-                self._weighted_sampler.state_dict() if self._weighted_sampler else None
-            ),
-        }
+        return copy.deepcopy(
+            {
+                self.DATASETS_EXHAUSTED_KEY: self._datasets_exhausted,
+                self.DATASET_NODE_STATES_KEY: {
+                    k: v.state_dict() for k, v in self.datasets.items()
+                },
+                self.EPOCH_KEY: self._epoch,
+                self.NUM_YIELDED_KEY: self._num_yielded,
+                self.WEIGHTED_SAMPLER_STATE_KEY: (
+                    self._weighted_sampler.state_dict()
+                    if self._weighted_sampler
+                    else None
+                ),
+            }
+        )

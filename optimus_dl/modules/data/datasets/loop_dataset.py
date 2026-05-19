@@ -1,3 +1,4 @@
+import copy
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -89,4 +90,4 @@ class LoopDataset(BaseDataset):
         }
         if self.inner_dataset:
             state["inner_state"] = self.inner_dataset.state_dict()
-        return state
+        return copy.deepcopy(state)

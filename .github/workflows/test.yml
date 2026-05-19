@@ -149,6 +149,8 @@ jobs:
 
     - name: Test with pytest
       run: |
+        set -o pipefail
+
         export PATH=.venv/bin:$PATH
         export CI=true
         pytest -n 4 \

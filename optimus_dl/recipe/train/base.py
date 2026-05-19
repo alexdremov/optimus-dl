@@ -136,6 +136,8 @@ class TrainRecipe(
             eval_freq=cfg.common.eval_freq,
             eval_iterations=cfg.common.eval_iterations,
             eval_guaranteed_same_batches=cfg.common.eval_guaranteed_same_batches,
+            eval_checkpointing=cfg.common.eval_checkpointing,
+            output_path=cfg.common.output_path,
         )
         assert self.evaluator is not None, "Evaluator not initialized"
 
@@ -289,20 +291,39 @@ class TrainRecipe(
         collective,
         device,
     ):
-        metrics = self.run_evaluation_if_needed(
-            iteration=iteration,
-            model=model,
-            criterion=criterion,
-            eval_data_dict={
-                k: v for k, v in eval_datapipeline.items() if v is not None
-            },
-            collective=collective,
-            all_metrics_configs=self.cfg.metrics,
-            device=device,
-        )
-        if metrics and collective.is_master:
-            for eval_name, eval_metrics in metrics.items():
-                self.log_metrics_to_loggers(eval_metrics, iteration, eval_name)
+        """Run evaluation and log metrics if needed.
+
+        Args:
+            iteration: Current training iteration.
+            model: Model to evaluate.
+            criterion: Criterion to use.
+            eval_datapipeline: Evaluation data pipelines.
+            collective: Distributed collective.
+            device: Device to use.
+
+        Returns:
+            Dictionary of metrics if evaluation ran, else None.
+        """
+        try:
+            metrics = self.run_evaluation_if_needed(
+                iteration=iteration,
+                model=model,
+                criterion=criterion,
+                eval_data_dict={
+                    k: v for k, v in eval_datapipeline.items() if v is not None
+                },
+                collective=collective,
+                all_metrics_configs=self.cfg.metrics,
+                device=device,
+            )
+            if metrics and collective.is_master:
+                for eval_name, eval_metrics in metrics.items():
+                    self.log_metrics_to_loggers(eval_metrics, iteration, eval_name)
+
+            return metrics
+        except Exception as e:
+            logger.exception(f"Evaluation failed at iteration {iteration}: {e}")
+            raise
 
     def run(self):
         """Run the complete training pipeline."""
@@ -393,13 +414,17 @@ class TrainRecipe(
 
             # Try to resume from checkpoint in output paths
             logger.debug("Checking for existing checkpoints to load...")
+            common_chkp_kwargs = {
+                "model": model,
+                "optimizer": optimizer,
+                "collective": collective,
+                "lr_scheduler": lr_scheduler,
+                "data_loaders": data_loaders,
+                "data_sources": train_datapipeline.datasets,
+                "grad_scaler": training_context["scaler"],
+            }
             start_iteration, metadata = self.load_checkpoint_if_exists(
-                model=model,
-                optimizer=optimizer,
-                lr_scheduler=lr_scheduler,
-                data_loaders=data_loaders,
-                collective=collective,
-                data_sources=train_datapipeline.datasets,
+                **common_chkp_kwargs
             )
             if is_restart:
                 # cases when training run but did not produce any artifacts is
@@ -414,12 +439,7 @@ class TrainRecipe(
                     f"Loading checkpoint from {self.cfg.common.load_checkpoint}..."
                 )
                 metadata = self.load_checkpoint(
-                    model=model,
-                    optimizer=optimizer,
-                    lr_scheduler=lr_scheduler,
-                    data_loaders=data_loaders,
-                    data_sources=train_datapipeline.datasets,
-                    collective=collective,
+                    **common_chkp_kwargs,
                     load_strategy=self.cfg.common.load_checkpoint_strategy,
                     checkpoint_path=self.cfg.common.load_checkpoint,
                 )
@@ -457,16 +477,6 @@ class TrainRecipe(
         if collective.is_local_master:
             self.log_metrics_to_loggers(init_metrics, start_iteration, "init")
 
-        common_chkp_kwargs = {
-            "model": model,
-            "optimizer": optimizer,
-            "collective": collective,
-            "lr_scheduler": lr_scheduler,
-            "data_loaders": data_loaders,
-            "data_sources": train_datapipeline.datasets,
-            "grad_scaler": training_context["scaler"],
-        }
-
         logger.debug("Initializing training data iterator...")
         train_data_iter = iter(train_datapipeline.dataloader)
         logger.debug("Training data iterator initialized")
@@ -483,6 +493,41 @@ class TrainRecipe(
         logger.info("All ranks are ready")
 
         if not finished_run:
+            # Determine if we need to keep any evaluation checkpoints for resumption
+            iteration_to_keep = None
+            if metadata is not None and not metadata.get("eval_finished", True):
+                iteration_to_keep = metadata["iteration"]
+
+            # Global cleanup of evaluation checkpoints, preserving only the one needed for resumption
+            if collective.is_master:
+                self.evaluator.cleanup_all_eval_checkpoints(
+                    exclude_iteration=iteration_to_keep
+                )
+            collective.barrier()
+
+            if iteration_to_keep is not None:
+                logger.info(
+                    f"Previous checkpoint (iter {iteration_to_keep}) was saved before evaluation, running evaluation before resuming training..."
+                )
+                self.evaluate_and_log(
+                    iteration=iteration_to_keep,
+                    model=model,
+                    criterion=criterion,
+                    eval_datapipeline=eval_datapipeline,
+                    collective=collective,
+                    device=device,
+                )
+                self.save_checkpoint_if_needed(
+                    iteration=iteration_to_keep,
+                    force_save=True,
+                    **common_chkp_kwargs,
+                    extra_metadata={"eval_finished": True},
+                    metadata_only=True,
+                )
+                if collective.is_master:
+                    self.evaluator.cleanup_all_eval_checkpoints(iteration_to_keep)
+                collective.barrier()
+
             pbar = trange(
                 start_iteration,
                 self.cfg.optimization.iterations + 1,
@@ -541,22 +586,56 @@ class TrainRecipe(
                     logger.debug(
                         f"Running evaluation if needed for iteration {iteration}"
                     )
-                    self.evaluate_and_log(
-                        iteration=iteration,
-                        model=model,
-                        criterion=criterion,
-                        eval_datapipeline=eval_datapipeline,
-                        collective=collective,
-                        device=device,
+
+                    eval_needed = self.evaluator.should_run_evaluation(
+                        iteration, eval_datapipeline
                     )
 
-                    logger.debug(
-                        f"Saving checkpoint if needed for iteration {iteration}"
-                    )
-                    self.save_checkpoint_if_needed(
-                        iteration=iteration,
-                        **common_chkp_kwargs,
-                    )
+                    if eval_needed:
+                        if self.cfg.common.eval_resumable:
+                            logger.debug(
+                                f"Saving pre-evaluation checkpoint for iteration {iteration}..."
+                            )
+                            self.save_checkpoint_if_needed(
+                                iteration=iteration,
+                                force_save=True,
+                                **common_chkp_kwargs,
+                                extra_metadata={"eval_finished": False},
+                            )
+                            logger.debug(
+                                f"Pre-eval checkpoint saved for iteration {iteration}"
+                            )
+
+                        self.evaluate_and_log(
+                            iteration=iteration,
+                            model=model,
+                            criterion=criterion,
+                            eval_datapipeline=eval_datapipeline,
+                            collective=collective,
+                            device=device,
+                        )
+
+                        if self.cfg.common.eval_resumable:
+                            logger.debug(
+                                f"Saving post-evaluation metadata-only checkpoint for iteration {iteration}"
+                            )
+                            self.save_checkpoint_if_needed(
+                                iteration=iteration,
+                                force_save=True,
+                                **common_chkp_kwargs,
+                                extra_metadata={"eval_finished": True},
+                                metadata_only=True,
+                            )
+                            if collective.is_master:
+                                self.evaluator.cleanup_all_eval_checkpoints(iteration)
+                            collective.barrier()
+                    else:
+                        # Regular checkpointing if no evaluation ran
+                        self.save_checkpoint_if_needed(
+                            iteration=iteration,
+                            **common_chkp_kwargs,
+                            extra_metadata={"eval_finished": True},
+                        )
 
                 except KeyboardInterrupt:
                     logger.info("Training interrupted by user")
