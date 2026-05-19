@@ -1,3 +1,4 @@
+import copy
 import logging
 from dataclasses import dataclass
 
@@ -47,14 +48,17 @@ class ShuffleTransformNode(BaseNode):
         self.buffer = []
         self.terminated = False
         self.rank = rank
+        self._default_seed = seed + rank * 41
 
-        self.rng = np.random.default_rng(seed + rank * 41)
+        self.rng = np.random.default_rng(self._default_seed)
 
     def reset(self, initial_state: dict | None = None):
         """Restore the shuffle buffer and RNG state."""
         super().reset(initial_state)
         self.buffer = []
         self.terminated = False
+        self.rng = np.random.default_rng(self._default_seed)
+
         if initial_state:
             self.buffer = initial_state["buffer"]
             self.cfg = initial_state["cfg"]
@@ -69,14 +73,16 @@ class ShuffleTransformNode(BaseNode):
 
     def get_state(self):
         """Collect current buffer, terminated flag, and RNG state for checkpointing."""
-        return {
-            "buffer": self.buffer,
-            "cfg": self.cfg,
-            "source_state": self.node.state_dict(),
-            "rng_state": self.rng.bit_generator.state,
-            "terminated": self.terminated,
-            "rank": self.rank,
-        }
+        return copy.deepcopy(
+            {
+                "buffer": self.buffer,
+                "cfg": self.cfg,
+                "source_state": self.node.state_dict(),
+                "rng_state": self.rng.bit_generator.state,
+                "terminated": self.terminated,
+                "rank": self.rank,
+            }
+        )
 
     def next(self):
         """Yield a randomly selected item from the shuffle buffer."""

@@ -87,7 +87,7 @@ class EvaluationCheckpointManager:
         iteration: int,
         eval_name: str,
         group_name: str,
-        dataloader: Any,
+        eval_iter: Any,
         collective: Collective | None = None,
     ) -> int:
         """Load the evaluation state for a specific rank if it exists.
@@ -136,11 +136,14 @@ class EvaluationCheckpointManager:
 
             # Restore dataloader state
             assert hasattr(
-                dataloader, "load_state_dict"
+                eval_iter, "reset"
             ), "Dataloader does not support load_state_dict"
-            dataloader.load_state_dict(state["dataloader_state"])
+            eval_iter.reset(state["dataloader_state"])
 
-            return state.get("eval_iterations_processed", 0)
+            logger.info(
+                f"Successfully loaded evaluation checkpoint, will resume from {state['eval_iterations_processed']} processed iterations"
+            )
+            return state["eval_iterations_processed"]
         except Exception as e:
             logger.error(
                 f"Failed to load evaluation checkpoint from {checkpoint_path}: {e}"

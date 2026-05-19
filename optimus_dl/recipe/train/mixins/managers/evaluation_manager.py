@@ -281,20 +281,22 @@ class Evaluator:
                 torch.no_grad(),
                 meters_group(group_name, log_freq=1, force_recreate=True),
             ):
-                iterations = 0
+                eval_iter = iter(dataloader)
+
+                eval_iterations_processed = 0
                 if self.eval_checkpoint_manager is not None and iteration is not None:
-                    iterations = self.eval_checkpoint_manager.load_iteration_state(
-                        iteration=iteration,
-                        eval_name=eval_name,
-                        group_name=group_name,
-                        dataloader=dataloader,
-                        collective=collective,
+                    eval_iterations_processed = (
+                        self.eval_checkpoint_manager.load_iteration_state(
+                            iteration=iteration,
+                            eval_name=eval_name,
+                            group_name=group_name,
+                            eval_iter=eval_iter,
+                            collective=collective,
+                        )
                     )
 
                 log_event_start("perf/total_run")
                 start_time = time.perf_counter()
-
-                eval_iter = iter(dataloader)
 
                 pbar = None
                 if show_progress:
@@ -309,7 +311,7 @@ class Evaluator:
                             if max_iterations_local is not None
                             else None
                         ),
-                        initial=iterations,
+                        initial=eval_iterations_processed,
                     )
 
                 check_exhaustion = (
@@ -331,7 +333,7 @@ class Evaluator:
                     if check_exhaustion:
                         assert collective is not None
                         stop_flag = torch.tensor(
-                            [int(should_stop(iterations))],
+                            [int(should_stop(eval_iterations_processed))],
                             device=collective.default_device,
                             dtype=torch.int32,
                         )
@@ -345,17 +347,19 @@ class Evaluator:
                             )
                             raise StopIteration
 
-                    while not should_stop(iterations):
+                    while not should_stop(eval_iterations_processed):
                         logger.debug(
-                            f"Eval {eval_name}: Starting iteration {iterations}"
+                            f"Eval {eval_name}: Starting iteration {eval_iterations_processed}"
                         )
                         log_event_occurence("perf/full_iteration")
                         exhausted = False
                         try:
                             logger.debug(
-                                f"Eval {eval_name}: Fetching batch for iteration {iterations}"
+                                f"Eval {eval_name}: Fetching batch for iteration {eval_iterations_processed}"
                             )
                             elapsed_batch_get, batch = measured_next(eval_iter)
+                            if eval_iterations_processed == 13:
+                                print([i.sum().item() for i in batch["labels"]])
                             info_once(logger, f"Batch has keys {batch.keys()}")
                         except StopIteration:
                             logger.debug(
@@ -390,7 +394,7 @@ class Evaluator:
                                 raise StopIteration
 
                         logger.debug(
-                            f"Eval {eval_name}: Running forward pass for iteration {iterations}"
+                            f"Eval {eval_name}: Running forward pass for iteration {eval_iterations_processed}"
                         )
                         with self.forward_context(device=device):
                             loss, exposed = criterion(
@@ -412,21 +416,21 @@ class Evaluator:
                             elapsed_batch_get,
                         )
 
-                        iterations += 1
+                        eval_iterations_processed += 1
                         if pbar is not None:
                             pbar.update(1)
 
                         # Step metrics for each evaluation iteration
                         step_meters(f"{metrics_prefix}/{eval_name}")
                         logger.debug(
-                            f"Eval {eval_name}: Finished iteration {iterations-1}"
+                            f"Eval {eval_name}: Finished iteration {eval_iterations_processed-1}"
                         )
 
                         if (
                             self.eval_checkpoint_manager is not None
                             and eval_checkpointing is not None
                             and eval_checkpointing > 0
-                            and iterations % eval_checkpointing == 0
+                            and eval_iterations_processed % eval_checkpointing == 0
                         ):
                             assert (
                                 iteration is not None
@@ -434,13 +438,13 @@ class Evaluator:
                             self.eval_checkpoint_manager.save_iteration_state(
                                 iteration=iteration,
                                 eval_name=eval_name,
-                                dataloader_state=dataloader.state_dict(),
+                                dataloader_state=eval_iter.state_dict(),
                                 group_name=group_name,
                                 collective=collective,
-                                eval_iterations_processed=iterations,
+                                eval_iterations_processed=eval_iterations_processed,
                             )
                             logger.info(
-                                f"Saved evaluation metrics checkpoint at iteration {iterations}"
+                                f"Saved evaluation metrics checkpoint at iteration {eval_iterations_processed}"
                             )
 
                 except StopIteration:
@@ -465,8 +469,10 @@ class Evaluator:
 
             # Add basic performance stats
             eval_metrics["perf/total_run_ms"] = total_time * 1000
-            if iterations > 0:
-                eval_metrics["perf/ms_per_batch"] = (total_time / iterations) * 1000
+            if eval_iterations_processed > 0:
+                eval_metrics["perf/ms_per_batch"] = (
+                    total_time / eval_iterations_processed
+                ) * 1000
 
             logger.info(
                 f"Finished eval {eval_name}: {eval_metrics} in {total_time:.1f}s"

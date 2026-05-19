@@ -1,3 +1,4 @@
+import copy
 from dataclasses import (
     dataclass,
     field,
@@ -107,15 +108,17 @@ class FlatTokensBatcherNode(BaseNode):
 
     def get_state(self) -> dict[str, Any]:
         """Collect current buffer and source state for checkpointing."""
-        return {
-            "input_buffer": self.input_buffer,
-            "label_buffer": self.label_buffer,
-            "position_ids_buffer": self.position_ids_buffer,
-            "document_ids_buffer": self.document_ids_buffer,
-            "_current_doc_id": self._current_doc_id,
-            "cfg": self.cfg,
-            "source_state": self.node.state_dict(),
-        }
+        return copy.deepcopy(
+            {
+                "input_buffer": self.input_buffer,
+                "label_buffer": self.label_buffer,
+                "position_ids_buffer": self.position_ids_buffer,
+                "document_ids_buffer": self.document_ids_buffer,
+                "_current_doc_id": self._current_doc_id,
+                "cfg": self.cfg,
+                "source_state": self.node.state_dict(),
+            }
+        )
 
     def next(self) -> dict[str, Any]:
         """Yield the next complete batch of tokens, filling from source as needed.

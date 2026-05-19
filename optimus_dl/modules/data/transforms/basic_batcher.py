@@ -1,3 +1,4 @@
+import copy
 from dataclasses import dataclass
 from typing import Any
 
@@ -65,11 +66,13 @@ class BasicBatcherNode(BaseNode):
 
     def get_state(self) -> dict[str, Any]:
         """Collect source state for checkpointing."""
-        return {
-            "cfg": self.cfg,
-            "source_state": self.node.state_dict(),
-            "_peeked_item": self._peeked_item,
-        }
+        return copy.deepcopy(
+            {
+                "cfg": self.cfg,
+                "source_state": self.node.state_dict(),
+                "_peeked_item": self._peeked_item,
+            }
+        )
 
     def next(self) -> dict[str, Any]:
         """Yield the next complete batch of padded tokens and their original lengths."""

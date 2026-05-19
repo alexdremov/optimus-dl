@@ -1,3 +1,4 @@
+import copy
 import logging
 from dataclasses import dataclass
 
@@ -56,17 +57,19 @@ class HuggingFaceDataset(BaseDataset):
 
     def get_state(self):
         """Return the current position and configuration for checkpointing."""
-        return {
-            "cfg": self.cfg,
-            "dataset_state": (
-                self.dataset.state_dict()
-                if hasattr(self.dataset, "state_dict")
-                else None
-            ),
-            "world_size": self.world_size,
-            "rank": self.rank,
-            "position": self.position,
-        }
+        return copy.deepcopy(
+            {
+                "cfg": self.cfg,
+                "dataset_state": (
+                    self.dataset.state_dict()
+                    if hasattr(self.dataset, "state_dict")
+                    else None
+                ),
+                "world_size": self.world_size,
+                "rank": self.rank,
+                "position": self.position,
+            }
+        )
 
     def reset(self, initial_state: dict | None = None):
         """Initialize or restore the dataset stream.
