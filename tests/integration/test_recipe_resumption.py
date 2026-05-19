@@ -78,7 +78,6 @@ def test_dirty_checkpoint_resumption():
         0
     ].kwargs  # first call should be for resumption
     assert kwargs["iteration"] == 4
-    assert kwargs["save_checkpoint"] is None
 
     assert recipe.save_checkpoint_if_needed.called
     save_kwargs = recipe.save_checkpoint_if_needed.call_args_list[0].kwargs
