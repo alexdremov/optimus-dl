@@ -94,11 +94,12 @@ class TrainRecipeConfig:
         },
     )
     eval_checkpointing: int | None = field(
-        default=II(".save_freq"),
+        default=None,
         metadata={
             "description": "Frequency of saving checkpoints during evaluation. If None or non-positive (for example, 0), "
             "do not save checkpoints during evaluation. This is useful for long evaluations to be able to resume "
-            "evaluation if it gets interrupted."
+            "evaluation if it gets interrupted. "
+            "Saves are fast and light, as they only contain the state of the meters and dataloader, not the model or optimizer states."
         },
     )
 

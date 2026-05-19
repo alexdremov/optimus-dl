@@ -57,8 +57,10 @@ class EvalDataPipelineConfig(DataPipelineConfig):
     eval_checkpointing: int | None = field(
         default=None,
         metadata={
-            "description": "Frequency of saving checkpoints during evaluation. If None, do not save checkpoints during evaluation. "
-            "This is useful for long evaluations to be able to resume evaluation if it gets interrupted."
+            "description": "Frequency of saving checkpoints during evaluation. If None or non-positive (for example, 0), "
+            "do not save checkpoints during evaluation. This is useful for long evaluations to be able to resume "
+            "evaluation if it gets interrupted. "
+            "Saves are fast and light, as they only contain the state of the meters and dataloader, not the model or optimizer states."
         },
     )
 
