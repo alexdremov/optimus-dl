@@ -39,6 +39,11 @@ class DummyModel(BaseModel):
 
     def forward(self, batch=None, input_ids=None, **kwargs):
         if batch is not None and "input_ids" in batch:
+            from optimus_dl.modules.metrics.common import log_gathered
+
+            # Log the tokens mean in the batch to identify it
+            # Use reset=False so it accumulates across the entire evaluation run
+            log_gathered("batch_ids", batch["input_ids"][0].mean().item(), reset=False)
             x = batch["input_ids"]
         else:
             x = input_ids
@@ -130,7 +135,7 @@ def _run_stateful_eval_test(rank, unique_port, world_size, temp_dir):
 
         device = torch.device("cpu")
 
-        def run_eval_with_crash(crash_at_batch=None, chkp_dir=None):
+        def run_eval_with_crash(crash_at_batch=None, chkp_dir=None, iteration=0):
             # Update evaluator's output path if needed for different runs in same test
             if chkp_dir:
                 evaluator.output_path = chkp_dir
@@ -163,13 +168,22 @@ def _run_stateful_eval_test(rank, unique_port, world_size, temp_dir):
                 all_metrics_configs={},
                 metrics_prefix="eval",
                 show_progress=False,
+                iteration=iteration,
             )
 
         # 1. Run uninterrupted evaluation to get ground truth metrics
         uninterrupted_dir = os.path.join(temp_dir, "run1")
         uninterrupted_metrics = run_eval_with_crash(
-            crash_at_batch=None, chkp_dir=uninterrupted_dir
+            crash_at_batch=None, chkp_dir=uninterrupted_dir, iteration=0
         )
+
+        # Verify that checkpoint directory exists for uninterrupted run as well
+        # (checkpointed at batch 2, 4, 6)
+        if rank == 0:
+            chkp_path = os.path.join(
+                uninterrupted_dir, "eval_checkpoints_iter_0", "dummy_rank_0.pt"
+            )
+            assert os.path.exists(chkp_path), f"Checkpoint should exist at {chkp_path}"
 
         # Reset meters for fresh run
         reset_meters("eval/dummy")
@@ -177,19 +191,48 @@ def _run_stateful_eval_test(rank, unique_port, world_size, temp_dir):
         crash_dir = os.path.join(temp_dir, "run2")
         # 2. Run and crash at batch 3 (after checkpoint at batch 2)
         try:
-            run_eval_with_crash(crash_at_batch=3, chkp_dir=crash_dir)
+            run_eval_with_crash(crash_at_batch=3, chkp_dir=crash_dir, iteration=0)
         except CrashMidEvalException:
             pass
         else:
             raise AssertionError("Expected evaluation to crash")
 
+        # Verify that checkpoint exists after crash
+        if rank == 0:
+            chkp_path = os.path.join(
+                crash_dir, "eval_checkpoints_iter_0", "dummy_rank_0.pt"
+            )
+            assert os.path.exists(
+                chkp_path
+            ), f"Checkpoint should exist at {chkp_path} after crash"
+
+            # Load checkpoint to verify it's from batch 2
+            state = torch.load(chkp_path, map_location="cpu")
+            assert (
+                state["eval_iterations_processed"] == 2
+            ), f"Expected 2 iterations processed, got {state['eval_iterations_processed']}"
+
         # 3. Resume evaluation
-        resumed_metrics = run_eval_with_crash(crash_at_batch=None, chkp_dir=crash_dir)
+        resumed_metrics = run_eval_with_crash(
+            crash_at_batch=None, chkp_dir=crash_dir, iteration=0
+        )
 
         if rank == 0:
             # Metrics should match exactly
             loss_uninterrupted = uninterrupted_metrics["eval/dummy"]["loss"]
             loss_resumed = resumed_metrics["eval/dummy"]["loss"]
+            batches_uninterrupted = uninterrupted_metrics["eval/dummy"]["num_batches"]
+            batches_resumed = resumed_metrics["eval/dummy"]["num_batches"]
+
+            batch_ids_uninterrupted = uninterrupted_metrics["eval/dummy"]["batch_ids"]
+            batch_ids_resumed = resumed_metrics["eval/dummy"]["batch_ids"]
+
+            assert (
+                batches_uninterrupted == batches_resumed
+            ), f"Batch count mismatch: {batches_uninterrupted} vs {batches_resumed}"
+            assert (
+                batch_ids_uninterrupted == batch_ids_resumed
+            ), f"Batch content/order mismatch: {batch_ids_uninterrupted} vs {batch_ids_resumed}"
 
             assert torch.isclose(
                 torch.tensor(loss_uninterrupted), torch.tensor(loss_resumed)
@@ -266,6 +309,20 @@ def _run_eval_test_no_checkpoints(rank, unique_port, world_size, temp_dir):
         uninterrupted_metrics = run_eval_with_crash(
             crash_at_batch=None, chkp_dir=uninterrupted_dir
         )
+
+        # Verify that NO checkpoint directory exists
+        if rank == 0:
+            # We don't pass iteration, but Evaluator uses 0 by default if it were to save?
+            # Actually if iteration is None, it won't even try to save if eval_checkpointing is None.
+            # But let's check for any eval_checkpoints_iter_*
+            import pathlib
+
+            checkpoints = list(
+                pathlib.Path(uninterrupted_dir).glob("eval_checkpoints_iter_*")
+            )
+            assert (
+                len(checkpoints) == 0
+            ), f"No checkpoint directories should exist, but found: {checkpoints}"
 
         reset_meters("eval/dummy")
 

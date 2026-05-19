@@ -766,6 +766,32 @@ def log_event_occurence(
     )
 
 
+def log_gathered(
+    name: str,
+    value: Any,
+    reset: bool = True,
+    priority: int = 100,
+) -> None:
+    """Log a value to be gathered into a list.
+
+    This is a convenience function for logging values to a `GatherMeter`.
+    The value can be a callable (lambda) for lazy evaluation.
+
+    Args:
+        name: Name of the meter (e.g., "eval/all_predictions").
+        value: Value to log and gather. Can be any object or a callable.
+        reset: If True, the meter is reset after logging.
+        priority: Priority for meter ordering when logging.
+    """
+    log_meter(
+        name=name,
+        meter_factory=lambda: GatherMeter(),
+        reset=reset,
+        priority=priority,
+        value=value,
+    )
+
+
 class CachedLambda:
     """Wrapper that caches the result of a callable function.
 
