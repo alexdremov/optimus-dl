@@ -304,22 +304,26 @@ class TrainRecipe(
         Returns:
             Dictionary of metrics if evaluation ran, else None.
         """
-        metrics = self.run_evaluation_if_needed(
-            iteration=iteration,
-            model=model,
-            criterion=criterion,
-            eval_data_dict={
-                k: v for k, v in eval_datapipeline.items() if v is not None
-            },
-            collective=collective,
-            all_metrics_configs=self.cfg.metrics,
-            device=device,
-        )
-        if metrics and collective.is_master:
-            for eval_name, eval_metrics in metrics.items():
-                self.log_metrics_to_loggers(eval_metrics, iteration, eval_name)
+        try:
+            metrics = self.run_evaluation_if_needed(
+                iteration=iteration,
+                model=model,
+                criterion=criterion,
+                eval_data_dict={
+                    k: v for k, v in eval_datapipeline.items() if v is not None
+                },
+                collective=collective,
+                all_metrics_configs=self.cfg.metrics,
+                device=device,
+            )
+            if metrics and collective.is_master:
+                for eval_name, eval_metrics in metrics.items():
+                    self.log_metrics_to_loggers(eval_metrics, iteration, eval_name)
 
-        return metrics
+            return metrics
+        except Exception as e:
+            logger.error(f"Evaluation failed at iteration {iteration}: {e}")
+            raise
 
     def run(self):
         """Run the complete training pipeline."""

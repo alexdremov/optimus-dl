@@ -180,17 +180,23 @@ class Evaluator:
             if eval_freq <= 0 or iteration % eval_freq != 0:
                 continue
 
-            result |= self.run_evaluation(
-                iteration=iteration,
-                model=model,
-                criterion=criterion,
-                eval_data_dict={eval_name: eval_data},
-                max_iterations=max_iterations,
-                collective=collective,
-                all_metrics_configs=all_metrics_configs,
-                show_progress=True,
-                device=device,
-            )
+            try:
+                result |= self.run_evaluation(
+                    iteration=iteration,
+                    model=model,
+                    criterion=criterion,
+                    eval_data_dict={eval_name: eval_data},
+                    max_iterations=max_iterations,
+                    collective=collective,
+                    all_metrics_configs=all_metrics_configs,
+                    show_progress=True,
+                    device=device,
+                )
+            except Exception as e:
+                logger.error(
+                    f"Error during evaluation of {eval_name} at iteration {iteration}: {e}"
+                )
+                raise
 
         if len(result) == 0:
             return None
