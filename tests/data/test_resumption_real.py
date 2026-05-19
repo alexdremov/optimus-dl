@@ -86,6 +86,7 @@ def test_real_pipeline_resumption():
         print(f"Batch {i} matches Step 1: {match}")
         if not match:
             print(f"  FAILED: Batch {i} changed on fresh start!")
+            raise AssertionError(f"Batch {i} changed on fresh start!")
 
     print("\n=== Step 3: Resumption at Batch 10 ===")
     pipe3 = get_pipeline()
@@ -116,3 +117,4 @@ def test_real_pipeline_resumption():
             expected_sum = batches_uninterrupted[i].sum()
             actual_sum = batch["input_ids"].sum().item()
             print(f"  Expected sum: {expected_sum}, Got: {actual_sum}")
+            raise AssertionError(f"Batch {i} changed after resumption!")
