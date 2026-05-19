@@ -524,7 +524,9 @@ class TrainRecipe(
                     extra_metadata={"eval_finished": True},
                     metadata_only=True,
                 )
-                self.evaluator.cleanup_all_eval_checkpoints(iteration_to_keep)
+                if collective.is_master:
+                    self.evaluator.cleanup_all_eval_checkpoints(iteration_to_keep)
+                collective.barrier()
 
             pbar = trange(
                 start_iteration,
@@ -624,7 +626,9 @@ class TrainRecipe(
                                 extra_metadata={"eval_finished": True},
                                 metadata_only=True,
                             )
-                            self.evaluator.cleanup_all_eval_checkpoints(iteration)
+                            if collective.is_master:
+                                self.evaluator.cleanup_all_eval_checkpoints(iteration)
+                            collective.barrier()
                     else:
                         # Regular checkpointing if no evaluation ran
                         self.save_checkpoint_if_needed(
