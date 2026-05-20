@@ -56,16 +56,16 @@ class FileFinder:
         all_files = list_repo_files(repo_id=self.config.repo_id, repo_type="dataset")
         logger.info(f"Found {len(all_files)} files before filtering.")
 
+        files: list[str]
         if self.config.file_pattern is not None:
             logger.info(f"Filtering files based on pattern: {self.config.file_pattern}")
-            files: list[str] | None = self._filter_files(
-                all_files, pattern=self.config.file_pattern
-            )
+            files = self._filter_files(all_files, pattern=self.config.file_pattern)
         else:
             logger.info(
                 f"Filtering files based on metadata for split '{self.config.split}' and config_name '{self.config.config_name}'"
             )
-            files = self._get_files_from_metadata(all_files)
+            files_from_meta = self._get_files_from_metadata(all_files)
+            files = files_from_meta if files_from_meta is not None else []
 
             if not files:
                 logger.info(
