@@ -36,7 +36,9 @@ class BaseMetricsLogger(ABC):
         enabled: Whether the logger is active.
     """
 
-    def __init__(self, cfg, state_dict=None, **kwargs):
+    def __init__(
+        self, cfg: Any, state_dict: dict[str, Any] | None = None, **kwargs: Any
+    ) -> None:
         """Initialize the metrics logger.
 
         Args:
@@ -100,7 +102,7 @@ class BaseMetricsLogger(ABC):
         """
         return {}
 
-    def finished(self, status: RunStatus):
+    def finished(self, status: RunStatus) -> None:
         """Hook for when training finishes, to log final status.
 
         Args:

@@ -428,8 +428,14 @@ def make_registry(
                 The same class (for use as a decorator).
             """
             registry[name] = (registered_class, cfg)
-            registered_class.register_arch = functools.partial(
-                register_arch, class_name=name, registered_class=registered_class
+
+            # ruff: noqa: B010
+            setattr(
+                registered_class,
+                "register_arch",
+                functools.partial(
+                    register_arch, class_name=name, registered_class=registered_class
+                ),
             )
             return registered_class
 
