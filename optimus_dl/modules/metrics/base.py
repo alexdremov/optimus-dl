@@ -11,9 +11,15 @@ from collections import (
     OrderedDict,
     defaultdict,
 )
-from collections.abc import Callable
+from collections.abc import (
+    Callable,
+    Generator,
+)
 from dataclasses import dataclass
-from typing import Any
+from typing import (
+    Any,
+    cast,
+)
 
 from optimus_dl.core.profile import measured_lambda
 from optimus_dl.modules.distributed import Collective
@@ -201,7 +207,7 @@ class MeterGroup:
         """
         return (self._iteration_counter % self.log_freq) == 0
 
-    def add_meter(self, name: str, meter_entry: MeterEntry):
+    def add_meter(self, name: str, meter_entry: MeterEntry) -> None:
         """Add a new meter entry to the group.
 
         If a meter with the same `name` already exists, it will be overwritten.
@@ -215,7 +221,7 @@ class MeterGroup:
         self._meters[name] = meter_entry
         self._update_keys_sorted()
 
-    def _update_keys_sorted(self):
+    def _update_keys_sorted(self) -> None:
         """Update the sorted list of meter keys based on priorities.
 
         This internal helper method re-sorts `self._keys_sorted` whenever a meter
@@ -238,7 +244,7 @@ class MeterGroup:
         """
         return self._meters.get(name)
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset all meters marked for reset after logging.
 
         This method iterates through all `MeterEntry` objects in the group.
@@ -317,7 +323,7 @@ class MeterGroup:
 
 
 _meter_groups: OrderedDict[str, MeterGroup] = OrderedDict()
-_active_meter_groups = defaultdict(lambda: 0)
+_active_meter_groups: dict[str, int] = defaultdict(lambda: 0)
 
 
 class BaseMeter(ABC):
@@ -350,7 +356,7 @@ class BaseMeter(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def log(self, **kwargs):
+    def log(self, **kwargs: Any) -> Any:
         """Accumulate new raw data points into the meter's internal state.
 
         This method is called for each data point or batch that needs to be
@@ -363,7 +369,7 @@ class BaseMeter(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def merge(self, other_state: dict[str, Any]):
+    def merge(self, other_state: dict[str, Any]) -> None:
         """Merge state from another instance of the same meter type.
 
         This method is critical for distributed training, allowing the states
@@ -425,7 +431,7 @@ def meters_group(
     log_freq: int | None = None,
     force_recreate: bool = False,
     log_logger_overhead: bool | None = None,
-):
+) -> Generator[bool, None, None]:
     """Context manager for activating a metrics group.
 
     While inside this context, any calls to `log_meter` will be directed to
@@ -517,8 +523,9 @@ def compute_meters(
     }
 
     # Gather all meter states from all ranks in one communication
-    all_rank_states: list[dict[str, dict[str, Any]]] = collective.all_gather_objects(
-        local_meter_states
+    all_rank_states = cast(
+        list[dict[str, dict[str, Any]]],
+        collective.all_gather_objects(local_meter_states),
     )
 
     # Aggregate meters across ranks using their merge functionality
@@ -655,7 +662,7 @@ def log_meter(
     priority: int = 100,
     force_log: bool = False,
     **kwargs: Any,
-):
+) -> None:
     """Log data point(s) to all currently active meter groups.
 
     This is the primary function for adding data to meters within active
@@ -686,7 +693,14 @@ def log_meter(
                   typically represent the actual data points (e.g., `value`, `weight`).
     """
 
-    def log_to_group(group, _name, _meter, _reset, _priority, kwargs):
+    def log_to_group(
+        group: MeterGroup,
+        _name: str,
+        _meter: BaseMeter,
+        _reset: bool,
+        _priority: int,
+        kwargs: dict[str, Any],
+    ) -> None:
         if _name not in group.meters:
             # If meter doesn't exist, create it using the factory and add to group
             group.add_meter(

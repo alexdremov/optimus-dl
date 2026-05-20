@@ -36,9 +36,9 @@ class DownloaderMessage(NamedTuple):
 def _downloader_worker(
     files: list[str],
     dataset_config: Any,
-    output_queue: multiprocessing.Queue,
+    output_queue: multiprocessing.Queue | queue.Queue,
     yielded_file_idx: int | None,
-):
+) -> None:
     """
     Worker 1: Pre-loads (downloads) files.
     Ensures files are present in the local HF cache before the Reader needs them.
@@ -68,7 +68,7 @@ def _downloader_worker(
 
 def _shuffled_reader(
     reader: Generator[str, None, None], buffer_size: int | None, init_seed: int
-):
+) -> Generator[str, None, None]:
     buffer_index = 0
     if buffer_size is None:
         yield from reader
@@ -97,15 +97,15 @@ class ReaderMessage(NamedTuple):
 
 
 def _reader_worker(
-    input_queue: multiprocessing.Queue,
-    output_queue: multiprocessing.Queue,
+    input_queue: multiprocessing.Queue | queue.Queue,
+    output_queue: multiprocessing.Queue | queue.Queue,
     processing_config: Any,
     dataset_config: Any,
     yielded_doc_idx: int | None,
     shuffle_buffer_size: int | None,
     num_workers: int,
     init_seed: int,
-):
+) -> None:
     """
     Worker 2: Reads files and produces raw text batches.
     """
@@ -167,10 +167,10 @@ class TokenizedMessage(NamedTuple):
 
 
 def _tokenizer_worker(
-    input_queue: multiprocessing.Queue,
-    output_queue: multiprocessing.Queue,
+    input_queue: multiprocessing.Queue | queue.Queue,
+    output_queue: multiprocessing.Queue | queue.Queue,
     tokenizer: Any,
-):
+) -> None:
     """
     Worker 3 (Pool): Tokenizes text batches.
     """
@@ -226,11 +226,11 @@ class TokenProcessor:
 
         # Pipeline internals
         self.ctx = multiprocessing.get_context("spawn")
-        self.processes = []
-        self.queues = {}
+        self.processes: list[Any] = []
+        self.queues: dict[str, Any] = {}
 
-        self.yielded_doc_idx = None
-        self.yielded_file_idx = None
+        self.yielded_doc_idx: int | None = None
+        self.yielded_file_idx: int | None = None
         self.total_docs_yielded = 0
 
     def get_state(self) -> dict[str, Any]:
@@ -240,7 +240,7 @@ class TokenProcessor:
             "total_docs_yielded": self.total_docs_yielded,
         }
 
-    def load_state(self, state: dict[str, Any]):
+    def load_state(self, state: dict[str, Any]) -> None:
         self.yielded_doc_idx = state.get("yielded_doc_idx", 0)
         self.yielded_file_idx = state.get("yielded_file_idx", 0)
         self.total_docs_yielded = state.get("total_docs_yielded", 0)
@@ -385,7 +385,9 @@ class TokenProcessor:
         Ensures strict ordering by batch_id: 0, 1, 2...
         """
         next_expected_id = 0
-        reorder_heap = []  # Min-heap of (sort_doc_id, data)
+        reorder_heap: list[tuple[int, TokenizedMessage]] = (
+            []
+        )  # Min-heap of (sort_doc_id, data)
         finished_workers = 0
 
         while True:
@@ -416,7 +418,7 @@ class TokenProcessor:
 
         logger.info("Pipeline completed.")
 
-    def _stop_pipeline(self):
+    def _stop_pipeline(self) -> None:
         """Terminates all workers."""
         logger.info("Stopping pipeline...")
         for p in self.processes:
