@@ -7,6 +7,7 @@ Architecture:
 import heapq
 import logging
 import multiprocessing
+import multiprocessing.queues.Queues
 import queue
 import random
 from collections.abc import Generator
@@ -36,7 +37,7 @@ class DownloaderMessage(NamedTuple):
 def _downloader_worker(
     files: list[str],
     dataset_config: Any,
-    output_queue: multiprocessing.Queue | queue.Queue,
+    output_queue: multiprocessing.queues.Queues.Queue | queue.Queue,
     yielded_file_idx: int | None,
 ) -> None:
     """
@@ -97,8 +98,8 @@ class ReaderMessage(NamedTuple):
 
 
 def _reader_worker(
-    input_queue: multiprocessing.Queue | queue.Queue,
-    output_queue: multiprocessing.Queue | queue.Queue,
+    input_queue: multiprocessing.queues.Queue | queue.Queue,
+    output_queue: multiprocessing.queues.Queue | queue.Queue,
     processing_config: Any,
     dataset_config: Any,
     yielded_doc_idx: int | None,
@@ -167,8 +168,8 @@ class TokenizedMessage(NamedTuple):
 
 
 def _tokenizer_worker(
-    input_queue: multiprocessing.Queue | queue.Queue,
-    output_queue: multiprocessing.Queue | queue.Queue,
+    input_queue: multiprocessing.queues.Queue | queue.Queue,
+    output_queue: multiprocessing.queues.Queue | queue.Queue,
     tokenizer: Any,
 ) -> None:
     """
