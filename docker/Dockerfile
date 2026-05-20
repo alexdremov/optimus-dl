@@ -131,7 +131,11 @@ COPY --from=ccache-export /export /root/.ccache
 # Ccache Seeding Stage (Used to warm the cache mount sequentially)
 # ---------------------------------------------------------------------------
 FROM ubuntu:24.04 AS ccache-seed
-RUN apt-get update && apt-get install -y rsync && rm -rf /var/lib/apt/lists/*
+RUN rm -f /etc/apt/apt.conf.d/docker-clean && \
+    apt-get -o Acquire::Retries=5 update && \
+    apt-get -o Acquire::Retries=5 install -y --no-install-recommends rsync && \
+    rm -rf /var/lib/apt/lists/*
+
 ARG ARCH=amd64
 ARG CACHE_BUSTER=0
 # We use FROM scratch AS ccache_src as a placeholder
