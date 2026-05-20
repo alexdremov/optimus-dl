@@ -33,7 +33,7 @@ class CheckpointManager:
         self.checkpoint_path = output_dir / "checkpoint.pkl"
         self.tmp_path = output_dir / "checkpoint.tmp"
 
-    def save(self, state: CheckpointState):
+    def save(self, state: CheckpointState) -> None:
         """Saves the current processing state to disk atomically.
 
         Args:
@@ -66,7 +66,7 @@ class CheckpointManager:
                 return None
         return None
 
-    def clean(self):
+    def clean(self) -> None:
         """Removes the checkpoint file if it exists."""
         if self.checkpoint_path.exists():
             self.checkpoint_path.unlink()

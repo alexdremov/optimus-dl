@@ -68,7 +68,7 @@ class Sharder:
             }
         )
 
-    def load_state(self, state: dict[str, Any]):
+    def load_state(self, state: dict[str, Any]) -> None:
         """Restores the sharder's state from a checkpoint."""
         self.shard_idx = state.get("shard_idx", 0)
         self.file_metadata = state.get("file_metadata", [])
@@ -111,7 +111,7 @@ class Sharder:
         self.current_shard_size_bytes += doc_bytes
         return False
 
-    def flush(self):
+    def flush(self) -> None:
         """Write the current accumulated tokens to a new shard file.
 
         Saves two files:
@@ -158,7 +158,7 @@ class Sharder:
         self.current_shard_doc_lens = []
         self.current_shard_size_bytes = 0
 
-    def finalize(self, final_config: dict[str, Any]):
+    def finalize(self, final_config: dict[str, Any]) -> None:
         """Flush remaining data and write the global index file.
 
         The index file (`index.json`) contains metadata for all shards and the

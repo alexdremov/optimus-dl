@@ -180,6 +180,9 @@ def setup_logging(
     return logging.getLogger(__name__)
 
 
+_logged_messages: set[tuple[str, int, str]] = set()
+
+
 def log_once(logger: logging.Logger, level: int, message: str) -> None:
     """Log a message at a specific level only once, even if called multiple times.
 
@@ -198,15 +201,11 @@ def log_once(logger: logging.Logger, level: int, message: str) -> None:
         log_once(logger, logging.WARNING, "This feature is deprecated")  # Won't log again
         ```
     """
-    if not hasattr(log_once, "logged_messages"):
-        log_once.logged_messages = set()
     key = (logger.name, level, message)
 
-    logged_messages = log_once.logged_messages
-    assert isinstance(logged_messages, set)
-    if key not in logged_messages:
+    if key not in _logged_messages:
         logger.log(level, message)
-        logged_messages.add(key)
+        _logged_messages.add(key)
 
 
 def warn_once(logger: logging.Logger, message: str) -> None:

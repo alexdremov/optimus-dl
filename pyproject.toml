@@ -89,10 +89,14 @@ dev = [
     "mypy>=2.1.0",
     "types-tqdm>=4.67.3.20260518",
     "types-psutil>=7.2.2.20260518",
+    "pandas-stubs>=3.0.0.260204",
 ]
 moe = [
-    "nv_grouped_gemm @ git+https://github.com/fanshiqing/grouped_gemm@efe8c40eaf4c8ef57191e0ea9aa4117aa5b1a8f2 ; sys_platform == 'linux'",
+    "nv-grouped-gemm",
 ]
+
+[tool.uv.sources]
+nv-grouped-gemm = { git = "https://github.com/fanshiqing/grouped_gemm", rev = "efe8c40eaf4c8ef57191e0ea9aa4117aa5b1a8f2" }
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel", "setuptools_scm[toml]>=6.2"]

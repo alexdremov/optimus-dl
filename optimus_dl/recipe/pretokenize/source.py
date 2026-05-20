@@ -58,7 +58,9 @@ class FileFinder:
 
         if self.config.file_pattern is not None:
             logger.info(f"Filtering files based on pattern: {self.config.file_pattern}")
-            files = self._filter_files(all_files, pattern=self.config.file_pattern)
+            files: list[str] | None = self._filter_files(
+                all_files, pattern=self.config.file_pattern
+            )
         else:
             logger.info(
                 f"Filtering files based on metadata for split '{self.config.split}' and config_name '{self.config.config_name}'"
@@ -168,7 +170,9 @@ class FileFinder:
 
         return matched_files
 
-    def _filter_files(self, all_files: list[str], pattern=None) -> list[str]:
+    def _filter_files(
+        self, all_files: list[str], pattern: str | None = None
+    ) -> list[str]:
         """Filters files based on extension, split, and pattern."""
         filtered = []
 
@@ -212,13 +216,13 @@ class FileReader:
         Yields:
             String content of each document found in the file.
         """
-        local_path = hf_hub_download(
+        local_file_str = hf_hub_download(
             repo_id=self.dataset_config.repo_id,
             filename=file_path,
             repo_type="dataset",
             cache_dir=self.dataset_config.cache_dir,
         )
-        local_path = Path(local_path)
+        local_path = Path(local_file_str)
         assert local_path.exists(), f"File not found: {local_path}"
 
         if file_path.endswith(".parquet"):
@@ -229,7 +233,7 @@ class FileReader:
     def _read_parquet(self, local_path: Path) -> Generator[str, None, None]:
         """Reads texts from a Parquet file using streaming."""
         try:
-            import pyarrow.parquet as pq
+            import pyarrow.parquet as pq  # type: ignore
 
             # Use iter_batches to stream the file instead of loading it entirely
             parquet_file = pq.ParquetFile(local_path)

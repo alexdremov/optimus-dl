@@ -54,13 +54,12 @@ class MetricSource(ABC):
         if self._hash is None:
             import dataclasses
 
-            if dataclasses.is_dataclass(self.cfg):
-                cfg_dict = dataclasses.asdict(self.cfg)
+            cfg_any: Any = self.cfg
+            if dataclasses.is_dataclass(cfg_any):
+                cfg_dict = dataclasses.asdict(cfg_any)
             else:
                 cfg_dict = (
-                    self.cfg.__dict__
-                    if hasattr(self.cfg, "__dict__")
-                    else str(self.cfg)
+                    cfg_any.__dict__ if hasattr(cfg_any, "__dict__") else str(cfg_any)
                 )
 
             def make_hashable(obj: Any) -> Any:
@@ -92,7 +91,7 @@ class MetricSource(ABC):
 
     @abstractmethod
     def __call__(
-        self, dependencies: dict[str, dict[str, Any]], **kwargs
+        self, dependencies: dict[str, dict[str, Any]], **kwargs: Any
     ) -> dict[str, Any]:
         """Execute the source and return a dictionary mapping Protocol string to data.
 

@@ -380,7 +380,9 @@ class CheckpointManager:
                 logger.warning(
                     f"Temporary checkpoint file {path} already exists and will be overwritten"
                 )
-                if path.is_dir():
+                if path.is_symlink():
+                    path.unlink()
+                elif path.is_dir():
                     shutil.rmtree(path)
                 else:
                     os.remove(path)
@@ -476,7 +478,9 @@ class CheckpointManager:
                 logger.warning(
                     f"Checkpoint file {path} already exists and will be overwritten"
                 )
-                if path.is_dir():
+                if path.is_symlink():
+                    path.unlink()
+                elif path.is_dir():
                     shutil.rmtree(path)
                 else:
                     os.remove(path)

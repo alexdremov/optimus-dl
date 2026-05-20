@@ -37,7 +37,8 @@ COPY ./ /setup/optimus_dl
 RUN --mount=type=cache,target=/root/.cache/uv cd /setup/optimus_dl/ && \
     TORCH_CUDA_ARCH_LIST="8.0;9.0" \
     GROUPED_GEMM_CUTLASS=1 \
-    pip install .[dev,moe] \
+    uv pip install .[dev,moe] \
+        --system \
         --no-cache \
         --no-build-isolation \
         --no-binary grouped_gemm \
@@ -70,7 +71,7 @@ FROM base AS interactive
 WORKDIR /setup
 COPY docker/requirements-dev.txt /setup/requirements-dev.txt
 RUN --mount=type=cache,target=/root/.cache/uv \
-    pip install -r /setup/requirements-dev.txt --no-cache
+    uv pip install -r /setup/requirements-dev.txt --system --no-cache
 
 RUN curl https://getmic.ro | bash
 RUN mv ./micro /usr/local/bin/micro

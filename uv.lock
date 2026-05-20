@@ -3645,6 +3645,7 @@ dev = [
     { name = "ipython" },
     { name = "isort" },
     { name = "mypy" },
+    { name = "pandas-stubs" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -3662,7 +3663,7 @@ docs = [
     { name = "mkdocstrings", extra = ["python"] },
 ]
 moe = [
-    { name = "nv-grouped-gemm", marker = "sys_platform == 'linux'" },
+    { name = "nv-grouped-gemm" },
 ]
 notebook = [
     { name = "ipython" },
@@ -3693,8 +3694,9 @@ requires-dist = [
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.24.0" },
     { name = "mlflow", extras = ["auth", "extras"], specifier = ">=3.10.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=2.1.0" },
-    { name = "nv-grouped-gemm", marker = "sys_platform == 'linux' and extra == 'moe'", git = "https://github.com/fanshiqing/grouped_gemm?rev=efe8c40eaf4c8ef57191e0ea9aa4117aa5b1a8f2" },
+    { name = "nv-grouped-gemm", marker = "extra == 'moe'", git = "https://github.com/fanshiqing/grouped_gemm?rev=efe8c40eaf4c8ef57191e0ea9aa4117aa5b1a8f2" },
     { name = "omegaconf", specifier = ">=2.3.0" },
+    { name = "pandas-stubs", marker = "extra == 'dev'", specifier = ">=3.0.0.260204" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.5.1" },
     { name = "psutil", specifier = ">=7.2.2" },
     { name = "pydantic", specifier = ">=2.12.5" },
@@ -3785,6 +3787,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/44/23/78d645adc35d94d1ac4f2a3c4112ab6f5b8999f4898b8cdf01252f8df4a9/pandas-2.3.3-cp313-cp313t-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:900f47d8f20860de523a1ac881c4c36d65efcb2eb850e6948140fa781736e110", size = 12121912, upload-time = "2025-09-29T23:23:05.042Z" },
     { url = "https://files.pythonhosted.org/packages/53/da/d10013df5e6aaef6b425aa0c32e1fc1f3e431e4bcabd420517dceadce354/pandas-2.3.3-cp313-cp313t-musllinux_1_2_aarch64.whl", hash = "sha256:a45c765238e2ed7d7c608fc5bc4a6f88b642f2f01e70c0c23d2224dd21829d86", size = 12712160, upload-time = "2025-09-29T23:23:28.57Z" },
     { url = "https://files.pythonhosted.org/packages/bd/17/e756653095a083d8a37cbd816cb87148debcfcd920129b25f99dd8d04271/pandas-2.3.3-cp313-cp313t-musllinux_1_2_x86_64.whl", hash = "sha256:c4fc4c21971a1a9f4bdb4c73978c7f7256caa3e62b323f70d6cb80db583350bc", size = 13199233, upload-time = "2025-09-29T23:24:24.876Z" },
+]
+
+[[package]]
+name = "pandas-stubs"
+version = "3.0.0.260204"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/27/1d/297ff2c7ea50a768a2247621d6451abb2a07c0e9be7ca6d36ebe371658e5/pandas_stubs-3.0.0.260204.tar.gz", hash = "sha256:bf9294b76352effcffa9cb85edf0bed1339a7ec0c30b8e1ac3d66b4228f1fbc3", size = 109383, upload-time = "2026-02-04T15:17:17.247Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7c/2f/f91e4eee21585ff548e83358332d5632ee49f6b2dcd96cb5dca4e0468951/pandas_stubs-3.0.0.260204-py3-none-any.whl", hash = "sha256:5ab9e4d55a6e2752e9720828564af40d48c4f709e6a2c69b743014a6fcb6c241", size = 168540, upload-time = "2026-02-04T15:17:15.615Z" },
 ]
 
 [[package]]
