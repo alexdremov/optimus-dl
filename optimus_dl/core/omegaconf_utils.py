@@ -55,7 +55,7 @@ from omegaconf import (
     ListConfig,
 )
 from omegaconf._utils import split_key
-from omegaconf.base import BaseContainer
+from omegaconf.basecontainer import BaseContainer
 
 logger = logging.getLogger(__name__)
 

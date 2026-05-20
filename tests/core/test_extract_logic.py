@@ -1,4 +1,4 @@
-from optimus_dl.core.omegaconf import _extract_interpolations
+from optimus_dl.core.omegaconf_utils import _extract_interpolations
 
 
 def test_extract_interpolations_cases() -> None:

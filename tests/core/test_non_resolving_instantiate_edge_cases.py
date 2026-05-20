@@ -1,6 +1,6 @@
 import omegaconf
 
-from optimus_dl.core.omegaconf import non_resolving_instantiate
+from optimus_dl.core.omegaconf_utils import non_resolving_instantiate
 
 
 def test_relative_path_child():
