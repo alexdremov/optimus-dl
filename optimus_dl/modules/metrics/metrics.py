@@ -58,7 +58,7 @@ class Metric(ABC):
         Returns a mapping from sub-metric names to accumulator types
         (e.g., 'average', 'sum', 'gather', 'perplexity').
         """
-        return {self.cfg._name: "average"}
+        return {str(self.cfg._name): "average"}
 
     @abstractmethod
     def __call__(

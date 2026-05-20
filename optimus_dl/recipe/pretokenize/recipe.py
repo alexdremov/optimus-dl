@@ -47,7 +47,7 @@ class DataPrepRecipe:
 
         self._check_tokenizer()
 
-    def _check_tokenizer(self):
+    def _check_tokenizer(self) -> None:
         """Builds the tokenizer and validates its vocab size against the chosen dtype."""
         tokenizer = build("tokenizer", self.config.tokenizer)
         assert isinstance(tokenizer, BaseTokenizer)
@@ -61,7 +61,7 @@ class DataPrepRecipe:
                 "Please use a larger dtype (e.g., uint32)."
             )
 
-    def run(self):
+    def run(self) -> None:
         """Executes the data preparation pipeline.
 
         Finds files, resumes from checkpoint if available, and processes data

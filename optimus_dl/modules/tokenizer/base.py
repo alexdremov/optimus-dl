@@ -48,7 +48,7 @@ class BaseTokenizer(ABC):
         """ID of the End-of-Sequence token, if any."""
         return None
 
-    def save_pretrained(self, save_directory: str):
+    def save_pretrained(self, save_directory: str) -> None:
         """Save tokenizer configuration to a directory."""
         save_directory_path = pathlib.Path(save_directory)
         save_directory_path.mkdir(parents=True, exist_ok=True)
