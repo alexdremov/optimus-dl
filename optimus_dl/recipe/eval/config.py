@@ -63,12 +63,13 @@ class EvalConfig:
     common: EvalCommonConfig = field(default_factory=EvalCommonConfig)
     lm_eval: LMEvalConfig = field(default_factory=LMEvalConfig)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate configuration."""
         if self.common.checkpoint_path == MISSING:
             raise ValueError("checkpoint_path is required")
 
-        # Convert checkpoint_path to Path for validation
-        checkpoint_path = Path(self.common.checkpoint_path)
-        if not (checkpoint_path.exists() or checkpoint_path.parent.exists()):
-            raise ValueError(f"Checkpoint path does not exist: {checkpoint_path}")
+        if self.common.checkpoint_path is not None:
+            # Convert checkpoint_path to Path for validation
+            checkpoint_path = Path(self.common.checkpoint_path)
+            if not (checkpoint_path.exists() or checkpoint_path.parent.exists()):
+                raise ValueError(f"Checkpoint path does not exist: {checkpoint_path}")
