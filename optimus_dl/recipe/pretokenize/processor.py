@@ -7,7 +7,7 @@ Architecture:
 import heapq
 import logging
 import multiprocessing
-import multiprocessing.queues.Queues
+import multiprocessing.queues
 import queue
 import random
 from collections.abc import Generator
@@ -37,7 +37,7 @@ class DownloaderMessage(NamedTuple):
 def _downloader_worker(
     files: list[str],
     dataset_config: Any,
-    output_queue: multiprocessing.queues.Queues.Queue | queue.Queue,
+    output_queue: multiprocessing.queues.Queue | queue.Queue,
     yielded_file_idx: int | None,
 ) -> None:
     """
