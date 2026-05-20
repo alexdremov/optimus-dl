@@ -305,7 +305,7 @@ def _normalize_and_collect_deps(
         return {
             k: _normalize_and_collect_deps(
                 v,
-                f"{current_path}.{k!r}" if current_path else f"{k!r}",
+                f"{current_path}.{k}" if current_path else f"{k}",
                 ghost_root_path,
                 outside_deps,
             )
@@ -409,7 +409,7 @@ def non_resolving_instantiate(config: Any, lazy: bool = True, **kwargs: Any) -> 
                         if not OmegaConf.is_interpolation(node_copy, k):
                             node_copy[k_raw] = _walk_and_ghost(
                                 node_copy[k_raw],
-                                f"{path}.{k!r}" if path else f"{k!r}",
+                                f"{path}.{k}" if path else f"{k}",
                                 node_copy,
                                 k,
                                 my_deps,
@@ -441,7 +441,7 @@ def non_resolving_instantiate(config: Any, lazy: bool = True, **kwargs: Any) -> 
                     key = cast(int | str, key_raw)
                     if OmegaConf.is_interpolation(node, key):
                         continue
-                    child_path = f"{path}.{key!r}" if path else f"{key!r}"
+                    child_path = f"{path}.{key}" if path else f"{key}"
                     node[key_raw] = _walk_and_ghost(
                         node[key_raw], child_path, node, key, target_deps
                     )
