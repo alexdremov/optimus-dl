@@ -42,7 +42,10 @@ import hashlib
 import importlib
 import logging
 import os
-from typing import Any
+from typing import (
+    Any,
+    cast,
+)
 
 import hydra
 from omegaconf import (
@@ -52,6 +55,7 @@ from omegaconf import (
     ListConfig,
 )
 from omegaconf._utils import split_key
+from omegaconf.base import BaseContainer
 
 logger = logging.getLogger(__name__)
 
@@ -88,10 +92,10 @@ This allows you to reference the number of CPU cores in YAML configs:
 """
 
 
-def hash_resolver(x, max_len=16):
+def hash_resolver(x: Any, max_len: int = 16) -> str:
     """Resolver for computing hash of a value repr."""
-    x = repr(x)
-    return hashlib.sha256(x.encode("utf-8")).hexdigest()[:max_len]
+    x_repr = repr(x)
+    return hashlib.sha256(x_repr.encode("utf-8")).hexdigest()[:max_len]
 
 
 OmegaConf.register_new_resolver("hash", hash_resolver)
@@ -102,7 +106,7 @@ This allows you to compute hashes in YAML configs:
 """
 
 
-def conf_hash_resolver(*args, _root_):
+def conf_hash_resolver(*args: Any, _root_: Any) -> str:
     """Resolver for computing hash of a root config."""
     max_len = 16
     if len(args) > 0:
@@ -125,8 +129,8 @@ This allows you to compute hashes of root config in YAML configs:
 def _copy_lazy_state(src: Any, dst: Any) -> None:
     """Recursively copy lazy definitions between caches to propagate state to instantiated containers."""
     if isinstance(src, Container) and isinstance(dst, Container):
-        src_cache = OmegaConf.get_cache(src)
-        dst_cache = OmegaConf.get_cache(dst)
+        src_cache = OmegaConf.get_cache(cast(BaseContainer, src))
+        dst_cache = OmegaConf.get_cache(cast(BaseContainer, dst))
         if "lazy_configs" in src_cache:
             dst_cache["lazy_configs"] = src_cache["lazy_configs"]
 
@@ -145,7 +149,7 @@ def _lazy_inst_resolver(local_key: str, _root_: Any, _parent_: Any) -> Any:
     Reads lazy state directly from the `_parent_` node's resolver cache,
     avoiding any modification to the visible configuration structure.
     """
-    cache = OmegaConf.get_cache(_parent_)
+    cache = OmegaConf.get_cache(cast(BaseContainer, _parent_))
 
     if "lazy_configs" not in cache or str(local_key) not in cache["lazy_configs"]:
         raise ValueError(

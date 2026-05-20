@@ -62,9 +62,6 @@ Repository = "https://github.com/alexdremov/optimus-dl"
 Documentation = "https://github.com/alexdremov/optimus-dl#readme"
 "Bug Tracker" = "https://github.com/alexdremov/optimus-dl.git/issues"
 
-[project.scripts]
-llm-train = "optimus_dl.scripts.train:main"
-
 [project.optional-dependencies]
 docs = [
     "mkdocs>=1.5.0",
@@ -89,9 +86,10 @@ dev = [
     "ruff>=0.14.10",
     "pytest-xdist>=3.6.0",
     "pre-commit>=4.5.1",
+    "mypy>=2.1.0",
 ]
 moe = [
-    "nv_grouped_gemm @ git+https://github.com/fanshiqing/grouped_gemm@efe8c40eaf4c8ef57191e0ea9aa4117aa5b1a8f2",
+    "nv_grouped_gemm @ git+https://github.com/fanshiqing/grouped_gemm@efe8c40eaf4c8ef57191e0ea9aa4117aa5b1a8f2 ; sys_platform == 'linux'",
 ]
 
 [build-system]
