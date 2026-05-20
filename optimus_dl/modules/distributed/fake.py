@@ -1,3 +1,5 @@
+from typing import TypeVar
+
 import torch
 from torch import Tensor
 from torch.distributed import (
@@ -8,6 +10,8 @@ from typing_extensions import override
 
 from optimus_dl.modules.distributed.base import Collective
 
+T = TypeVar("T")
+
 
 class FakeCollective(Collective):
     """A non-distributed implementation of the Collective interface.
@@ -17,7 +21,7 @@ class FakeCollective(Collective):
     there are no other processes to communicate with.
     """
 
-    def __init__(self, rank, world_size, device_type: str = "cpu") -> None:
+    def __init__(self, rank: int, world_size: int, device_type: str = "cpu") -> None:
         super().__init__(rank, world_size)
         assert world_size == 1, "Fake collective is fake"
         self._device_type = device_type
@@ -36,31 +40,31 @@ class FakeCollective(Collective):
 
     @property
     @override
-    def local_rank(self):
+    def local_rank(self) -> int:
         """Always returns current rank."""
         return self.rank
 
     @property
     @override
-    def dp_rank(self):
+    def dp_rank(self) -> int:
         """Always returns current rank."""
         return self.rank
 
     @property
     @override
-    def dp_world_size(self):
+    def dp_world_size(self) -> int:
         """Always returns world size (1)."""
         return self.world_size
 
     @property
     @override
-    def tp_rank(self):
+    def tp_rank(self) -> int:
         """Always returns 0."""
         return 0
 
     @property
     @override
-    def tp_world_size(self):
+    def tp_world_size(self) -> int:
         """Always returns 1."""
         return 1
 
@@ -103,7 +107,7 @@ class FakeCollective(Collective):
 
         if output_tensor.size(0) != self.world_size:
             raise ValueError(
-                f"The size of the first dimension of `output_tensor` must match the number of processes in the gang ({self._size}), but is {output_tensor.size(0)} instead."
+                f"The size of the first dimension of `output_tensor` must match the number of processes in the gang ({self.world_size}), but is {output_tensor.size(0)} instead."
             )
 
         for i in range(self.world_size):
@@ -116,7 +120,7 @@ class FakeCollective(Collective):
         """Copies input to each element of the output list."""
         if len(output_tensors) != self.world_size:
             raise ValueError(
-                f"The length of `output_tensors` must match the number of processes in the gang ({self._size}), but is {len(output_tensors)} instead."
+                f"The length of `output_tensors` must match the number of processes in the gang ({self.world_size}), but is {len(output_tensors)} instead."
             )
 
         for i in range(self.world_size):
@@ -125,8 +129,8 @@ class FakeCollective(Collective):
     @override
     def all_gather_objects(
         self,
-        object: object,
-    ):
+        object: T,
+    ) -> list[T]:
         """Returns the object in a single-element list."""
         return [object]
 

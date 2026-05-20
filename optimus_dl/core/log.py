@@ -2,15 +2,17 @@ import logging
 import sys
 import warnings
 from pathlib import Path
+from typing import Any
 
 import colorlog
+import tqdm as _tqdm
 from rich.console import Console
 from rich.logging import RichHandler
 
 from .environment import OPTIMUS_DEBUG
 
 
-def tqdm(*args, **kwargs):
+def tqdm(*args: Any, **kwargs: Any) -> _tqdm.tqdm[Any]:
     """
     A wrapper around tqdm.auto.tqdm that handles non-interactive environments.
     In non-TTY environments, it sets default intervals to avoid flooding logs.
@@ -28,7 +30,7 @@ def tqdm(*args, **kwargs):
     return tqdm_auto(*args, **kwargs)
 
 
-def trange(*args, **kwargs):
+def trange(*args: Any, **kwargs: Any) -> _tqdm.tqdm[int]:
     """
     A wrapper around tqdm.auto.trange that handles non-interactive environments.
     """
@@ -52,7 +54,7 @@ def setup_logging(
     use_colors: bool = True,
     format_string: str | None = None,
     date_format: str = "%Y-%m-%d %H:%M:%S",
-    clear_existing=True,
+    clear_existing: bool = True,
 ) -> logging.Logger:
     """
     Set up beautiful Python logging with colors to console or file output.
@@ -97,7 +99,7 @@ def setup_logging(
     else:
         root_logger.setLevel(logging.INFO)
 
-    handlers = []
+    handlers: list[Any] = []
 
     # Console handler setup
     if not log_path:
@@ -199,9 +201,12 @@ def log_once(logger: logging.Logger, level: int, message: str) -> None:
     if not hasattr(log_once, "logged_messages"):
         log_once.logged_messages = set()
     key = (logger.name, level, message)
-    if key not in log_once.logged_messages:
+
+    logged_messages = log_once.logged_messages
+    assert isinstance(logged_messages, set)
+    if key not in logged_messages:
         logger.log(level, message)
-        log_once.logged_messages.add(key)
+        logged_messages.add(key)
 
 
 def warn_once(logger: logging.Logger, message: str) -> None:

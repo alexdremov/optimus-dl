@@ -44,7 +44,7 @@ def build_best_collective(
         elif torch.cuda.is_available():
             device_type = "cuda"
 
-        collective = MeshCollective(
+        collective: Collective = MeshCollective(
             rank=int(os.environ["RANK"]),
             world_size=int(os.environ["WORLD_SIZE"]),
             local_world_size=int(os.environ["LOCAL_WORLD_SIZE"]),
@@ -53,6 +53,8 @@ def build_best_collective(
             tp_size=config.tp_size,
             sharding_world_size=config.sharding_world_size,
         )
+        logger.info(f"Built collective: {collective}")
+        return collective
     else:
         # Pass device_type to FakeCollective as well
         if device is not None:
@@ -65,8 +67,8 @@ def build_best_collective(
             device_type = "cpu"
 
         collective = FakeCollective(rank=0, world_size=1, device_type=device_type)
-    logger.info(f"Built collective: {collective}")
-    return collective
+        logger.info(f"Built fake collective: {collective}")
+        return collective
 
 
 bootstrap_module(__name__)

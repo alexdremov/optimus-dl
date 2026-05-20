@@ -305,7 +305,7 @@ def _normalize_and_collect_deps(
         return {
             k: _normalize_and_collect_deps(
                 v,
-                f"{current_path}.{k}" if current_path else str(k),
+                f"{current_path}.{k!r}" if current_path else f"{k!r}",
                 ghost_root_path,
                 outside_deps,
             )
@@ -379,7 +379,8 @@ def non_resolving_instantiate(config: Any, lazy: bool = True, **kwargs: Any) -> 
                     if "_target_" in node:
                         return hydra.utils.instantiate(node, **kwargs)
                     for key in list(node.keys()):
-                        if not OmegaConf.is_interpolation(node, key):
+                        k = cast(int | str, key)
+                        if not OmegaConf.is_interpolation(node, k):
                             node[key] = _walk_and_instantiate(node[key])
                     return node
                 elif isinstance(node, ListConfig):
@@ -403,11 +404,12 @@ def non_resolving_instantiate(config: Any, lazy: bool = True, **kwargs: Any) -> 
                     # Bottom-Up
                     my_deps: list[str] = []
                     node_copy = copy.deepcopy(node)
-                    for k in list(node_copy.keys()):
+                    for k_raw in list(node_copy.keys()):
+                        k = cast(int | str, k_raw)
                         if not OmegaConf.is_interpolation(node_copy, k):
-                            node_copy[k] = _walk_and_ghost(
-                                node_copy[k],
-                                f"{path}.{k}" if path else str(k),
+                            node_copy[k_raw] = _walk_and_ghost(
+                                node_copy[k_raw],
+                                f"{path}.{k!r}" if path else f"{k!r}",
                                 node_copy,
                                 k,
                                 my_deps,
@@ -435,12 +437,13 @@ def non_resolving_instantiate(config: Any, lazy: bool = True, **kwargs: Any) -> 
 
                     return f"${{_lazy_inst:{local_key}}}"
 
-                for key in list(node.keys()):
+                for key_raw in list(node.keys()):
+                    key = cast(int | str, key_raw)
                     if OmegaConf.is_interpolation(node, key):
                         continue
-                    child_path = f"{path}.{key}" if path else str(key)
-                    node[key] = _walk_and_ghost(
-                        node[key], child_path, node, key, target_deps
+                    child_path = f"{path}.{key!r}" if path else f"{key!r}"
+                    node[key_raw] = _walk_and_ghost(
+                        node[key_raw], child_path, node, key, target_deps
                     )
                 return node
             elif isinstance(node, ListConfig):
@@ -454,10 +457,13 @@ def non_resolving_instantiate(config: Any, lazy: bool = True, **kwargs: Any) -> 
 
         if isinstance(config_copy, DictConfig) and "_target_" in config_copy:
             # Eagerly instantiate the root node if it's a target
-            for k in list(config_copy.keys()):
-                if k != "_target_" and not OmegaConf.is_interpolation(config_copy, k):
-                    config_copy[k] = _walk_and_ghost(
-                        config_copy[k], str(k), config_copy, k, None
+            for k_raw in list(config_copy.keys()):
+                k = cast(int | str, k_raw)
+                if k_raw != "_target_" and not OmegaConf.is_interpolation(
+                    config_copy, k
+                ):
+                    config_copy[k_raw] = _walk_and_ghost(
+                        config_copy[k_raw], str(k_raw), config_copy, k, None
                     )
             return hydra.utils.instantiate(config_copy, **kwargs)
         else:

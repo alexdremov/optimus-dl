@@ -38,6 +38,7 @@ from typing import (
     Any,
     TypeVar,
     Union,
+    cast,
     get_args,
     get_origin,
     get_type_hints,
@@ -183,7 +184,11 @@ def _validate_and_cast_recursive(cls: Any, cfg: Any, path: str = "") -> Any:
         return {
             _validate_and_cast_recursive(
                 key_type, k, f"{path}.<key>"
-            ): _validate_and_cast_recursive(val_type, v, f"{path}.{k}")
+            ): _validate_and_cast_recursive(
+                val_type,
+                v,
+                f"{path}.{k.decode('utf-8') if isinstance(k, bytes) else k}",
+            )
             for k, v in cfg.items()
         }
 
@@ -229,7 +234,7 @@ def _validate_and_cast_recursive(cls: Any, cfg: Any, path: str = "") -> Any:
                 if k not in init_kwargs:
                     extra_kwargs[k] = v
 
-        obj = cls(**init_kwargs)
+        obj = cast(Callable[..., Any], cls)(**init_kwargs)
         if is_flexible and hasattr(obj, "update"):
             obj.update(extra_kwargs)
         return obj
@@ -271,7 +276,7 @@ def _get_cfg_path(cfg: CorrectCfg) -> list[str] | None:
             return None
 
         cfg_met.append(cfg)
-        cfg = cfg._parent
+        cfg = cast(CorrectCfg, cfg._parent)
     return path[::-1]
 
 
