@@ -270,7 +270,7 @@ class TrainRecipe(
         assert self.cfg.optimization.acc_steps > 0, "acc_steps must be positive"
         assert self.cfg.common.log_freq > 0, "log_freq must be positive"
 
-        if self.cfg.common.save_freq > 0:
+        if self.cfg.common.save_freq is not None and self.cfg.common.save_freq > 0:
             assert (
                 self.cfg.common.output_path
             ), "output_path required when save_freq > 0"
