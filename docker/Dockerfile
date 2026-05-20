@@ -132,8 +132,8 @@ COPY --from=ccache-export /export /root/.ccache
 # ---------------------------------------------------------------------------
 FROM ubuntu:24.04 AS ccache-seed
 RUN rm -f /etc/apt/apt.conf.d/docker-clean && \
-    apt-get -o Acquire::Retries=5 update && \
-    apt-get -o Acquire::Retries=5 install -y --no-install-recommends rsync && \
+    apt-get -o Acquire::Retries=10 update && \
+    apt-get -o Acquire::Retries=10 install --fix-missing -y --no-install-recommends rsync && \
     rm -rf /var/lib/apt/lists/*
 
 ARG ARCH=amd64
