@@ -129,7 +129,7 @@ class TrainRecipeConfig:
         default=None,
         metadata={
             "description": "Frequency of saving last checkpoint. As save_freq by default. "
-            "If set, it will save a letest checkpoint at this frequency regardless of save_freq. "
+            "If set, it will save a latest checkpoint at this frequency regardless of save_freq. "
             "Useful to have more frequent last checkpoints for easier resumption during development, "
             "and less frequent full checkpoints to save storage. "
             "If persistent checkpoint and last checkpoint are saved, then latest checkpoint will be a symlink to the persistent checkpoint."

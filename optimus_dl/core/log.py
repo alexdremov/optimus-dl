@@ -12,7 +12,7 @@ from rich.logging import RichHandler
 from .environment import OPTIMUS_DEBUG
 
 
-def tqdm(*args: Any, **kwargs: Any) -> _tqdm.tqdm[Any]:
+def tqdm(*args: Any, **kwargs: Any) -> _tqdm.tqdm:
     """
     A wrapper around tqdm.auto.tqdm that handles non-interactive environments.
     In non-TTY environments, it sets default intervals to avoid flooding logs.
@@ -30,7 +30,7 @@ def tqdm(*args: Any, **kwargs: Any) -> _tqdm.tqdm[Any]:
     return tqdm_auto(*args, **kwargs)
 
 
-def trange(*args: Any, **kwargs: Any) -> _tqdm.tqdm[int]:
+def trange(*args: Any, **kwargs: Any) -> _tqdm.tqdm:
     """
     A wrapper around tqdm.auto.trange that handles non-interactive environments.
     """
