@@ -142,13 +142,17 @@ class TrainRecipe(
         assert self.evaluator is not None, "Evaluator not initialized"
 
         # Initialize training logic mixins
-        TrainingContextMixin.__init__(self, cfg.optimization)
-        TrainingIterationMixin.__init__(self, cfg.optimization, cfg.common.log_freq)
+        TrainingContextMixin.__init__(self=self, optimization_config=cfg.optimization)
+        TrainingIterationMixin.__init__(
+            self=self,
+            optimization_config=cfg.optimization,
+            log_freq=cfg.common.log_freq,
+        )
         TrainingInterruptionMixin.__init__(
-            self,
-            cfg.common.save_freq,
-            cfg.common.output_path,
-            self.save_checkpoint,  # Pass the checkpoint method as callback
+            self=self,
+            save_freq=cfg.common.save_freq,
+            output_path=cfg.common.output_path,
+            checkpoint_callback=self.save_checkpoint,  # Pass the checkpoint method as callback
         )
         self.validate_config()
 

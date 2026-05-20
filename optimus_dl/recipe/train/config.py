@@ -117,21 +117,27 @@ class TrainRecipeConfig:
     )
 
     # Checkpointing
-    save_freq: int = field(
+    save_freq: int | None = field(
         default=II(".eval_freq"),
         metadata={
-            "description": "Frequency of checkpoint savings. As eval_freq by default"
+            "description": "Frequency of checkpoint savings. As eval_freq by default. "
+            "If eval_resumable is True, checkpoints will also be saved before (full checkpoint) and after evaluation (update metadata checkpoint) "
+            "regardless of this frequency to ensure evaluation can be resumed."
         },
     )
     last_save_freq: int | None = field(
         default=None,
         metadata={
-            "description": "Frequency of saving last checkpoint. As save_freq by default"
+            "description": "Frequency of saving last checkpoint. As save_freq by default. "
+            "If set, it will save a letest checkpoint at this frequency regardless of save_freq. "
+            "Useful to have more frequent last checkpoints for easier resumption during development, "
+            "and less frequent full checkpoints to save storage. "
+            "If persistent checkpoint and last checkpoint are saved, then latest checkpoint will be a symlink to the persistent checkpoint."
         },
     )
     output_path: str = field(
         default="${oc.env:PERSISTENT_PATH,'./outputs'}/${.exp_name}",
-        metadata={"description": "Directory to dump checkpoints to"},
+        metadata={"description": "Directory to dump checkpoints and other data to."},
     )
 
     load_checkpoint: str | None = field(
