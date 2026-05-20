@@ -290,7 +290,7 @@ def make_registry(
     The registry pattern enables dependency injection and configuration-driven
     component instantiation.
 
-    Args:§
+    Args:
         registry_name: Unique name for the registry (e.g., "model", "optimizer").
         base_class: Optional base class that all registered components must inherit
             from. Used for type checking. If None, any class can be registered.
