@@ -9,6 +9,7 @@ FROM scratch AS ccache_src
 # ---------------------------------------------------------------------------
 FROM nvcr.io/nvidia/pytorch:26.02-py3 AS base
 
+ARG VERSION=latest
 LABEL org.opencontainers.image.version=${VERSION}
 ARG ARCH=amd64
 
@@ -49,11 +50,7 @@ COPY docker/deps/install_dcgm.sh /setup/install_dcgm.sh
 RUN chmod +x /setup/install_dcgm.sh && /setup/install_dcgm.sh
 
 # Basic env
-ENV PYTHONPATH=/usr/local/dcgm/bindings/python3${PYTHONPATH:+:${PYTHONPATH}}
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PATH="usr/local/cuda/bin:${PATH}"
-ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
-ENV PIP_DEFAULT_TIMEOUT=100
+ENV PYTHONPATH=/usr/local/dcgm/bindings/python3:$PYTHONPATH
 
 RUN echo TF_FORCE_GPU_ALLOW_GROWTH='true' >> /etc/environment
 
