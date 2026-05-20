@@ -27,6 +27,7 @@ Example:
 import functools
 import logging
 import types
+from collections.abc import Callable
 from dataclasses import (
     MISSING,
     dataclass,
@@ -37,6 +38,7 @@ from typing import (
     Any,
     TypeVar,
     Union,
+    cast,
     get_args,
     get_origin,
     get_type_hints,
@@ -47,7 +49,7 @@ import omegaconf
 
 # Global registry storage: maps registry_name -> {component_name -> (class, config_class)}
 logger = logging.getLogger(__name__)
-registries = {}
+registries: dict[str, dict[str, tuple[type, Any]]] = {}
 
 
 @dataclass
@@ -79,10 +81,16 @@ class RegistryConfig(dict[str, Any]):
 
     _name: str | None = None
 
+    def __post_init__(self) -> None:
+        # Dictionary part is handled by the constructor when passed as kwargs
+        pass
+
 
 C = TypeVar("C", bound=type)
 T = TypeVar("T")
-CorrectCfg = RegistryConfig | RegistryConfigStrict | omegaconf.DictConfig | dict
+CorrectCfg = (
+    RegistryConfig | RegistryConfigStrict | omegaconf.DictConfig | dict[str, Any]
+)
 
 
 def validate_and_cast(cls: Any, cfg: Any, path: str = "") -> Any:
@@ -100,7 +108,7 @@ def validate_and_cast(cls: Any, cfg: Any, path: str = "") -> Any:
     res = _validate_and_cast_recursive(cls, cfg, path)
     # Only wrap in OmegaConf if it's a collection or dataclass at the top level.
     # Recursive calls return raw objects to ensure proper dataclass construction.
-    if is_dataclass(cls) or get_origin(cls) in (list, dict, list, dict):
+    if is_dataclass(cls) or get_origin(cls) in (list, dict):
         return omegaconf.OmegaConf.create(res)
     return res
 
@@ -149,7 +157,7 @@ def _validate_and_cast_recursive(cls: Any, cfg: Any, path: str = "") -> Any:
         raise TypeError(f"Config at {path or '<root>'} is None, but expected {cls}")
 
     # Handle List
-    if origin is list or origin is list:
+    if origin is list:
         if not isinstance(cfg, list | omegaconf.ListConfig):
             raise TypeError(f"Expected list at {path}, got {type(cfg)}")
 
@@ -164,7 +172,7 @@ def _validate_and_cast_recursive(cls: Any, cfg: Any, path: str = "") -> Any:
         ]
 
     # Handle Dict
-    if origin is dict or origin is dict:
+    if origin is dict:
         if not isinstance(cfg, dict | omegaconf.DictConfig):
             raise TypeError(f"Expected dict at {path}, got {type(cfg)}")
 
@@ -176,36 +184,44 @@ def _validate_and_cast_recursive(cls: Any, cfg: Any, path: str = "") -> Any:
         return {
             _validate_and_cast_recursive(
                 key_type, k, f"{path}.<key>"
-            ): _validate_and_cast_recursive(val_type, v, f"{path}.{k}")
+            ): _validate_and_cast_recursive(
+                val_type,
+                v,
+                f"{path}.{k.decode('utf-8') if isinstance(k, bytes) else k}",
+            )
             for k, v in cfg.items()
         }
 
     # Handle Dataclasses
     if is_dataclass(cls):
-        if not isinstance(cfg, dict | omegaconf.DictConfig):
+        if not isinstance(
+            cfg, dict | omegaconf.DictConfig | RegistryConfig | RegistryConfigStrict
+        ):
             raise TypeError(
-                f"Expected dict for dataclass {cls.__name__} at {path}, got {type(cfg)}"
+                f"Expected dict-like for dataclass {getattr(cls, '__name__', cls)} at {path}, got {type(cfg)}"
             )
 
         field_hints = get_type_hints(cls)
         is_flexible = isinstance(cls, type) and issubclass(cls, dict)
         is_strict = isinstance(cls, type) and issubclass(cls, RegistryConfigStrict)
 
+        cfg_dict: dict[str, Any] = cfg  # type: ignore
+
         if is_strict and not is_flexible:
-            actual_keys = set(cfg.keys())
+            actual_keys = set(cfg_dict.keys())
             expected_keys = set(field_hints.keys())
             if not actual_keys.issubset(expected_keys):
                 raise ValueError(
-                    f"Unknown keys at {path} for {cls.__name__}: {actual_keys - expected_keys}"
+                    f"Unknown keys at {path} for {getattr(cls, '__name__', cls)}: {actual_keys - expected_keys}"
                 )
 
         init_kwargs = {}
         extra_kwargs = {}
         for f in fields(cls):
-            if f.name in cfg:
+            if f.name in cfg_dict:
                 init_kwargs[f.name] = _validate_and_cast_recursive(
                     field_hints[f.name],
-                    cfg[f.name],
+                    cfg_dict[f.name],
                     f"{path}.{f.name}" if path else f.name,
                 )
             elif f.default is not MISSING:
@@ -214,12 +230,12 @@ def _validate_and_cast_recursive(cls: Any, cfg: Any, path: str = "") -> Any:
                 init_kwargs[f.name] = f.default_factory()
 
         if is_flexible:
-            for k, v in cfg.items():
+            for k, v in cfg_dict.items():
                 if k not in init_kwargs:
                     extra_kwargs[k] = v
 
-        obj = cls(**init_kwargs)
-        if is_flexible:
+        obj = cast(Callable[..., Any], cls)(**init_kwargs)
+        if is_flexible and hasattr(obj, "update"):
             obj.update(extra_kwargs)
         return obj
 
@@ -232,9 +248,11 @@ def _validate_and_cast_recursive(cls: Any, cfg: Any, path: str = "") -> Any:
         try:
             if cls is bool and isinstance(value, str):
                 return value.lower() in ("true", "1", "yes")
+            if isinstance(value, bytes):
+                value = value.decode("utf-8")
             return cls(value)
         except (ValueError, TypeError) as err:
-            raise TypeError(f"Cannot cast {value} to {cls} at {path}") from err
+            raise TypeError(f"Cannot cast {value!r} to {cls} at {path}") from err
 
     return cfg
 
@@ -258,11 +276,13 @@ def _get_cfg_path(cfg: CorrectCfg) -> list[str] | None:
             return None
 
         cfg_met.append(cfg)
-        cfg = cfg._parent
+        cfg = cast(CorrectCfg, cfg._parent)
     return path[::-1]
 
 
-def make_registry(registry_name: str, base_class: type | type[Any] | None = None):
+def make_registry(
+    registry_name: str, base_class: type | type[Any] | None = None
+) -> tuple[dict[str, tuple[type, Any]], Any, Any]:
     """Create or retrieve a component registry.
 
     This function creates a new registry or retrieves an existing one. Each registry
@@ -304,7 +324,9 @@ def make_registry(registry_name: str, base_class: type | type[Any] | None = None
         registries[registry_name] = {}
         registry = registries[registry_name]
 
-    def register_arch(name: str, class_name: str, registered_class: type):
+    def register_arch(
+        name: str, class_name: str, registered_class: type
+    ) -> Callable[[Callable[[], Any]], Callable[[], Any]]:
         """Register an architecture variant of a base class.
 
         This allows registering multiple variants (architectures) of a base class.
@@ -348,7 +370,7 @@ def make_registry(registry_name: str, base_class: type | type[Any] | None = None
             base_registry[1] is not None
         ), f"Base class {class_name} must have a structured config in {registry_name} registry to register architectures"
 
-        def wrapper(method):
+        def wrapper(method: Callable[[], Any]) -> Callable[[], Any]:
             cfg = method()
             assert (
                 cfg is None
@@ -360,7 +382,7 @@ def make_registry(registry_name: str, base_class: type | type[Any] | None = None
 
         return wrapper
 
-    def register(name: str, cfg: type | None = None):
+    def register(name: str, cfg: type | None = None) -> Callable[[C], C]:
         """Register a component in the registry.
 
         This is the main decorator for registering components. It associates a
@@ -406,10 +428,14 @@ def make_registry(registry_name: str, base_class: type | type[Any] | None = None
                 The same class (for use as a decorator).
             """
             registry[name] = (registered_class, cfg)
-            registered_class.register_arch = functools.partial(
-                register_arch,
-                class_name=name,
-                registered_class=registered_class,
+
+            # ruff: noqa: B010
+            setattr(
+                registered_class,
+                "register_arch",
+                functools.partial(
+                    register_arch, class_name=name, registered_class=registered_class
+                ),
             )
             return registered_class
 
@@ -467,11 +493,12 @@ def make_registry(registry_name: str, base_class: type | type[Any] | None = None
         cfg_orig = cfg
         if isinstance(cfg, str):
             name: str = cfg
-            cfg = {}
+            cfg_data: Any = {}
         else:
             if not omegaconf.OmegaConf.is_config(cfg):
                 cfg = omegaconf.OmegaConf.structured(cfg)
-            name: str = cfg["_name"]
+            cfg_data = cfg
+            name = str(cfg_data["_name"])
         assert name in registry, f"Unknown {name} in {registry_name} registry"
         registered_class, structured_cfg = registry[name]
         structured_cfg_original = structured_cfg
@@ -485,10 +512,10 @@ def make_registry(registry_name: str, base_class: type | type[Any] | None = None
             if is_strict:
                 expected_keys = set(structured_cfg.keys())
                 try:
-                    actual_keys = set(cfg.keys())
+                    actual_keys = set(cfg_data.keys())
                 except AttributeError as e:
                     raise ValueError(
-                        f"Cannot get true keys for config {type(cfg)}: {cfg}"
+                        f"Cannot get true keys for config {type(cfg_data)}: {cfg_data}"
                     ) from e
 
                 maybe_path = ".".join(_get_cfg_path(cfg_orig) or ["<root>"])
@@ -498,16 +525,16 @@ def make_registry(registry_name: str, base_class: type | type[Any] | None = None
                     f"diff: {actual_keys - expected_keys}"
                 )
             try:
-                cfg = omegaconf.OmegaConf.merge(
+                cfg_merged = omegaconf.OmegaConf.merge(
                     structured_cfg,
-                    omegaconf.OmegaConf.to_container(cfg=cfg, resolve=True),
+                    omegaconf.OmegaConf.to_container(cfg=cfg_data, resolve=True),
                 )
                 if is_strict:
-                    cfg = validate_and_cast(structured_cfg_original, cfg)
+                    cfg_merged = validate_and_cast(structured_cfg_original, cfg_merged)
             except omegaconf.errors.ConfigTypeError:
-                logger.error(f"{structured_cfg = }\n====\n{cfg = }")
+                logger.error(f"{structured_cfg = }\n====\n{cfg_data = }")
                 raise
-            obj = registered_class(cfg, **kwargs)
+            obj = registered_class(cfg_merged, **kwargs)
         else:
             obj = registered_class(**kwargs)
 

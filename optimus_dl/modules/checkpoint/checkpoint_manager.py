@@ -213,15 +213,15 @@ class CheckpointManager:
         iteration: int,
         collective: Collective,
         checkpoint_path: str | Path,
-        save_freq: int,
+        save_freq: int | None,
         last_save_freq: int | None,
         force_save: bool = False,
         **kwargs: Any,
     ) -> bool:
         """Save checkpoint if iteration matches save_freq."""
-        is_save_persistent = (
-            save_freq > 0 and iteration % save_freq == 0
-        ) or force_save
+        is_save_persistent = force_save or (
+            save_freq is not None and save_freq > 0 and iteration % save_freq == 0
+        )
         if last_save_freq is None:
             is_save_last = is_save_persistent
         else:

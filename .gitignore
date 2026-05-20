@@ -167,11 +167,9 @@ bolt-cache
 .bolt-user.yaml
 
 .DS_Store
-# uv.lock  # Uncommented since it's tracked
 
 .claude
 GEMINI.md
-uv.lock
 
 _version.py
 .ruff_cache

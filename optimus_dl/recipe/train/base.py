@@ -142,13 +142,17 @@ class TrainRecipe(
         assert self.evaluator is not None, "Evaluator not initialized"
 
         # Initialize training logic mixins
-        TrainingContextMixin.__init__(self, cfg.optimization)
-        TrainingIterationMixin.__init__(self, cfg.optimization, cfg.common.log_freq)
+        TrainingContextMixin.__init__(self=self, optimization_config=cfg.optimization)
+        TrainingIterationMixin.__init__(
+            self=self,
+            optimization_config=cfg.optimization,
+            log_freq=cfg.common.log_freq,
+        )
         TrainingInterruptionMixin.__init__(
-            self,
-            cfg.common.save_freq,
-            cfg.common.output_path,
-            self.save_checkpoint,  # Pass the checkpoint method as callback
+            self=self,
+            save_freq=cfg.common.save_freq,
+            output_path=cfg.common.output_path,
+            checkpoint_callback=self.save_checkpoint,  # Pass the checkpoint method as callback
         )
         self.validate_config()
 
@@ -266,7 +270,7 @@ class TrainRecipe(
         assert self.cfg.optimization.acc_steps > 0, "acc_steps must be positive"
         assert self.cfg.common.log_freq > 0, "log_freq must be positive"
 
-        if self.cfg.common.save_freq > 0:
+        if self.cfg.common.save_freq is not None and self.cfg.common.save_freq > 0:
             assert (
                 self.cfg.common.output_path
             ), "output_path required when save_freq > 0"

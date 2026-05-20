@@ -11,7 +11,10 @@ from collections.abc import (
     Callable,
     Iterator,
 )
-from typing import TypeVar
+from typing import (
+    Any,
+    TypeVar,
+)
 
 import torch
 
@@ -20,9 +23,9 @@ from optimus_dl.core.log import warn_once
 logger = logging.getLogger(__name__)
 
 try:
-    import dcgm_agent
-    import dcgm_fields
-    import dcgm_structs
+    import dcgm_agent  # type: ignore
+    import dcgm_fields  # type: ignore
+    import dcgm_structs  # type: ignore
 except ImportError:
     dcgm_structs = None
     dcgm_agent = None
@@ -125,13 +128,13 @@ def measured_lambda(
     if not enabled:
         return 0, f()
     if cuda_events:
-        start = torch.cuda.Event(enable_timing=True)
-        end = torch.cuda.Event(enable_timing=True)
-        start.record()
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+        start_event.record()
         elem = f()
-        end.record()
-        end.synchronize()
-        elapsed = start.elapsed_time(end)
+        end_event.record()
+        end_event.synchronize()
+        elapsed = start_event.elapsed_time(end_event)
         return elapsed, elem
     else:
         start = time.perf_counter_ns()
@@ -140,7 +143,7 @@ def measured_lambda(
         return elapsed, elem
 
 
-def setup_dcgm(gpu_id=0):
+def setup_dcgm(gpu_id: int = 0) -> None | Any:
     """Initializes DCGM, starts the engine, and watches the SM metrics."""
     if dcgm_structs is None:
         return None
@@ -175,7 +178,7 @@ def setup_dcgm(gpu_id=0):
         return None
 
 
-def get_sm_metrics(handle, gpu_id=0):
+def get_sm_metrics(handle: Any, gpu_id: int = 0) -> None | dict[str, float]:
     """Queries the current SM metrics."""
     if dcgm_agent is None:
         return None
@@ -211,7 +214,7 @@ def get_sm_metrics(handle, gpu_id=0):
         return None
 
 
-def teardown_dcgm(handle):
+def teardown_dcgm(handle: Any) -> None:
     """Cleans up the DCGM engine."""
     if handle is None or dcgm_agent is None:
         return None

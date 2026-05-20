@@ -1,6 +1,7 @@
 import gc
 import logging
 import os
+from typing import Any
 
 import psutil
 
@@ -9,7 +10,7 @@ from .environment import OPTIMUS_EXIT_TIMEOUT
 logger = logging.getLogger(__name__)
 
 
-def finalize_process(timeout_seconds: int = 5, max_retries=10) -> None:
+def finalize_process(timeout_seconds: int = 5, max_retries: int = 10) -> None:
     """
     Finalizes the process by ensuring all child processes are terminated to prevent hanging.
      - First attempts a polite termination of child processes.
@@ -24,7 +25,7 @@ def finalize_process(timeout_seconds: int = 5, max_retries=10) -> None:
     finish_wandb()
     finish_mlflow()
 
-    children = ["dummy"]
+    children: list[Any] = ["dummy"]
     retries = 0
 
     while len(children) > 0 and retries < max_retries:
@@ -67,7 +68,7 @@ def finalize_process(timeout_seconds: int = 5, max_retries=10) -> None:
     _schedule_watchdog()
 
 
-def _schedule_watchdog():
+def _schedule_watchdog() -> None:
     """
     Schedules a watchdog to forcefully kill the process after a delay if it is still alive.
     This is a safety net in case some child processes are unresponsive and prevent exit.
@@ -85,9 +86,8 @@ def _schedule_watchdog():
             "Immediate watchdog enabled (OPTIMUS_EXIT_TIMEOUT = 0), process will be force killed immediately."
         )
         os._exit(0)  # Force exit without cleanup
-        return
 
-    def watchdog():
+    def watchdog() -> None:
         time.sleep(timeout)
         logger.warning("Watchdog timeout reached, forcefully exiting process.")
         os._exit(0)  # Force exit without cleanup
@@ -98,12 +98,12 @@ def _schedule_watchdog():
     threading.Thread(target=watchdog, daemon=True).start()
 
 
-def force_terminate_joblib():
+def force_terminate_joblib() -> None:
     """
     Forcefully terminates Joblib workers without allowing them to respawn.
     """
     try:
-        import joblib.externals.loky.reusable_executor as loky_reusable_executor
+        import joblib.externals.loky.reusable_executor as loky_reusable_executor  # type: ignore
     except ImportError:
         logger.warning(
             "Joblib is not installed, cannot force terminate Joblib workers."
@@ -119,7 +119,7 @@ def force_terminate_joblib():
         executor.shutdown(wait=False, kill_workers=True)
 
 
-def finish_wandb():
+def finish_wandb() -> None:
     """
     Ensures that all WandB processes are terminated to prevent hanging.
     """
@@ -134,7 +134,7 @@ def finish_wandb():
         wandb.finish()
 
 
-def finish_mlflow():
+def finish_mlflow() -> None:
     """
     Ensures that all MLflow processes are terminated to prevent hanging.
     """

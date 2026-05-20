@@ -4,6 +4,8 @@ This module defines the BaseDataset class that all data sources must inherit fro
 It provides integration with torchdata's pipeline system and checkpointing support.
 """
 
+from typing import Any
+
 import torchdata.nodes
 
 
@@ -35,7 +37,7 @@ class BaseDataset(torchdata.nodes.BaseNode):
 
         ```"""
 
-    def __init__(self, cfg, **kwargs):
+    def __init__(self, cfg: Any, **kwargs: Any) -> None:
         """Initialize the base dataset.
 
         Args:
@@ -45,7 +47,7 @@ class BaseDataset(torchdata.nodes.BaseNode):
         super().__init__()
         self.cfg = cfg
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.__class__.__name__}()"
 
     def load_state_dict(self, state_dict: dict) -> None:

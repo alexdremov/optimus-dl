@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+import omegaconf
 import torch
 from omegaconf import MISSING
 from torchdata.nodes.base_node import BaseNode
@@ -58,7 +59,10 @@ class BasicBatcherNode(BaseNode):
         super().reset(initial_state)
         self._peeked_item = None
         if initial_state:
-            self.cfg = initial_state["cfg"]
+            self.cfg = omegaconf.OmegaConf.merge(
+                omegaconf.OmegaConf.structured(BasicBatcherConfig()),
+                initial_state["cfg"],
+            )
             self.node.reset(initial_state["source_state"])
             self._peeked_item = initial_state.get("_peeked_item")
         else:

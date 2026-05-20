@@ -1,3 +1,5 @@
+import typing
+
 import numpy as np
 import torch
 
@@ -11,7 +13,8 @@ def get_item(number: ScalarLike) -> float | int | bool:
         return number.item()
     elif isinstance(number, np.ndarray):
         assert number.size == 1, "Array must be a scalar."
-        return number.item()
+        item = number.item()
+        return typing.cast(float | int | bool, item)
     else:
         return number
 

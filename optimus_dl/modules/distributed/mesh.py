@@ -1,5 +1,9 @@
 import logging
-from typing import NamedTuple
+import typing
+from typing import (
+    NamedTuple,
+    TypeVar,
+)
 
 import torch
 import torch.distributed as dist
@@ -18,6 +22,8 @@ from typing_extensions import override
 from optimus_dl.modules.distributed.base import Collective
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 
 class Meshes(NamedTuple):
@@ -59,13 +65,13 @@ class MeshCollective(Collective):
 
     def __init__(
         self,
-        rank,
-        world_size,
-        local_world_size,
-        local_rank,
-        device_type,
+        rank: int,
+        world_size: int,
+        local_world_size: int,
+        local_rank: int,
+        device_type: str,
         mesh: Meshes | None = None,
-        process_group=None,
+        process_group: torch.distributed.ProcessGroup | None = None,
         tp_size: int = 1,
         sharding_world_size: int | None = None,
     ) -> None:
@@ -181,7 +187,7 @@ class MeshCollective(Collective):
         return f"MeshCollective(rank={self.rank}/{self.world_size}, {group_type}_group={group_rank}/{group_size}, tp_size={self._tp_size}, mesh={self._mesh}, ranks={ranks})"
 
     @property
-    def tp_mesh(self):
+    def tp_mesh(self) -> DeviceMesh | None:
         """Returns the sub-mesh for Tensor Parallelism if it exists."""
         assert self._mesh.parallel_mesh.mesh_dim_names is not None
         if "tp" in self._mesh.parallel_mesh.mesh_dim_names:
@@ -189,7 +195,7 @@ class MeshCollective(Collective):
         return None
 
     @property
-    def dp_mesh(self):
+    def dp_mesh(self) -> DeviceMesh:
         """Returns the sub-mesh for Data Parallelism (Replicate + Shard)."""
         assert self._mesh.physical_mesh.mesh_dim_names is not None
         return self._mesh.parallel_mesh["dp_replicate", "dp_shard"]
@@ -233,31 +239,31 @@ class MeshCollective(Collective):
 
     @property
     @override
-    def local_rank(self):
+    def local_rank(self) -> int:
         """Rank within the current compute node."""
         return self._local_rank
 
     @property
     @override
-    def dp_rank(self):
+    def dp_rank(self) -> int:
         """Rank within the Data Parallel group (shared across nodes)."""
         return self.rank // self._tp_size
 
     @property
     @override
-    def dp_world_size(self):
+    def dp_world_size(self) -> int:
         """Total size of the Data Parallel gang."""
         return self.world_size // self._tp_size
 
     @property
     @override
-    def tp_rank(self):
+    def tp_rank(self) -> int:
         """Rank within the Tensor Parallel group."""
         return self.rank % self._tp_size
 
     @property
     @override
-    def tp_world_size(self):
+    def tp_world_size(self) -> int:
         """Size of the Tensor Parallel group."""
         return self._tp_size
 
@@ -287,7 +293,7 @@ class MeshCollective(Collective):
         dist.barrier(group=self._process_group)
 
     @override
-    def all_reduce(self, tensor: Tensor, op: ReduceOp.RedOpType):
+    def all_reduce(self, tensor: Tensor, op: ReduceOp.RedOpType) -> None:
         """Perform all-reduce on the current process group."""
         dist.all_reduce(
             tensor,
@@ -296,7 +302,7 @@ class MeshCollective(Collective):
         )
 
     @override
-    def all_gather(self, output_tensor: Tensor, input_tensor: Tensor):
+    def all_gather(self, output_tensor: Tensor, input_tensor: Tensor) -> None:
         """Perform all-gather onto a single tensor."""
         dist.all_gather_into_tensor(
             output_tensor,
@@ -313,14 +319,14 @@ class MeshCollective(Collective):
 
     def all_gather_objects(
         self,
-        object: object,
-    ) -> list[object]:
+        object: T,
+    ) -> list[T]:
         """Collect Python objects from all ranks in the group."""
         object_list = [None] * dist.get_world_size(group=self._process_group)
         dist.all_gather_object(
             object_list=object_list, obj=object, group=self._process_group
         )
-        return object_list
+        return typing.cast(list[T], object_list)
 
     @override
     def broadcast(self, tensor: Tensor, source_rank: int = 0) -> None:

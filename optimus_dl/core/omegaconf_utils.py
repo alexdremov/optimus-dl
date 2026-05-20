@@ -42,7 +42,10 @@ import hashlib
 import importlib
 import logging
 import os
-from typing import Any
+from typing import (
+    Any,
+    cast,
+)
 
 import hydra
 from omegaconf import (
@@ -52,6 +55,7 @@ from omegaconf import (
     ListConfig,
 )
 from omegaconf._utils import split_key
+from omegaconf.basecontainer import BaseContainer
 
 logger = logging.getLogger(__name__)
 
@@ -88,10 +92,10 @@ This allows you to reference the number of CPU cores in YAML configs:
 """
 
 
-def hash_resolver(x, max_len=16):
+def hash_resolver(x: Any, max_len: int = 16) -> str:
     """Resolver for computing hash of a value repr."""
-    x = repr(x)
-    return hashlib.sha256(x.encode("utf-8")).hexdigest()[:max_len]
+    x_repr = repr(x)
+    return hashlib.sha256(x_repr.encode("utf-8")).hexdigest()[:max_len]
 
 
 OmegaConf.register_new_resolver("hash", hash_resolver)
@@ -102,7 +106,7 @@ This allows you to compute hashes in YAML configs:
 """
 
 
-def conf_hash_resolver(*args, _root_):
+def conf_hash_resolver(*args: Any, _root_: Any) -> str:
     """Resolver for computing hash of a root config."""
     max_len = 16
     if len(args) > 0:
@@ -125,8 +129,8 @@ This allows you to compute hashes of root config in YAML configs:
 def _copy_lazy_state(src: Any, dst: Any) -> None:
     """Recursively copy lazy definitions between caches to propagate state to instantiated containers."""
     if isinstance(src, Container) and isinstance(dst, Container):
-        src_cache = OmegaConf.get_cache(src)
-        dst_cache = OmegaConf.get_cache(dst)
+        src_cache = OmegaConf.get_cache(cast(BaseContainer, src))
+        dst_cache = OmegaConf.get_cache(cast(BaseContainer, dst))
         if "lazy_configs" in src_cache:
             dst_cache["lazy_configs"] = src_cache["lazy_configs"]
 
@@ -145,7 +149,7 @@ def _lazy_inst_resolver(local_key: str, _root_: Any, _parent_: Any) -> Any:
     Reads lazy state directly from the `_parent_` node's resolver cache,
     avoiding any modification to the visible configuration structure.
     """
-    cache = OmegaConf.get_cache(_parent_)
+    cache = OmegaConf.get_cache(cast(BaseContainer, _parent_))
 
     if "lazy_configs" not in cache or str(local_key) not in cache["lazy_configs"]:
         raise ValueError(
@@ -301,7 +305,7 @@ def _normalize_and_collect_deps(
         return {
             k: _normalize_and_collect_deps(
                 v,
-                f"{current_path}.{k}" if current_path else str(k),
+                f"{current_path}.{k}" if current_path else f"{k}",
                 ghost_root_path,
                 outside_deps,
             )
@@ -375,7 +379,8 @@ def non_resolving_instantiate(config: Any, lazy: bool = True, **kwargs: Any) -> 
                     if "_target_" in node:
                         return hydra.utils.instantiate(node, **kwargs)
                     for key in list(node.keys()):
-                        if not OmegaConf.is_interpolation(node, key):
+                        k = cast(int | str, key)
+                        if not OmegaConf.is_interpolation(node, k):
                             node[key] = _walk_and_instantiate(node[key])
                     return node
                 elif isinstance(node, ListConfig):
@@ -399,11 +404,12 @@ def non_resolving_instantiate(config: Any, lazy: bool = True, **kwargs: Any) -> 
                     # Bottom-Up
                     my_deps: list[str] = []
                     node_copy = copy.deepcopy(node)
-                    for k in list(node_copy.keys()):
+                    for k_raw in list(node_copy.keys()):
+                        k = cast(int | str, k_raw)
                         if not OmegaConf.is_interpolation(node_copy, k):
-                            node_copy[k] = _walk_and_ghost(
-                                node_copy[k],
-                                f"{path}.{k}" if path else str(k),
+                            node_copy[k_raw] = _walk_and_ghost(
+                                node_copy[k_raw],
+                                f"{path}.{k}" if path else f"{k}",
                                 node_copy,
                                 k,
                                 my_deps,
@@ -431,12 +437,13 @@ def non_resolving_instantiate(config: Any, lazy: bool = True, **kwargs: Any) -> 
 
                     return f"${{_lazy_inst:{local_key}}}"
 
-                for key in list(node.keys()):
+                for key_raw in list(node.keys()):
+                    key = cast(int | str, key_raw)
                     if OmegaConf.is_interpolation(node, key):
                         continue
-                    child_path = f"{path}.{key}" if path else str(key)
-                    node[key] = _walk_and_ghost(
-                        node[key], child_path, node, key, target_deps
+                    child_path = f"{path}.{key}" if path else f"{key}"
+                    node[key_raw] = _walk_and_ghost(
+                        node[key_raw], child_path, node, key, target_deps
                     )
                 return node
             elif isinstance(node, ListConfig):
@@ -450,10 +457,13 @@ def non_resolving_instantiate(config: Any, lazy: bool = True, **kwargs: Any) -> 
 
         if isinstance(config_copy, DictConfig) and "_target_" in config_copy:
             # Eagerly instantiate the root node if it's a target
-            for k in list(config_copy.keys()):
-                if k != "_target_" and not OmegaConf.is_interpolation(config_copy, k):
-                    config_copy[k] = _walk_and_ghost(
-                        config_copy[k], str(k), config_copy, k, None
+            for k_raw in list(config_copy.keys()):
+                k = cast(int | str, k_raw)
+                if k_raw != "_target_" and not OmegaConf.is_interpolation(
+                    config_copy, k
+                ):
+                    config_copy[k_raw] = _walk_and_ghost(
+                        config_copy[k_raw], str(k_raw), config_copy, k, None
                     )
             return hydra.utils.instantiate(config_copy, **kwargs)
         else:

@@ -29,7 +29,7 @@ class Collective(ABC):
     rank: int
     world_size: int
 
-    def __init__(self, rank, world_size) -> None:
+    def __init__(self, rank: int, world_size: int) -> None:
         super().__init__()
         self.rank = rank
         self.world_size = world_size

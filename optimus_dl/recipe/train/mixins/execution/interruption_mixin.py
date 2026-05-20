@@ -24,7 +24,7 @@ class TrainingInterruptionMixin:
 
     def __init__(
         self,
-        save_freq: int = 0,
+        save_freq: int | None = None,
         output_path: str | None = None,
         checkpoint_callback: Callable[..., None] | None = None,
     ):
@@ -48,7 +48,12 @@ class TrainingInterruptionMixin:
         logger.info("Training interrupted by user")
 
         # Check if we have checkpoint saving configured and callback available
-        if self.save_freq > 0 and self.output_path and self.checkpoint_callback:
+        if (
+            self.save_freq is not None
+            and self.save_freq > 0
+            and self.output_path
+            and self.checkpoint_callback
+        ):
             try:
                 logger.info("Saving final checkpoint...")
 
@@ -64,7 +69,7 @@ class TrainingInterruptionMixin:
             except Exception as e:
                 logger.error(f"Failed to save final checkpoint: {e}")
                 raise
-        elif self.save_freq > 0:
+        elif self.save_freq is not None and self.save_freq > 0:
             logger.warning(
                 "Checkpoint saving requested but no callback provided or output_path missing"
             )

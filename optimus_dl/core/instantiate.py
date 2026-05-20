@@ -12,6 +12,7 @@ from collections.abc import (
 )
 from typing import Any
 
+import omegaconf
 from omegaconf import OmegaConf
 
 
@@ -31,8 +32,12 @@ def merge_dicts(*dicts: Mapping[str, Any]) -> dict[str, Any]:
     for d in dicts:
         # Convert to config objects to safely merge if they aren't already
         if not OmegaConf.is_config(d):
-            d = OmegaConf.create(d)
-        result = OmegaConf.merge(result, d)
+            # OmegaConf.create expects a dict, not a general Mapping
+            d = OmegaConf.create(dict(d))
+        # OmegaConf.merge can return ListConfig, but here it will always be DictConfig
+        merged = OmegaConf.merge(result, d)
+        assert isinstance(merged, omegaconf.DictConfig)
+        result = merged
 
     # Return as standard dict so it plays nicely with other kwargs
     return OmegaConf.to_container(result, resolve=True)  # type: ignore
