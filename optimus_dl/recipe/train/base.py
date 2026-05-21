@@ -77,6 +77,7 @@ class TrainRecipe(
 
     def __init__(self, cfg: TrainConfig) -> None:
         self.cfg = cfg
+        full_config = (cfg if hasattr(cfg, "__dict__") else dict(cfg),)
 
         # Initialize components via composition using registry for dependency injection
         self.model_builder = build_component(
@@ -121,12 +122,18 @@ class TrainRecipe(
             cfg.logger_manager,
             cast_to=LoggerManager,
             loggers_config=cfg.loggers,
+            full_config=full_config,
         )
         assert self.logger_manager is not None, "Logger manager not initialized"
         self.checkpoint_manager = build_component(
             "checkpoint_manager",
             cfg.checkpoint_manager,
             cast_to=CheckpointManager,
+            checkpoint_path=cfg.common.output_path,
+            full_config=full_config,
+            logger_manager=self.logger_manager,
+            save_freq=cfg.common.save_freq,
+            last_save_freq=cfg.common.last_save_freq,
         )
         assert self.checkpoint_manager is not None, "Checkpoint manager not initialized"
         self.evaluator = build_component(
@@ -138,6 +145,7 @@ class TrainRecipe(
             eval_guaranteed_same_batches=cfg.common.eval_guaranteed_same_batches,
             eval_checkpointing=cfg.common.eval_checkpointing,
             output_path=cfg.common.output_path,
+            all_metrics_configs=cfg.metrics,
         )
         assert self.evaluator is not None, "Evaluator not initialized"
 
@@ -219,36 +227,18 @@ class TrainRecipe(
 
     def save_checkpoint_if_needed(self, *args, **kwargs):
         """Check save frequency and delegate to CheckpointManager."""
-        config_dict = self.cfg if hasattr(self.cfg, "__dict__") else dict(self.cfg)
-        kwargs["full_config"] = config_dict
-        kwargs["checkpoint_path"] = self.cfg.common.output_path
-        kwargs["save_freq"] = self.cfg.common.save_freq
-        kwargs["last_save_freq"] = self.cfg.common.last_save_freq
-        kwargs["logger_manager"] = self.logger_manager
         return self.checkpoint_manager.save_checkpoint_if_needed(*args, **kwargs)
 
     def save_checkpoint(self, *args, **kwargs):
         """Save a checkpoint via CheckpointManager."""
-        config_dict = self.cfg if hasattr(self.cfg, "__dict__") else dict(self.cfg)
-        kwargs["full_config"] = config_dict
-        if "checkpoint_path" not in kwargs:
-            kwargs["checkpoint_path"] = self.cfg.common.output_path
-        if "logger_manager" not in kwargs:
-            kwargs["logger_manager"] = self.logger_manager
         return self.checkpoint_manager.save_checkpoint(*args, **kwargs)
 
     def load_checkpoint_if_exists(self, *args, **kwargs):
         """Try to resume from latest checkpoint in output path."""
-        if "checkpoint_path" not in kwargs:
-            kwargs["checkpoint_path"] = self.cfg.common.output_path
-        if "logger_manager" not in kwargs:
-            kwargs["logger_manager"] = self.logger_manager
         return self.checkpoint_manager.load_checkpoint_if_exists(*args, **kwargs)
 
     def load_checkpoint(self, *args, **kwargs):
         """Load a specific checkpoint."""
-        if "logger_manager" not in kwargs:
-            kwargs["logger_manager"] = self.logger_manager
         return self.checkpoint_manager.load_checkpoint(*args, **kwargs)
 
     def run_evaluation_if_needed(self, *args, **kwargs):
