@@ -25,6 +25,7 @@ class ChunkTransformConfig(RegistryConfigStrict):
 
     max_seq_len: int = MISSING
     add_one_for_shift: bool = True
+    max_chunks: int | None = None  # Optional limit on total chunks produced per sample
 
 
 class ChunkTransformNode(BaseNode):
@@ -64,11 +65,14 @@ class ChunkTransformNode(BaseNode):
 
     def next(self):
         """Yield the next chunk of tokens, refilling the buffer if empty."""
+        max_chunk_size = self.cfg.max_seq_len + (1 if self.cfg.add_one_for_shift else 0)
         if len(self.buffer) == 0:
             self.buffer = next(self.node)["input_ids"]
+            if self.cfg.max_chunks is not None:
+                self.buffer = self.buffer[: self.cfg.max_chunks * max_chunk_size]
 
         taken = min(
-            self.cfg.max_seq_len + (1 if self.cfg.add_one_for_shift else 0),
+            max_chunk_size,
             len(self.buffer),
         )
         return_buff = self.buffer[:taken]

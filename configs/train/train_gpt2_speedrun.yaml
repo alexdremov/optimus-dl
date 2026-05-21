@@ -4,7 +4,7 @@
 defaults:
   - defaults.yaml
   - lr_scheduler: wsd
-  - model: llama2
+  - model: gpt2-124m
   - criterion: cross_entropy
   - loggers: all
   - optimization/amp: bfloat16
@@ -56,21 +56,6 @@ lr_scheduler:
 
 # Data configuration: FineWeb-Edu
 data:
-  scratch:
-    base_transforms:
-      _name: compose
-      transforms:
-        - _name: tokenize
-          tokenizer_config:
-            _name: tiktoken
-            name: gpt2
-        - _name: flat_batcher
-          batch_size: ${args.batch_size}
-          seq_len: ${args.seq_len}
-          mask_documents: true
-        - _name: prefetch
-        - _name: to_device
-
   train_datasets:
     source:
       _name: huggingface_dataset
@@ -79,7 +64,24 @@ data:
         name: sample-10BT
         split: train
         streaming: true
-    transform: ${data.scratch.base_transforms}
+    transform:
+      _name: compose
+      transforms:
+        - _name: tokenize
+          tokenizer_config:
+            _name: tiktoken
+            name: gpt2
+        - _name: chunk_tokens
+          max_seq_len: ${args.seq_len}
+          max_chunks: 1
+        - _name: "shuffle"
+          buffer_size: 10000
+        - _name: flat_batcher
+          batch_size: ${args.batch_size}
+          seq_len: ${args.seq_len}
+          mask_documents: true
+        - _name: prefetch
+        - _name: to_device
 
   eval_datasets:
     fineweb_val:
@@ -90,7 +92,21 @@ data:
           name: sample-10BT
           split: train  # Same stream, fixed slice for val
           streaming: true
-      transform: ${data.scratch.base_transforms}
+      transform:
+        _name: compose
+        transforms:
+          - _name: tokenize
+            tokenizer_config:
+              _name: tiktoken
+              name: gpt2
+          - _name: chunk_tokens
+            max_seq_len: ${args.seq_len}
+          - _name: flat_batcher
+            batch_size: ${args.batch_size}
+            seq_len: ${args.seq_len}
+            mask_documents: true
+          - _name: prefetch
+          - _name: to_device
 
 common:
   exp_name: ${args.name}-${config_hash:}
