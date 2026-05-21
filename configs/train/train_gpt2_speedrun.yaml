@@ -104,4 +104,4 @@ common:
   save_freq: 500
   eval_freq: 250
   eval_iterations: 20   # 20 * 0.5M = 10.5M tokens
-  output_path: outputs/${args.name}/${.exp_name}
+  output_path: ${oc.env:PERSISTENT_PATH,'./outputs'}/${args.name}/${.exp_name}

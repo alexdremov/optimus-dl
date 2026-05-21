@@ -322,7 +322,7 @@ class TrainRecipe(
     def run(self):
         """Run the complete training pipeline."""
         self.setup_context()
-        is_restart = self.checkpoint_manager.is_restart(self.cfg.common.output_path)
+        is_restart = self.checkpoint_manager.is_restart()
         finished_run = False
 
         with meters_group("init"):
