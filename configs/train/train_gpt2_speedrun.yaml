@@ -37,7 +37,7 @@ model:
 
 model_transforms:
   - _name: ddp
-  # - _name: compile
+  - _name: compile
 
 # Criterion: Modern softcapping
 criterion:
