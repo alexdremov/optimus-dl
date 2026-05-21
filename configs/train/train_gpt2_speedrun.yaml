@@ -21,20 +21,6 @@ args:
   # total_batch_size = nodes * gpus * bsz * accum = 1 * 8 * 64 * 1 = 512 (sequences)
   # sequences * seq_len = 512 * 1024 = 524,288 tokens/step
 
-# Model Architecture: 124M scale optimized for speed
-model:
-  n_layer: 11           # modded-nanogpt uses 11 layers
-  n_head: 6             # 6 heads with 128 head_dim
-  n_embd: 768
-  head_dim: 128
-  sequence_length: ${args.seq_len}
-  vocab_size: 50304     # 50257 padded to 128
-  use_qk_norm: true
-  mlp_type: relu2       # Squared ReLU
-  zero_init_projections: true
-  bias: false
-  attention_bias: false
-
 model_transforms:
   - _name: ddp
   - _name: compile
