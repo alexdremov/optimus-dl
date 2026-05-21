@@ -77,7 +77,7 @@ class TrainRecipe(
 
     def __init__(self, cfg: TrainConfig) -> None:
         self.cfg = cfg
-        full_config = (cfg if hasattr(cfg, "__dict__") else dict(cfg),)
+        full_config = cfg if hasattr(cfg, "__dict__") else dict(cfg)
 
         # Initialize components via composition using registry for dependency injection
         self.model_builder = build_component(
