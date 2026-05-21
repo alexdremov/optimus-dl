@@ -67,8 +67,8 @@ class MetricsRecipe:
             criterion_config=cfg.criterion,
         )
         self.checkpoint_manager = build_component(
-            "checkpoint_manager",
-            cfg.checkpoint_manager,
+            registry_name="checkpoint_manager",
+            cfg=cfg.checkpoint_manager,
             cast_to=CheckpointManager,
         )
         self.logger_manager: LoggerManager = build_logger_manager(
