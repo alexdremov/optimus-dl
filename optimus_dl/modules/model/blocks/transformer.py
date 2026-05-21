@@ -3,13 +3,18 @@ import torch.nn as nn
 
 from optimus_dl.modules.model.blocks.attention import RotarySelfAttention
 from optimus_dl.modules.model.blocks.layer_norms import RMSNorm
-from optimus_dl.modules.model.blocks.mlp import SwiGLUMLP
+from optimus_dl.modules.model.blocks.mlp import (
+    GELUMLP,
+    ReLU2MLP,
+    SwiGLUMLP,
+)
 
 
 class RotaryTransformerBlock(nn.Module):
-    """Unified Transformer block with RMSNorm, Rotary Attention, and SwiGLU MLP.
+    """Unified Transformer block with RMSNorm, Rotary Attention, and MLP.
 
-    Used by Llama and Qwen models. Supports optional Q/K normalization.
+    Used by Llama and Qwen models. Supports optional Q/K normalization and
+    configurable MLP variants.
     """
 
     def __init__(
@@ -24,6 +29,7 @@ class RotaryTransformerBlock(nn.Module):
         attention_bias: bool = False,
         use_qk_norm: bool = False,
         qk_norm_per_head: bool = True,
+        mlp_type: str = "swiglu",
         intermediate_size: int | None = None,
         multiple_of: int = 256,
         sliding_window: int | None = None,
@@ -45,13 +51,30 @@ class RotaryTransformerBlock(nn.Module):
             sliding_window=sliding_window,
         )
         self.ln_2 = RMSNorm(n_embd, eps=rmsnorm_eps, use_liger=use_liger_rmsnorm)
-        self.mlp = SwiGLUMLP(
-            n_embd=n_embd,
-            intermediate_size=intermediate_size,
-            multiple_of=multiple_of,
-            bias=bias,
-            use_liger=use_liger_swiglu,
-        )
+
+        if mlp_type == "swiglu":
+            self.mlp = SwiGLUMLP(
+                n_embd=n_embd,
+                intermediate_size=intermediate_size,
+                multiple_of=multiple_of,
+                bias=bias,
+                use_liger=use_liger_swiglu,
+            )
+        elif mlp_type == "relu2":
+            self.mlp = ReLU2MLP(
+                n_embd=n_embd,
+                intermediate_size=intermediate_size,
+                bias=bias,
+            )
+        elif mlp_type == "gelu":
+            self.mlp = GELUMLP(
+                n_embd=n_embd,
+                intermediate_size=intermediate_size,
+                bias=bias,
+                dropout=dropout,
+            )
+        else:
+            raise ValueError(f"Unknown mlp_type: {mlp_type}")
 
     def forward(
         self,

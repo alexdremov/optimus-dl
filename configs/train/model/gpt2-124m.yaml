@@ -1,0 +1,9 @@
+_name: gpt2
+n_layer: 12
+n_head: 12
+n_embd: 768
+block_size: 1024
+vocab_size: 50304
+dropout: 0.0
+bias: true
+tie_word_embeddings: true

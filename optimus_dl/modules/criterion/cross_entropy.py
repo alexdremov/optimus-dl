@@ -35,6 +35,8 @@ class CrossEntropyCriterionConfig(RegistryConfigStrict):
     label_smoothing: float = 0.0
     use_liger_kernel: bool | None = None
     padding_token_id: int = -100
+    logit_softcap: float | None = None
+    softcap_type: str = "tanh"  # 'tanh' or 'sigmoid'
 
 
 @register_criterion("cross_entropy", CrossEntropyCriterionConfig)
@@ -48,6 +50,9 @@ class CrossEntropyCriterion(BaseCriterion):
     - **Liger Kernel**: Optional high-performance kernel for faster computation
       and lower memory usage on GPUs.
     - **Metrics**: Automatically logs accuracy, perplexity, and token counts.
+    - **Logit Softcapping**: Stabilizes training by clamping logit ranges.
+        - 'tanh': c * tanh(x / c)
+        - 'sigmoid': 23 * sigmoid((x + 5) / 7.5) (used in latest modded-nanogpt)
 
     Args:
         cfg: Configuration for cross entropy.
@@ -182,6 +187,17 @@ class CrossEntropyCriterion(BaseCriterion):
         model_out = model(**batch)
         input_ids = batch["input_ids"]
         logits = model_out["logits"]
+
+        if self.cfg.logit_softcap is not None:
+            if self.cfg.softcap_type == "tanh":
+                # standard tanh softcapping: c * tanh(logits / c)
+                logits = self.cfg.logit_softcap * torch.tanh(
+                    logits / self.cfg.logit_softcap
+                )
+            elif self.cfg.softcap_type == "sigmoid":
+                # modded-nanogpt latest variant: 23 * sigmoid((logits + 5) / 7.5)
+                logits = 23 * torch.sigmoid((logits + 5.0) / 7.5)
+
         is_dtensor = isinstance(logits, DTensor)
 
         valid_tokens = cached_lambda(

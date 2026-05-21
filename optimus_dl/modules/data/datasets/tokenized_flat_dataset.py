@@ -23,6 +23,7 @@ class TokenizedFlatDatasetConfig(RegistryConfigStrict):
         files: List of paths to tokenized `.npy` or raw binary files.
         seq_len: Sequence length for each batch.
         batch_size: Number of sequences per batch.
+        offset: Offset in bytes to start reading the files from. Useful for files with headers.
     """
 
     dtype: str = "np.uint16"
@@ -31,6 +32,7 @@ class TokenizedFlatDatasetConfig(RegistryConfigStrict):
     )
     seq_len: int = field(default=MISSING)
     batch_size: int = field(default=MISSING)
+    offset: int = field(default=0)
 
 
 @register_dataset("tokenized_flat", TokenizedFlatDatasetConfig)
@@ -56,6 +58,7 @@ class TokenizedFlatDataset(BaseDataset):
         self.seq_len = cfg.seq_len
         self.batch_size = cfg.batch_size
         self.dtype = cfg.dtype
+        self.offset = cfg.offset
         self.rank = rank
         self.world_size = world_size
 
@@ -88,7 +91,9 @@ class TokenizedFlatDataset(BaseDataset):
             logger = logging.getLogger(__name__)
             logger.warning(f"Unknown dtype '{self.dtype}', defaulting to np.uint16")
 
-        self.files_mapped = [np.memmap(i, dtype=dtype, mode="r") for i in self.files]
+        self.files_mapped = [
+            np.memmap(i, dtype=dtype, mode="r", offset=self.offset) for i in self.files
+        ]
         self.cumlens = np.cumsum([len(i) for i in self.files_mapped])
 
         total_tokens = self.cumlens[-1]
