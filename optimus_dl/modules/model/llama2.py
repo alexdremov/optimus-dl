@@ -29,6 +29,7 @@ from torch.distributed.tensor.placement_types import (
     Shard,
 )
 
+from optimus_dl.core.log import info_once
 from optimus_dl.modules.model import register_model
 from optimus_dl.modules.model.blocks.layer_norms import RMSNorm
 from optimus_dl.modules.model.blocks.rope import precompute_freqs_cis
@@ -191,14 +192,25 @@ class Llama(GPT):
         self.apply(self._init_weights)
 
         # apply special scaled init to the residual projections, per GPT-2 paper
+        # modded-nanogpt specifically zero-initializes the MLP projection (c_proj)
+        if config.zero_init_projections:
+            info_once(
+                logger, "Applying zero-initialization to MLP projections (c_proj)"
+            )
+
         for pn, p in self.named_parameters():
-            if pn.endswith("c_proj.weight") or pn.endswith("wo.weight"):
+            if pn.endswith("c_proj.weight"):
                 if config.zero_init_projections:
                     torch.nn.init.zeros_(p)
                 else:
                     torch.nn.init.normal_(
                         p, mean=0.0, std=0.02 / math.sqrt(2 * config.n_layer)
                     )
+            elif pn.endswith("wo.weight"):
+                # Always use scaled normal for attention projection unless specified otherwise
+                torch.nn.init.normal_(
+                    p, mean=0.0, std=0.02 / math.sqrt(2 * config.n_layer)
+                )
 
     def apply_tp(
         self, mesh, loss_parallel: bool = False, sequence_parallel: bool = False
