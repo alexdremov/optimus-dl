@@ -14,8 +14,7 @@ _name: base
 
 args:
   name: gpt2-speedrun-reproduction
-  # Current world record is ~3300 steps with 0.5M tokens/step
-  iterations: 3300
+  iterations: 2000
   batch_size: 64        # per-device
   seq_len: 1024
   # total_batch_size = nodes * gpus * bsz * accum = 1 * 8 * 64 * 1 = 512 (sequences)

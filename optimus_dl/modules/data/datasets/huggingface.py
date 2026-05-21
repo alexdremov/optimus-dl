@@ -78,6 +78,8 @@ class HuggingFaceDataset(BaseDataset):
         saved position if restoring from a checkpoint.
         """
         super().reset(initial_state)
+        self.position = 0
+
         if initial_state is not None:
             self.cfg = initial_state.get("cfg", self.cfg)
             self.cfg = OmegaConf.merge(
@@ -117,7 +119,7 @@ class HuggingFaceDataset(BaseDataset):
         ):
             self.dataset.load_state_dict(initial_state["dataset_state"])
 
-        if not isinstance(self.dataset, datasets.IterableDataset):
+        if not isinstance(self.dataset, datasets.IterableDataset) and self.position > 0:
             self.dataset = self.dataset.skip(self.position)
         self.iter = iter(self.dataset)
 
