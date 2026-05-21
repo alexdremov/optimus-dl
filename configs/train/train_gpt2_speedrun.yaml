@@ -67,10 +67,10 @@ data:
         - _name: chunk_tokens
           max_seq_len: ${args.seq_len}
           max_chunks: 1
-        - _name: flat_batcher
+        - _name: basic_batcher
           batch_size: ${args.batch_size}
-          seq_len: ${args.seq_len}
-          mask_documents: false
+          pad_token_id: ${args.padding_token_id}
+          flatten: true
         - _name: prefetch
         - _name: to_device
 
