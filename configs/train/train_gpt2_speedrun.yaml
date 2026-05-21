@@ -73,6 +73,7 @@ data:
           batch_size: ${args.batch_size}
           pad_token_id: ${args.padding_token_id}
           flatten: true
+          add_document_ids: false
         - _name: prefetch
         - _name: to_device
 
