@@ -10,3 +10,4 @@ mlp_type: relu2       # Squared ReLU
 zero_init_projections: true
 bias: false
 attention_bias: false
+padding_token_id: 50303

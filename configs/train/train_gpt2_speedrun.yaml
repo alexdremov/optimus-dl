@@ -20,6 +20,7 @@ args:
   seq_len: 1024
   # total_batch_size = nodes * gpus * bsz * accum = 1 * 8 * 64 * 1 = 512 (sequences)
   # sequences * seq_len = 512 * 1024 = 524,288 tokens/step
+  padding_token_id: ${model.padding_token_id}
 
 model_transforms:
   - _name: ddp
@@ -29,6 +30,7 @@ model_transforms:
 criterion:
   logit_softcap: 1.0     # Value is dummy for 'sigmoid' type
   softcap_type: sigmoid  # Uses 23 * sigmoid((x+5)/7.5)
+  padding_token_id: ${model.padding_token_id}
 
 # Optimization: Muon + AdamW (for embeddings/scalars)
 optimization:
