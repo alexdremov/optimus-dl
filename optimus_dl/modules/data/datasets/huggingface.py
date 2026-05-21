@@ -118,9 +118,9 @@ class HuggingFaceDataset(BaseDataset):
             and initial_state["dataset_state"] is not None
         ):
             self.dataset.load_state_dict(initial_state["dataset_state"])
-
-        if not isinstance(self.dataset, datasets.IterableDataset) and self.position > 0:
+        elif self.position > 0:
             self.dataset = self.dataset.skip(self.position)
+
         self.iter = iter(self.dataset)
 
     def next(self):
