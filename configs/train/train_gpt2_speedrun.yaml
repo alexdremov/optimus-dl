@@ -51,20 +51,13 @@ optimization:
 lr_scheduler:
   warmup_steps: 40
   init_div_factor: 10
-  fract_decay: 0.45     # 45% cooldown as per latest records
+  fract_decay: 0.7      # 70% cooldown as per latest records (PR #188)
   decay_type: linear
 
 # Data configuration: FineWeb-Edu
 data:
-  train_datasets:
-    source:
-      _name: huggingface_dataset
-      dataset_load_kwargs:
-        path: HuggingFaceFW/fineweb-edu
-        name: sample-10BT
-        split: train
-        streaming: true
-    transform:
+  scratch:
+    base:
       _name: compose
       transforms:
         - _name: tokenize
@@ -74,14 +67,22 @@ data:
         - _name: chunk_tokens
           max_seq_len: ${args.seq_len}
           max_chunks: 1
-        - _name: "shuffle"
-          buffer_size: 10000
         - _name: flat_batcher
           batch_size: ${args.batch_size}
           seq_len: ${args.seq_len}
           mask_documents: true
         - _name: prefetch
         - _name: to_device
+
+  train_datasets:
+    source:
+      _name: huggingface_dataset
+      dataset_load_kwargs:
+        path: HuggingFaceFW/fineweb-edu
+        name: sample-10BT
+        split: train
+        streaming: true
+    transform: ${data.scratch.base}
 
   eval_datasets:
     fineweb_val:
@@ -92,20 +93,7 @@ data:
           name: sample-10BT
           split: validation
           streaming: true
-        _name: compose
-        transforms:
-          - _name: tokenize
-            tokenizer_config:
-              _name: tiktoken
-              name: gpt2
-          - _name: chunk_tokens
-            max_seq_len: ${args.seq_len}
-          - _name: flat_batcher
-            batch_size: ${args.batch_size}
-            seq_len: ${args.seq_len}
-            mask_documents: true
-          - _name: prefetch
-          - _name: to_device
+      transform: ${data.scratch.base}
 
 common:
   exp_name: ${args.name}-${config_hash:}
