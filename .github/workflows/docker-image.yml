@@ -186,7 +186,7 @@ jobs:
           for i in 1 2 3; do
             eval "$BAKE_CMD" && break
             echo "Build/push failed, retrying... ($i/3)"
-            sleep $((i * 20))
+            sleep $(i * 20)
           done
 
       - name: Save updated ccache to registry
