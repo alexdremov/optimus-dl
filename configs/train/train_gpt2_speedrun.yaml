@@ -90,9 +90,8 @@ data:
         dataset_load_kwargs:
           path: HuggingFaceFW/fineweb-edu
           name: sample-10BT
-          split: train  # Same stream, fixed slice for val
+          split: validation
           streaming: true
-      transform:
         _name: compose
         transforms:
           - _name: tokenize

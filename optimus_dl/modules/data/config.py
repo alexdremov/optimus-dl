@@ -78,7 +78,7 @@ class EvalDataConfig:
         },
     )
 
-    scratch: Any = field(
+    scratch: Any | None = field(
         default=None,
         metadata={
             "description": "Any data whatsoever to be used in dataset configs with config interpolations like ${data.scratch.my_config} to reduce duplication"
