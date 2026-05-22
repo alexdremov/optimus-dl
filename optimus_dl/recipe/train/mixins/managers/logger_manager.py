@@ -43,9 +43,18 @@ class LoggerManager:
         self,
         cfg: LoggerManagerConfig,
         loggers_config: list[MetricsLoggerConfig] | None,
+        experiment_name: str | None = None,
+        full_config: dict | None = None,
+        logs_parent_path: str | None = None,
+        start_iteration: int | None = None,
         **kwargs: Any,
     ):
         self.loggers_config = loggers_config
+        self.experiment_name = experiment_name
+        self.full_config = full_config
+        self.logs_parent_path = logs_parent_path
+        self.start_iteration = start_iteration
+
         self.previous_state = {}
         self.loggers: list[BaseMetricsLogger] | None = None
         self.closed = False
@@ -89,8 +98,8 @@ class LoggerManager:
 
     def setup_loggers(
         self,
-        experiment_name: str,
-        full_config: dict,
+        experiment_name: str | None = None,
+        full_config: dict | None = None,
         logs_parent_path: str | None = None,
         start_iteration: int | None = None,
     ):
@@ -104,6 +113,19 @@ class LoggerManager:
                 Use this to log stdout / stderr if applicable
             start_iteration: Starting iteration number for the logging.
         """
+        experiment_name = experiment_name or self.experiment_name
+        full_config = full_config if full_config is not None else self.full_config
+        logs_parent_path = logs_parent_path or self.logs_parent_path
+        start_iteration = (
+            start_iteration if start_iteration is not None else self.start_iteration
+        )
+
+        if full_config is None:
+            logger.warning(
+                "setup_loggers called without full_config and no default set"
+            )
+            full_config = {}
+
         for logger_instance in self.loggers or []:
             try:
                 logger_instance.setup(

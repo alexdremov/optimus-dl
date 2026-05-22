@@ -29,6 +29,7 @@ from torch.distributed.tensor.placement_types import (
     Shard,
 )
 
+from optimus_dl.core.log import info_once
 from optimus_dl.modules.model import register_model
 from optimus_dl.modules.model.blocks.layer_norms import RMSNorm
 from optimus_dl.modules.model.blocks.rope import precompute_freqs_cis
@@ -103,10 +104,22 @@ class LlamaConfig(GPTConfig):
             "description": "Enable Liger-kernel for SwiGLU. None = auto-enable if available."
         },
     )
+    use_qk_norm: bool = field(
+        default=False,
+        metadata={"description": "Enable Query-Key normalization."},
+    )
+    mlp_type: str = field(
+        default="swiglu",
+        metadata={"description": "Type of MLP to use (swiglu, relu2, gelu)."},
+    )
+    zero_init_projections: bool = field(
+        default=False,
+        metadata={"description": "Initialize projection layers to zero."},
+    )
 
 
 class LlamaBlock(RotaryTransformerBlock):
-    """Llama Transformer block with RMSNorm, Rotary Attention, and SwiGLU MLP."""
+    """Llama Transformer block with RMSNorm, Rotary Attention, and MLP."""
 
     def __init__(self, config: LlamaConfig):
         super().__init__(
@@ -117,7 +130,8 @@ class LlamaBlock(RotaryTransformerBlock):
             rmsnorm_eps=config.rmsnorm_eps,
             bias=config.bias,
             attention_bias=config.attention_bias,
-            use_qk_norm=False,
+            use_qk_norm=config.use_qk_norm,
+            mlp_type=config.mlp_type,
             intermediate_size=config.intermediate_size,
             multiple_of=config.multiple_of,
             use_liger_rmsnorm=config.use_liger_rmsnorm,
@@ -176,8 +190,24 @@ class Llama(GPT):
             self.transformer.wte.weight = self.lm_head.weight
 
         self.apply(self._init_weights)
+
+        # apply special scaled init to the residual projections, per GPT-2 paper
+        # modded-nanogpt specifically zero-initializes the MLP projection (c_proj)
+        if config.zero_init_projections:
+            info_once(
+                logger, "Applying zero-initialization to MLP projections (c_proj)"
+            )
+
         for pn, p in self.named_parameters():
-            if pn.endswith("c_proj.weight") or pn.endswith("wo.weight"):
+            if pn.endswith("c_proj.weight"):
+                if config.zero_init_projections:
+                    torch.nn.init.zeros_(p)
+                else:
+                    torch.nn.init.normal_(
+                        p, mean=0.0, std=0.02 / math.sqrt(2 * config.n_layer)
+                    )
+            elif pn.endswith("wo.weight"):
+                # Always use scaled normal for attention projection unless specified otherwise
                 torch.nn.init.normal_(
                     p, mean=0.0, std=0.02 / math.sqrt(2 * config.n_layer)
                 )

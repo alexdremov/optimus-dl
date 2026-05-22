@@ -55,6 +55,9 @@ class TokenizeTransform(BaseTransform):
     def __init__(self, cfg: TokenizeTransformConfig, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.tokenizer = build_tokenizer(cfg.tokenizer_config)
+        assert (
+            self.tokenizer is not None
+        ), f"Tokenizer instantiation failed. Check the configuration: {cfg.tokenizer_config}"
 
         # Convert MapperConfig dataclass to dict for torchdata
         from dataclasses import asdict

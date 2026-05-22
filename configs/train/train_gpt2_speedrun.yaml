@@ -1,0 +1,106 @@
+# GPT-2 124M "Speedrun" Configuration
+# Target: 3.28 validation loss on FineWeb in minimum time.
+
+defaults:
+  - defaults.yaml
+  - lr_scheduler: wsd
+  - model: gpt2-124m
+  - criterion: cross_entropy
+  - loggers: all
+  - optimization/amp: bfloat16
+  - _self_
+
+_name: base
+
+args:
+  name: gpt2-speedrun-reproduction
+  iterations: 2000
+  batch_size: 64        # per-device
+  seq_len: 1024
+  # total_batch_size = nodes * gpus * bsz * accum = 1 * 8 * 64 * 1 = 512 (sequences)
+  # sequences * seq_len = 512 * 1024 = 524,288 tokens/step
+  padding_token_id: ${model.padding_token_id}
+
+model_transforms:
+  - _name: ddp
+  - _name: compile
+
+# Criterion: Modern softcapping
+criterion:
+  logit_softcap: 1.0     # Value is dummy for 'sigmoid' type
+  softcap_type: sigmoid  # Uses 23 * sigmoid((x+5)/7.5)
+  padding_token_id: ${model.padding_token_id}
+
+# Optimization: Muon + AdamW (for embeddings/scalars)
+optimization:
+  iterations: ${args.iterations}
+  acc_steps: 1
+  clip_grad_norm: 1.0
+
+  optimizer:
+    _name: muon
+    lr: 0.015           # From PR #188
+    momentum: 0.95
+    weight_decay: 0.1
+    support_optimizer:
+      _name: adamw
+      lr: 0.3
+      betas: [0.8, 0.95] # beta1=0.8 from PR #188
+      eps: 1e-8
+
+# Learning Rate Schedule: Warmup-Stable-Decay
+lr_scheduler:
+  warmup_steps: 40
+  init_div_factor: 10
+  fract_decay: 0.7      # 70% cooldown as per latest records (PR #188)
+  decay_type: linear
+
+# Data configuration: FineWeb-Edu
+data:
+  scratch:
+    base:
+      _name: compose
+      transforms:
+        - _name: tokenize
+          tokenizer_config:
+            _name: tiktoken
+            name: gpt2
+        - _name: chunk_tokens
+          max_seq_len: ${args.seq_len}
+          max_chunks: 1
+        - _name: flat_batcher
+          batch_size: ${args.batch_size}
+          seq_len: ${args.seq_len}
+          mask_documents: true
+          flatten: true
+        - _name: prefetch
+        - _name: to_device
+
+  train_datasets:
+    source:
+      _name: huggingface_dataset
+      dataset_load_kwargs:
+        path: HuggingFaceFW/fineweb-edu
+        name: sample-10BT
+        split: train
+        streaming: true
+    transform: ${data.scratch.base}
+
+  eval_datasets:
+    fineweb_val:
+      source:
+        _name: huggingface_dataset
+        dataset_load_kwargs:
+          path: HuggingFaceFW/fineweb-edu
+          name: sample-10BT
+          split: train
+          streaming: true
+      transform: ${data.scratch.base}
+
+common:
+  exp_name: ${args.name}-${config_hash:}
+  log_freq: 10
+  save_freq: 500
+  eval_freq: 250
+  eval_iterations: 20   # 20 * 0.5M = 10.5M tokens
+  output_path: ${oc.env:PERSISTENT_PATH,'./outputs'}/${args.name}/${.exp_name}

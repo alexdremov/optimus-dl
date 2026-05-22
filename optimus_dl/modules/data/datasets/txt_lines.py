@@ -64,10 +64,6 @@ class TxtLinesDataset(BaseDataset):
         self.rank = rank
         self.world_size = world_size
 
-        self.lines = []
-        self.index = 0
-        self.limit = 0
-
     def _prepare_data(self):
         """Download (if needed) and shard the text data into lines."""
         # 1. Resolve path / download
@@ -144,6 +140,10 @@ class TxtLinesDataset(BaseDataset):
         """Restore dataset state or prepare the file for a fresh start."""
         super().reset(initial_state)
         initial_state = initial_state or {}
+
+        self.lines = []
+        self.index = 0
+        self.limit = 0
 
         if "file_link" in initial_state:
             self.file_link = initial_state["file_link"]

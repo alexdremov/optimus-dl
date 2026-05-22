@@ -78,6 +78,8 @@ class HuggingFaceDataset(BaseDataset):
         saved position if restoring from a checkpoint.
         """
         super().reset(initial_state)
+        self.position = 0
+
         if initial_state is not None:
             self.cfg = initial_state.get("cfg", self.cfg)
             self.cfg = OmegaConf.merge(
@@ -116,12 +118,14 @@ class HuggingFaceDataset(BaseDataset):
             and initial_state["dataset_state"] is not None
         ):
             self.dataset.load_state_dict(initial_state["dataset_state"])
-
-        if not isinstance(self.dataset, datasets.IterableDataset):
+        elif self.position > 0:
             self.dataset = self.dataset.skip(self.position)
-        self.iter = iter(self.dataset)
+
+        self.iter = None
 
     def next(self):
         """Yield the next example from the Hugging Face dataset."""
+        if self.iter is None:
+            self.iter = iter(self.dataset)
         self.position += 1
         return next(self.iter)

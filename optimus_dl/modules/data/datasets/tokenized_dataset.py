@@ -72,27 +72,8 @@ class TokenizedDataset(BaseDataset):
         self.rank = rank
         self.world_size = world_size
         self.limit = cfg.limit
-
-        # Internal State
-        self.shards = []
-        self.shard_num_docs = []
-        self.total_docs = 0
-        self.doc_lengths: np.ndarray | None = None
-        self.doc_to_shard_map: np.ndarray | None = None
-
-        # Strategy
-        self.strategy = build_dataset_sampling_strategy(
-            cfg.strategy,
-            rank=rank,
-            world_size=world_size,
-            seed=seed,
-        )
-
-        # Current Shard State
-        self.current_shard_idx = -1
-        self.current_shard_tokens: np.ndarray | None = None
-        self.current_shard_doc_lens: np.ndarray | None = None
-        self.shard_doc_start_idx = 0  # Global doc index where current shard starts
+        self.strategy_cfg = cfg.strategy
+        self.seed = seed
 
     def _resolve_dtype(self, type_str: str):
         """Map string dtype names to numpy dtypes."""
@@ -226,6 +207,43 @@ class TokenizedDataset(BaseDataset):
         """Restore dataset state."""
         super().reset(initial_state)
 
+        if initial_state is not None:
+            assert self.rank == (
+                initial_state.get("rank") if initial_state else self.rank
+            ), f"Mismatch: {self.rank = } vs {initial_state.get('rank') = }"
+            assert self.world_size == (
+                initial_state.get("world_size") if initial_state else self.world_size
+            ), f"Mismatch: {self.world_size = } vs {initial_state.get('world_size') = }"
+
+            assert self.limit == (
+                initial_state.get("limit") if initial_state else self.limit
+            ), f"Mismatch: {self.limit = } vs {initial_state.get('limit')}"
+            assert self.data_dir == (
+                Path(initial_state.get("data_dir", str(self.data_dir)))
+            ), f"Mismatch: {self.data_dir = } vs {initial_state.get('data_dir') = }"
+            assert self.index_file == (
+                initial_state.get("index_file") if initial_state else self.index_file
+            ), f"Mismatch: {self.index_file = } vs {initial_state.get('index_file') = }"
+
+            assert self.seed == (
+                initial_state.get("seed") if initial_state else self.seed
+            ), f"Mismatch: {self.seed = } vs {initial_state.get('seed') = }"
+
+            self.strategy_cfg = initial_state.get("strategy_cfg", self.strategy_cfg)
+
+        self.strategy = build_dataset_sampling_strategy(
+            self.strategy_cfg,
+            rank=self.rank,
+            world_size=self.world_size,
+            seed=self.seed,
+        )
+
+        # Current Shard State
+        self.current_shard_idx = -1
+        self.current_shard_tokens: np.ndarray | None = None
+        self.current_shard_doc_lens: np.ndarray | None = None
+        self.shard_doc_start_idx = 0  # Global doc index where current shard starts
+
         # Reload index and lengths
         self._load_index()
 
@@ -285,5 +303,9 @@ class TokenizedDataset(BaseDataset):
                 "rank": self.rank,
                 "world_size": self.world_size,
                 "strategy_state": self.strategy.get_state(),
+                "data_dir": str(self.data_dir),
+                "index_file": self.index_file,
+                "limit": self.limit,
+                "seed": self.seed,
             }
         )

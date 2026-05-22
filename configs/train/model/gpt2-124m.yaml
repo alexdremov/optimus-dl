@@ -1,0 +1,13 @@
+_name: llama2
+n_layer: 11           # modded-nanogpt uses 11 layers
+n_head: 6             # 6 heads with 128 head_dim
+n_embd: 768
+head_dim: 128
+sequence_length: 1032
+vocab_size: 50304     # 50257 padded to 128
+use_qk_norm: true
+mlp_type: relu2       # Squared ReLU
+zero_init_projections: true
+bias: false
+attention_bias: false
+padding_token_id: 50303

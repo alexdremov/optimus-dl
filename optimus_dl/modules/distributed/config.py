@@ -14,4 +14,4 @@ class DistributedConfig(RegistryConfigStrict):
     """
 
     tp_size: int = 1
-    sharding_world_size: int | None = None
+    sharding_world_size: int | None = 1

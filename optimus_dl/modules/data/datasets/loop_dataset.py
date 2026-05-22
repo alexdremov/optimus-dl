@@ -72,14 +72,16 @@ class LoopDataset(BaseDataset):
 
         inner_state = None
         if initial_state is not None:
-            self.rank = initial_state.get("rank", self.rank)
-            self.world_size = initial_state.get("world_size", self.world_size)
+            assert self.rank == (
+                initial_state.get("rank") if initial_state else self.rank
+            ), f"Mismatch: {self.rank = } vs {initial_state.get('rank') = }"
+            assert self.world_size == (
+                initial_state.get("world_size") if initial_state else self.world_size
+            ), f"Mismatch: {self.world_size = } vs {initial_state.get('world_size') = }"
             inner_state = initial_state.get("inner_state")
 
-        if self.inner_dataset is None:
-            self._build_inner()
-
-        assert self.inner_dataset is not None, "Inner dataset not initialized"
+        self._build_inner()
+        assert self.inner_dataset is not None, "Failed to build inner dataset"
         self.inner_dataset.reset(inner_state)
 
     def get_state(self):

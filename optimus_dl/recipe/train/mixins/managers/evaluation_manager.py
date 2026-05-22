@@ -69,6 +69,7 @@ class Evaluator:
             number of batches, allowing for simpler stopping logic. If False, uses
             collective communication to determine when to stop if any rank exhausts
             its dataloader.
+        all_metrics_configs: Root metrics configuration from TrainConfig.
     """
 
     def __init__(
@@ -79,6 +80,7 @@ class Evaluator:
         eval_guaranteed_same_batches: bool = False,
         eval_checkpointing: int | None = None,
         output_path: str | pathlib.Path | None = None,
+        all_metrics_configs: dict[str, list[dict]] | None = None,
         **kwargs: Any,
     ):
         self.cfg = cfg
@@ -87,6 +89,7 @@ class Evaluator:
         self.eval_guaranteed_same_batches = eval_guaranteed_same_batches
         self.eval_checkpointing = eval_checkpointing
         self.output_path = output_path
+        self.all_metrics_configs = all_metrics_configs
         self.eval_checkpoint_manager = None
         if output_path:
             self.eval_checkpoint_manager = EvaluationCheckpointManager(output_path)
@@ -153,13 +156,19 @@ class Evaluator:
             model: The model to evaluate.
             criterion: The loss function.
             eval_data_dict: Dictionary mapping dataset names to dataloaders.
+            device: Device to use.
             collective: Distributed collective for metric aggregation.
-            all_metrics_configs: Root metrics configuration from TrainConfig.
+            all_metrics_configs: Root metrics configuration. Defaults to self.all_metrics_configs.
 
         Returns:
             Dictionary of computed metrics if evaluation ran, else None.
         """
         result = {}
+        all_metrics_configs = (
+            all_metrics_configs
+            if all_metrics_configs is not None
+            else self.all_metrics_configs
+        )
 
         # deterministic order
         eval_data_dict_keys = sorted(eval_data_dict.keys())
@@ -226,9 +235,10 @@ class Evaluator:
             model: Model to evaluate.
             criterion: Loss function.
             eval_data_dict: Dictionary of {name: dataloader/DataPipeline}.
+            device: Device to use.
             max_iterations: Limit on number of batches.
             collective: Distributed collective.
-            all_metrics_configs: Root metrics configuration mapping dataset names to configs.
+            all_metrics_configs: Root metrics configuration. Defaults to self.all_metrics_configs.
             metrics_prefix: Prefix for metric groups (e.g., "eval" or "metrics").
             show_progress: Whether to show a progress bar.
             iteration: Current training iteration, used for naming checkpoints.
@@ -238,7 +248,12 @@ class Evaluator:
         """
         model.eval()
         total_metrics = {}
-        all_metrics_configs = all_metrics_configs or {}
+        all_metrics_configs = (
+            all_metrics_configs
+            if all_metrics_configs is not None
+            else self.all_metrics_configs
+        )
+        all_metrics_configs_dict = all_metrics_configs or {}
 
         eval_data_dict_keys = sorted(eval_data_dict.keys())
         for eval_name in eval_data_dict_keys:
@@ -271,7 +286,7 @@ class Evaluator:
 
             engine = None
             requested_protocols = None
-            dataset_metrics = all_metrics_configs.get(eval_name)
+            dataset_metrics = all_metrics_configs_dict.get(eval_name)
             if dataset_metrics:
                 from optimus_dl.modules.metrics.engine import MetricEngine
 

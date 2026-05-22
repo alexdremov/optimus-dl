@@ -116,7 +116,7 @@ def validate_and_cast(cls: Any, cfg: Any, path: str = "") -> Any:
 def _validate_and_cast_recursive(cls: Any, cfg: Any, path: str = "") -> Any:
     # Only return early for explicit NoneType. Optional/Union[..., None] cases
     # are handled in the Union branch below.
-    if cfg is None and cls is type(None):
+    if cfg is None and (cls is type(None) or cls is Any):
         return None
 
     origin = get_origin(cls)

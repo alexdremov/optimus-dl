@@ -80,6 +80,10 @@ class TrainingIterationMixin:
         if torch.cuda.is_available():
             log_summed("gpu_gb_allocated", torch.cuda.memory_allocated() / (1024**3))
             log_summed("gpu_gb_used", torch.cuda.max_memory_allocated() / (1024**3))
+            log_averaged(
+                "gpu_gb_used_avg", torch.cuda.max_memory_allocated() / (1024**3)
+            )
+            torch.cuda.reset_accumulated_memory_stats()
 
     def log_sm_utilization(self):
         """Log GPU SM utilization statistics."""

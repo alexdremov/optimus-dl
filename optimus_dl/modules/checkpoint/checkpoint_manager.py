@@ -77,18 +77,33 @@ class CheckpointManager:
 
     def __init__(
         self,
-        cfg: CheckpointManagerConfig,
+        cfg: CheckpointManagerConfig | None = None,
+        checkpoint_path: str | Path | None = None,
+        full_config: Any | None = None,
+        logger_manager: Any | None = None,
+        save_freq: int | None = None,
+        last_save_freq: int | None = None,
         **kwargs: Any,
     ):
         """Initialize CheckpointManager.
 
         Args:
             cfg: Configuration object.
+            checkpoint_path: Default path to save/load checkpoints.
+            full_config: Default full configuration for metadata.
+            logger_manager: Default logger manager.
+            save_freq: Default persistent save frequency.
+            last_save_freq: Default last-iteration save frequency.
             **kwargs: Additional keyword arguments.
         """
         self.cfg = cfg
+        self.checkpoint_path = checkpoint_path
+        self.full_config = full_config
+        self.logger_manager = logger_manager
+        self.save_freq = save_freq
+        self.last_save_freq = last_save_freq
 
-    def is_restart(self, checkpoint_path):
+    def is_restart(self, checkpoint_path: str | Path | None = None):
         """Check if a checkpoint exists in the given directory.
 
         This is used to determine if a training run is a fresh start or a
@@ -96,11 +111,16 @@ class CheckpointManager:
         or manual stop). If True, the recipe will attempt to resume state.
 
         Args:
-            checkpoint_path: Path to the output directory or checkpoint.
+            checkpoint_path: Path to the output directory or checkpoint. Defaults to self.checkpoint_path.
         """
+        checkpoint_path = checkpoint_path or self.checkpoint_path
+        if checkpoint_path is None:
+            return False
         return self.get_checkpoint(checkpoint_path) is not None
 
-    def get_checkpoint(self, path: str | pathlib.Path) -> CheckpointPath | None:
+    def get_checkpoint(
+        self, path: str | pathlib.Path | None = None
+    ) -> CheckpointPath | None:
         """Resolve a generic path into a structured CheckpointPath.
 
         The path can be:
@@ -110,11 +130,15 @@ class CheckpointManager:
         3.  A checkpoint directory: Direct resolution.
 
         Args:
-            path: The path to resolve.
+            path: The path to resolve. Defaults to self.checkpoint_path.
 
         Returns:
             A CheckpointPath object if a valid checkpoint is found, else None.
         """
+        path = path or self.checkpoint_path
+        if path is None:
+            return None
+
         if not isinstance(path, pathlib.Path):
             path = pathlib.Path(str(path))
 
@@ -139,17 +163,17 @@ class CheckpointManager:
             checkpoint_name = pathlib.Path(
                 path.name.replace("metadata_", "checkpoint_")
             ).stem
-            checkpoint_path = path.parent / checkpoint_name
-            if checkpoint_path.exists():
+            checkpoint_path_obj = path.parent / checkpoint_name
+            if checkpoint_path_obj.exists():
                 return CheckpointPath(
-                    metadata=str(path), checkpoint=str(checkpoint_path)
+                    metadata=str(path), checkpoint=str(checkpoint_path_obj)
                 )
 
             # maybe not DCP?
-            checkpoint_path = path.parent / (checkpoint_name + ".pt")
-            if checkpoint_path.exists():
+            checkpoint_path_obj = path.parent / (checkpoint_name + ".pt")
+            if checkpoint_path_obj.exists():
                 return CheckpointPath(
-                    metadata=str(path), checkpoint=str(checkpoint_path)
+                    metadata=str(path), checkpoint=str(checkpoint_path_obj)
                 )
 
         # this is a directory, find latest checkpoint
@@ -161,9 +185,9 @@ class CheckpointManager:
 
     def load_checkpoint_if_exists(
         self,
-        checkpoint_path: str,
         model: BaseModel,
         collective: Collective,
+        checkpoint_path: str | Path | None = None,
         optimizer: Optimizer | None = None,
         lr_scheduler: BaseLRScheduler | None = None,
         data_loaders: dict | None = None,
@@ -173,10 +197,10 @@ class CheckpointManager:
         """Attempt to find and load the latest checkpoint from a directory.
 
         Args:
-            checkpoint_path: Directory to search for checkpoints.
             model: Model to load weights into.
-            optimizer: Optional optimizer to restore state.
             collective: Collective for distributed coordination.
+            checkpoint_path: Directory to search for checkpoints. Defaults to self.checkpoint_path.
+            optimizer: Optional optimizer to restore state.
             lr_scheduler: Optional LR scheduler to restore.
             data_loaders: Optional dict of dataloaders to restore state.
             load_strategy: Strategy defining what components to load.
@@ -186,6 +210,10 @@ class CheckpointManager:
             Tuple of (start_iteration, metadata). start_iteration defaults to 1 if no
             checkpoint is found.
         """
+        checkpoint_path = checkpoint_path or self.checkpoint_path
+        if checkpoint_path is None:
+            return 1, None
+
         latest_checkpoint = self.get_checkpoint(checkpoint_path)
         if not latest_checkpoint:
             return 1, None
@@ -212,13 +240,23 @@ class CheckpointManager:
         self,
         iteration: int,
         collective: Collective,
-        checkpoint_path: str | Path,
-        save_freq: int | None,
-        last_save_freq: int | None,
+        checkpoint_path: str | Path | None = None,
+        save_freq: int | None = None,
+        last_save_freq: int | None = None,
         force_save: bool = False,
         **kwargs: Any,
     ) -> bool:
         """Save checkpoint if iteration matches save_freq."""
+        checkpoint_path = checkpoint_path or self.checkpoint_path
+        save_freq = save_freq if save_freq is not None else self.save_freq
+        last_save_freq = (
+            last_save_freq if last_save_freq is not None else self.last_save_freq
+        )
+
+        if checkpoint_path is None:
+            logger.warning("save_checkpoint_if_needed called without checkpoint_path")
+            return False
+
         is_save_persistent = force_save or (
             save_freq is not None and save_freq > 0 and iteration % save_freq == 0
         )
@@ -246,13 +284,13 @@ class CheckpointManager:
 
     def save_checkpoint(
         self,
-        checkpoint_path: str | Path,
         model: BaseModel,
-        optimizer: Optimizer | None,
         collective: Collective,
-        full_config: Any,
-        is_save_persistent: bool,
-        is_save_last: bool,
+        checkpoint_path: str | Path | None = None,
+        optimizer: Optimizer | None = None,
+        full_config: Any | None = None,
+        is_save_persistent: bool = False,
+        is_save_last: bool = False,
         iteration: int = 0,
         lr_scheduler=None,
         data_loaders: dict | None = None,
@@ -263,11 +301,13 @@ class CheckpointManager:
         """Save training checkpoint using distributed checkpoint API.
 
         Args:
-            checkpoint_path: Directory to save checkpoint
             model: Model to save
-            optimizer: Optimizer to save
             collective: Collective for distributed operations
-            full_config: Full configuration object for metadata
+            checkpoint_path: Directory to save checkpoint. Defaults to self.checkpoint_path.
+            optimizer: Optimizer to save
+            full_config: Full configuration object for metadata. Defaults to self.full_config.
+            is_save_persistent: Whether to save with iteration number in filename. Will also create a symlink to 'latest'.
+            is_save_last: Whether to save as 'latest'.
             iteration: Current training iteration
             lr_scheduler: Optional LR scheduler to save
             data_loaders: Optional data loaders to save state
@@ -275,6 +315,12 @@ class CheckpointManager:
             metadata_only: If True, only save metadata (skip model/optimizer save)
             **kwargs: Additional metadata to save per-rank
         """
+        checkpoint_path = checkpoint_path or self.checkpoint_path
+        full_config = full_config if full_config is not None else self.full_config
+
+        if checkpoint_path is None:
+            raise ValueError("checkpoint_path must be provided or set in __init__")
+
         if not isinstance(checkpoint_path, Path):
             checkpoint_path = Path(checkpoint_path)
 

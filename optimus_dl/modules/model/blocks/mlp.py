@@ -78,6 +78,44 @@ class SwiGLUMLP(nn.Module):
         return self.c_proj(x_swiglu)
 
 
+class ReLU2MLP(nn.Module):
+    """Squared ReLU MLP variant.
+
+    Consists of an expansion layer, Squared ReLU activation, and a
+    contraction layer.
+
+    Attributes:
+        c_fc: Expansion projection layer.
+        c_proj: Contraction projection layer.
+    """
+
+    def __init__(
+        self,
+        n_embd: int,
+        intermediate_size: int | None = None,
+        bias: bool = False,
+    ):
+        super().__init__()
+        hidden_dim = intermediate_size if intermediate_size is not None else 4 * n_embd
+
+        self.c_fc = nn.Linear(n_embd, hidden_dim, bias=bias)
+        self.c_proj = nn.Linear(hidden_dim, n_embd, bias=bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Perform the forward pass.
+
+        Args:
+            x: Input tensor.
+
+        Returns:
+            Output tensor.
+        """
+        x = self.c_fc(x)
+        x = torch.relu(x).square()
+        x = self.c_proj(x)
+        return x
+
+
 class GELUMLP(nn.Module):
     """Standard GPT-2 style MLP with GELU activation.
 
