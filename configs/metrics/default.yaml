@@ -13,7 +13,7 @@ common:
   max_iterations: null   # Evaluate on full dataset by default
   distributed:
     tp_size: 1
-    sharding_world_size: null
+    sharding_world_size: 1
   # Tokenizer configuration
   tokenizer: ???
 
