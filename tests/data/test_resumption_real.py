@@ -13,7 +13,7 @@ def get_pipeline():
             "source": {
                 "_name": "huggingface_dataset",
                 "dataset_load_kwargs": {
-                    "path": "wikitext",
+                    "path": "Salesforce/wikitext",
                     "name": "wikitext-2-raw-v1",
                     "split": "test",
                     "streaming": True,
