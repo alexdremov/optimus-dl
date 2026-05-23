@@ -126,22 +126,40 @@ class TrainingIterationMixin:
             loss=loss, exposed_protocols=exposed, elapsed_time=elapsed_forward
         )
 
-    def execute_backward_pass(self, loss: torch.Tensor, scaler: Any) -> float:
-        """Run the backward pass with gradient scaling.
+    def execute_backward_pass(
+        self,
+        loss: torch.Tensor,
+        scaler: Any,
+        fp8_backward_ctx: Any | None = None,
+    ) -> float:
+        """Run the backward pass with gradient scaling and FP8 support.
 
         Handles `loss_parallel` context if the loss is a DTensor.
+        Also handles FP8 backward pass via Transformer Engine.
 
         Args:
             loss: The computed loss tensor.
             scaler: The gradient scaler.
+            fp8_backward_ctx: Optional FP8 backward context manager. If None,
+                uses standard backward pass.
 
         Returns:
             Execution time in milliseconds.
         """
+        # Use FP8 backward context if provided
+        backward_ctx = fp8_backward_ctx if fp8_backward_ctx is not None else nullcontext
 
         def backward():
-            with loss_parallel() if isinstance(loss, DTensor) else nullcontext():
-                scaler.scale(loss).backward()
+            with (
+                backward_ctx(),
+                loss_parallel() if isinstance(loss, DTensor) else nullcontext(),
+            ):
+                # For FP8, Transformer Engine handles scaling internally
+                # For standard AMP, use scaler
+                if scaler.is_enabled():
+                    scaler.scale(loss).backward()
+                else:
+                    loss.backward()
 
         elapsed_backward, _ = measured_lambda(backward)
         return elapsed_backward
@@ -334,8 +352,12 @@ class TrainingIterationMixin:
                     logger.debug(
                         f"Starting backward pass for microbatch {microbatch_idx+1}"
                     )
+                    # Get FP8 backward context if available
+                    fp8_backward_ctx = training_context.get("fp8_backward_ctx")
                     elapsed_backward = self.execute_backward_pass(
-                        loss, training_context["scaler"]
+                        loss,
+                        training_context["scaler"],
+                        fp8_backward_ctx,
                     )
 
                 # Log performance metrics using the training metrics mixin

@@ -1,0 +1,22 @@
+# FP8 E4M3 Mode Configuration
+# Uses E4M3 for all tensors (forward and backward)
+# E4M3 has higher precision (4 exponent bits, 3 mantissa bits)
+# but narrower dynamic range than E5M2.
+# Requires: pip install transformer-engine
+
+enabled: true
+dtype: torch.float8_e4m3fn
+
+# Gradient scaler is disabled for FP8 (handled by Transformer Engine)
+enable_scaler: false
+
+# FP8-specific configuration
+fp8:
+  enabled: true
+  format: e4m3  # E4M3 for all tensors
+  margin: 0
+  amax_history_len: 1024
+  amax_compute_algo: "max"
+  reduce_amax: true
+  fp8_dpa: false
+  fp8_mha: false

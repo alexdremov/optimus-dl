@@ -142,21 +142,31 @@ class DDPTransform(BaseDistributedTransform):
 class MixedPrecisionConfig:
     """Configuration for FSDP mixed precision policy.
 
+    Supports standard FP16/BF16 and FP8 (E4M3, E5M2) formats.
+    When using FP8 with Transformer Engine, the FP8 recipe handles quantization
+    and these dtypes can be set to None to let FSDP2 use defaults.
+
     Attributes:
-        param_dtype: Datatype for parameter storage (e.g., 'bfloat16').
-        reduce_dtype: Datatype for gradient reduction (e.g., 'float32').
+        param_dtype: Datatype for parameter storage (e.g., 'bfloat16', 'float8_e4m3fn').
+        reduce_dtype: Datatype for gradient reduction (e.g., 'float32', 'float8_e5m2').
         output_dtype: Datatype for forward pass outputs.
         cast_forward_inputs: If True, automatically casts inputs to param_dtype.
+        fp8_enabled: If True, indicates that FP8 is being used (for logging/debugging).
+        fp8_format: FP8 format string (e4m3, e5m2, hybrid) if using FP8.
     """
 
-    # Parameter storage dtype (e.g., float16, bfloat16, float32)
+    # Parameter storage dtype (e.g., float16, bfloat16, float32, float8_e4m3fn)
     param_dtype: str | None = None
-    # Gradient reduction dtype (e.g., float16, bfloat16, float32)
+    # Gradient reduction dtype (e.g., float16, bfloat16, float32, float8_e5m2)
     reduce_dtype: str | None = None
     # Output dtype for forward pass (e.g., float16, bfloat16, float32)
     output_dtype: str | None = None
     # Whether to cast forward inputs to the specified dtype
     cast_forward_inputs: bool = True
+    # FP8-specific: Whether FP8 is enabled
+    fp8_enabled: bool = False
+    # FP8-specific: FP8 format (e4m3, e5m2, hybrid)
+    fp8_format: str | None = None
 
 
 @dataclass
@@ -249,7 +259,16 @@ class FullyShardTransform(BaseDistributedTransform):
         if self.cfg.mixed_precision is not None:
             mp_config = self.cfg.mixed_precision
 
+            # Check if FP8 is enabled
+            if mp_config.fp8_enabled:
+                logger.info(
+                    f"FP8 mode enabled with format={mp_config.fp8_format}. "
+                    f"Mixed precision dtypes will be handled by Transformer Engine. "
+                    f"FSDP2 will use default dtypes."
+                )
+
             # Convert string dtype names to torch dtypes
+            # Note: For FP8, these may be None as TE handles quantization
             param_dtype = (
                 str_to_dtype(mp_config.param_dtype) if mp_config.param_dtype else None
             )
