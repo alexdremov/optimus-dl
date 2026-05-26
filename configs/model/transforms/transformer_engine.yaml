@@ -1,0 +1,58 @@
+# Transformer Engine model transform configuration
+# Replaces PyTorch modules with TE equivalents for FP8/optimized execution
+
+# Default configuration - replaces Linear and Norm modules
+_default:
+  _name: transformer_engine
+  enabled: true
+  replace_linear: true
+  replace_norm: true
+  replace_attention: false
+  replace_inplace: true
+  verbose: false
+  linear_kwargs: {}
+  norm_kwargs: {}
+  attention_kwargs: {}
+
+# Full TE replacement (all supported modules)
+full:
+  _name: transformer_engine
+  enabled: true
+  replace_linear: true
+  replace_norm: true
+  replace_attention: true
+  replace_inplace: true
+  verbose: true
+  linear_kwargs:
+    sequence_parallel: false
+  norm_kwargs:
+    zero_centered_gamma: false
+  attention_kwargs:
+    attention_type: flash
+
+# Linear-only replacement (conservative)
+linear_only:
+  _name: transformer_engine
+  enabled: true
+  replace_linear: true
+  replace_norm: false
+  replace_attention: false
+  replace_inplace: true
+  verbose: false
+  linear_kwargs: {}
+
+# Norm-only replacement
+norm_only:
+  _name: transformer_engine
+  enabled: true
+  replace_linear: false
+  replace_norm: true
+  replace_attention: false
+  replace_inplace: true
+  verbose: false
+  norm_kwargs: {}
+
+# No replacement (disabled)
+disabled:
+  _name: transformer_engine
+  enabled: false

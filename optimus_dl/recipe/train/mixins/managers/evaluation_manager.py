@@ -105,10 +105,40 @@ class Evaluator:
             A context manager (e.g., from contextlib) that sets up the desired context.
         """
         if self.cfg.amp.enabled:
+            from optimus_dl.core.dtype import is_fp8_dtype
+            from optimus_dl.modules.amp import (
+                create_fp8_recipe,
+                is_transformer_engine_available,
+            )
+            from optimus_dl.modules.amp.fp8 import fp8_autocast
+
             amp_cfg = self.cfg.amp
             dtype = str_to_dtype(amp_cfg.dtype)
-            amp_ctx = torch.autocast(device.type, dtype=dtype, enabled=amp_cfg.enabled)
-            with amp_ctx:
+            is_fp8 = is_fp8_dtype(dtype)
+
+            fp8_recipe = None
+            if (
+                is_fp8
+                and getattr(amp_cfg, "fp8", None)
+                and amp_cfg.fp8.enabled
+                and is_transformer_engine_available()
+            ):
+                fp8_recipe = create_fp8_recipe(
+                    recipe_type=amp_cfg.fp8.recipe,
+                    format=amp_cfg.fp8.format,
+                    margin=amp_cfg.fp8.margin,
+                    amax_history_len=amp_cfg.fp8.amax_history_len,
+                    amax_compute_algo=amp_cfg.fp8.amax_compute_algo,
+                    reduce_amax=amp_cfg.fp8.reduce_amax,
+                    fp8_dpa=amp_cfg.fp8.fp8_dpa,
+                    fp8_mha=amp_cfg.fp8.fp8_mha,
+                )
+
+            # fp8_autocast manages the fallback to bfloat16 for native layers when fp8_recipe is active
+            fallback_dtype = torch.bfloat16 if is_fp8 else dtype
+            with fp8_autocast(
+                device=device, fp8_recipe=fp8_recipe, enabled=True, dtype=fallback_dtype
+            ):
                 yield
         else:
             yield

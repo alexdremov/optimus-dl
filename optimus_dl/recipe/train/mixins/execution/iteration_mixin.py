@@ -118,7 +118,15 @@ class TrainingIterationMixin:
         Returns:
             ForwardPassResult with the computed loss, exposed protocols, and execution time.
         """
-        with amp_ctx:
+        # Handle both factory callables (method/lambda) and context manager instances
+        # We check for __enter__ first because torch.autocast instances are callable
+        if hasattr(amp_ctx, "__enter__"):
+            ctx = amp_ctx
+        elif callable(amp_ctx) and not isinstance(amp_ctx, type):
+            ctx = amp_ctx()
+        else:
+            ctx = amp_ctx
+        with ctx:
             elapsed_forward, (loss, exposed) = measured_lambda(
                 lambda: criterion(model, batch, requested_protocols=requested_protocols)
             )
@@ -126,22 +134,52 @@ class TrainingIterationMixin:
             loss=loss, exposed_protocols=exposed, elapsed_time=elapsed_forward
         )
 
-    def execute_backward_pass(self, loss: torch.Tensor, scaler: Any) -> float:
-        """Run the backward pass with gradient scaling.
+    def execute_backward_pass(
+        self,
+        loss: torch.Tensor,
+        scaler: Any,
+        fp8_backward_ctx: Any | None = None,
+    ) -> float:
+        """Run the backward pass with gradient scaling and FP8 support.
 
         Handles `loss_parallel` context if the loss is a DTensor.
+        Also handles FP8 backward pass via Transformer Engine.
 
         Args:
             loss: The computed loss tensor.
             scaler: The gradient scaler.
+            fp8_backward_ctx: Optional FP8 backward context manager. If None,
+                uses standard backward pass.
 
         Returns:
             Execution time in milliseconds.
         """
+        # Use FP8 backward context if provided
+        # fp8_backward_ctx can be a factory (method) or a context manager instance
+        if hasattr(fp8_backward_ctx, "__enter__"):
+            backward_ctx = fp8_backward_ctx
+        elif (
+            fp8_backward_ctx is not None
+            and callable(fp8_backward_ctx)
+            and not isinstance(fp8_backward_ctx, type)
+        ):
+            backward_ctx = fp8_backward_ctx()
+        elif fp8_backward_ctx is not None:
+            backward_ctx = fp8_backward_ctx
+        else:
+            backward_ctx = nullcontext()
 
         def backward():
-            with loss_parallel() if isinstance(loss, DTensor) else nullcontext():
-                scaler.scale(loss).backward()
+            with (
+                backward_ctx,
+                loss_parallel() if isinstance(loss, DTensor) else nullcontext(),
+            ):
+                # For FP8, Transformer Engine handles scaling internally
+                # For standard AMP, use scaler
+                if scaler.is_enabled():
+                    scaler.scale(loss).backward()
+                else:
+                    loss.backward()
 
         elapsed_backward, _ = measured_lambda(backward)
         return elapsed_backward
@@ -334,8 +372,12 @@ class TrainingIterationMixin:
                     logger.debug(
                         f"Starting backward pass for microbatch {microbatch_idx+1}"
                     )
+                    # Get FP8 backward context if available
+                    fp8_backward_ctx = training_context.get("fp8_backward_ctx")
                     elapsed_backward = self.execute_backward_pass(
-                        loss, training_context["scaler"]
+                        loss,
+                        training_context["scaler"],
+                        fp8_backward_ctx,
                     )
 
                 # Log performance metrics using the training metrics mixin

@@ -1,0 +1,21 @@
+# FP8 Hybrid Mode Configuration
+# Uses E4M3 for forward pass (weights, activations) and E5M2 for backward pass (gradients)
+# This is the recommended SOTA configuration for FP8 training.
+# Requires: pip install transformer-engine
+
+enabled: true
+dtype: torch.float8_e4m3fn  # Primary dtype for forward pass
+
+# Gradient scaler is disabled for FP8 (handled by Transformer Engine)
+enable_scaler: false
+
+# FP8-specific configuration
+fp8:
+  enabled: true
+  format: hybrid  # E4M3 forward, E5M2 backward (recommended)
+  margin: 0  # Margin for amax computation
+  amax_history_len: 1024  # Length of amax history for delayed scaling
+  amax_compute_algo: "max"  # Algorithm for computing amax: "max" or "most_recent"
+  reduce_amax: true  # Whether to reduce amax across distributed group
+  fp8_dpa: false  # Whether to enable FP8 dot product attention
+  fp8_mha: false  # Whether to enable FP8 multi-head attention
