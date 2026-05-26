@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 
-from optimus_dl.core.registry import RegistryConfigStrict
+from optimus_dl.core.registry import RegistryConfig
 
 
 @dataclass
-class ModelTransformConfig(RegistryConfigStrict):
+class ModelTransformConfig(RegistryConfig):
     """Base configuration for model transforms."""
 
     pass
