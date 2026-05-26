@@ -82,7 +82,7 @@ def make_muon(cfg, params, **kwargs):
     params = list(params)
 
     def matrix_predicate(_, param):
-        return param.ndim == 2
+        return param.ndim >= 2
 
     def non_matrix_predicate(name, param):
         return not matrix_predicate(name, param)
