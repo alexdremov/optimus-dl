@@ -7,7 +7,7 @@ FROM scratch AS ccache_src
 # ---------------------------------------------------------------------------
 # Builder Stage
 # ---------------------------------------------------------------------------
-FROM nvcr.io/nvidia/pytorch:26.02-py3 AS base
+FROM nvcr.io/nvidia/pytorch:26.04-py3 AS base
 
 ARG VERSION=latest
 LABEL org.opencontainers.image.version=${VERSION}
@@ -38,7 +38,8 @@ COPY ./ /setup/optimus_dl
 RUN --mount=type=cache,target=/root/.cache/uv cd /setup/optimus_dl/ && \
     TORCH_CUDA_ARCH_LIST="8.0;9.0" \
     GROUPED_GEMM_CUTLASS=1 \
-    uv pip install .[dev,moe] \
+    uv pip install .[dev,moe,fp8] \
+        --constraints /etc/pip/constraint.txt \
         --system \
         --break-system-packages \
         --no-cache \
@@ -69,7 +70,11 @@ FROM base AS interactive
 WORKDIR /setup
 COPY docker/requirements-dev.txt /setup/requirements-dev.txt
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install -r /setup/requirements-dev.txt --system --break-system-packages --no-cache
+    uv pip install -r /setup/requirements-dev.txt \
+        --system \
+        --break-system-packages \
+        --no-cache \
+        --constraints /etc/pip/constraint.txt
 
 RUN curl https://getmic.ro | bash
 RUN mv ./micro /usr/local/bin/micro

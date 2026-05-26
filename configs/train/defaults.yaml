@@ -3,6 +3,7 @@ defaults:
   - override hydra/hydra_logging: disabled
   - override hydra/job_logging: disabled
 
+_name: base
 evaluator:
   amp: ${optimization.amp}
 

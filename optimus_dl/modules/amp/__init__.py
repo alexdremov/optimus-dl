@@ -23,12 +23,14 @@ def __getattr__(name: str):
     """Lazy import for FP8 utilities to avoid circular imports."""
     _fp8_exports = {
         "Fp8Format": "Fp8Format",
+        "Fp8RecipeType": "Fp8RecipeType",
         "FP8Recipe": "FP8Recipe",
         "Fp8RecipeConfig": "Fp8RecipeConfig",
         "create_fp8_recipe": "create_fp8_recipe",
         "fp8_autocast": "fp8_autocast",
         "fp8_backward": "fp8_backward",
         "get_fp8_format_from_string": "get_fp8_format_from_string",
+        "get_fp8_recipe_type_from_string": "get_fp8_recipe_type_from_string",
         "get_transformer_engine_version": "get_transformer_engine_version",
         "is_transformer_engine_available": "is_transformer_engine_available",
     }
@@ -49,12 +51,14 @@ __all__ = [
     "Fp8RecipeConfig",
     # FP8 classes and utilities
     "Fp8Format",
+    "Fp8RecipeType",
     "FP8Recipe",
     "create_fp8_recipe",
     "fp8_autocast",
     "fp8_backward",
     # Utility functions
     "get_fp8_format_from_string",
+    "get_fp8_recipe_type_from_string",
     "get_transformer_engine_version",
     "is_transformer_engine_available",
 ]

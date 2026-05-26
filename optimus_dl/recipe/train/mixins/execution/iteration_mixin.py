@@ -118,7 +118,15 @@ class TrainingIterationMixin:
         Returns:
             ForwardPassResult with the computed loss, exposed protocols, and execution time.
         """
-        with amp_ctx:
+        # Handle both factory callables (method/lambda) and context manager instances
+        # We check for __enter__ first because torch.autocast instances are callable
+        if hasattr(amp_ctx, "__enter__"):
+            ctx = amp_ctx
+        elif callable(amp_ctx) and not isinstance(amp_ctx, type):
+            ctx = amp_ctx()
+        else:
+            ctx = amp_ctx
+        with ctx:
             elapsed_forward, (loss, exposed) = measured_lambda(
                 lambda: criterion(model, batch, requested_protocols=requested_protocols)
             )
@@ -147,11 +155,23 @@ class TrainingIterationMixin:
             Execution time in milliseconds.
         """
         # Use FP8 backward context if provided
-        backward_ctx = fp8_backward_ctx if fp8_backward_ctx is not None else nullcontext
+        # fp8_backward_ctx can be a factory (method) or a context manager instance
+        if hasattr(fp8_backward_ctx, "__enter__"):
+            backward_ctx = fp8_backward_ctx
+        elif (
+            fp8_backward_ctx is not None
+            and callable(fp8_backward_ctx)
+            and not isinstance(fp8_backward_ctx, type)
+        ):
+            backward_ctx = fp8_backward_ctx()
+        elif fp8_backward_ctx is not None:
+            backward_ctx = fp8_backward_ctx
+        else:
+            backward_ctx = nullcontext()
 
         def backward():
             with (
-                backward_ctx(),
+                backward_ctx,
                 loss_parallel() if isinstance(loss, DTensor) else nullcontext(),
             ):
                 # For FP8, Transformer Engine handles scaling internally

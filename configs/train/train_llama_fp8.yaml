@@ -12,24 +12,18 @@ defaults:
   - optimization/amp: fp8_hybrid  # Use FP8 hybrid mode
   - _self_
 
-_name: fp8_llama
+_name: base
 args:
   name: train-llama2-210M-slimpajama-fp8
   iterations: 33000
-  batch_size: 100
+  batch_size: 96
   seq_len: 512
 
 model_transforms:
   - _name: fully_shard
-    reshard_after_forward: false
-    # FP8 with FSDP2: Transformer Engine handles mixed precision
-    mixed_precision:
-      param_dtype: null  # Let FP8 handle parameter dtype
-      reduce_dtype: null  # Let FP8 handle reduction dtype
-      output_dtype: null  # Let FP8 handle output dtype
   - _name: compile
     compile_kwargs:
-      disable: false
+      disable: true
 
 lr_scheduler:
   warmup_steps: 300
@@ -47,7 +41,7 @@ common:
 # Optimization settings
 optimization:
   iterations: ${args.iterations}
-  acc_steps: 1 # Gradient accumulation steps
+  acc_steps: 1
   clip_grad_norm: 5.0 # Gradient clipping norm
 
   # FP8-specific: Gradient scaler is disabled (handled by Transformer Engine)

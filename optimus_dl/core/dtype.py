@@ -107,10 +107,13 @@ def is_fp8_dtype(dtype: torch.dtype) -> bool:
     Returns:
         True if the dtype is FP8 (E4M3 or E5M2), False otherwise.
     """
-    return dtype in (
-        torch.float8_e4m3fn,
-        torch.float8_e5m2,
-    )
+    # Build tuple of available FP8 dtypes to avoid AttributeError on PyTorch without FP8
+    fp8_dtypes = []
+    if hasattr(torch, "float8_e4m3fn"):
+        fp8_dtypes.append(torch.float8_e4m3fn)
+    if hasattr(torch, "float8_e5m2"):
+        fp8_dtypes.append(torch.float8_e5m2)
+    return dtype in tuple(fp8_dtypes)
 
 
 def get_fp8_format_from_dtype(dtype: torch.dtype) -> str | None:
@@ -122,8 +125,8 @@ def get_fp8_format_from_dtype(dtype: torch.dtype) -> str | None:
     Returns:
         The FP8 format string ("e4m3fn" or "e5m2"), or None if not FP8.
     """
-    if dtype == torch.float8_e4m3fn:
+    if hasattr(torch, "float8_e4m3fn") and dtype == torch.float8_e4m3fn:
         return "e4m3fn"
-    elif dtype == torch.float8_e5m2:
+    elif hasattr(torch, "float8_e5m2") and dtype == torch.float8_e5m2:
         return "e5m2"
     return None

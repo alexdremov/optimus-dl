@@ -235,10 +235,13 @@ class TestFp8Recipe:
         assert recipe.format == Fp8Format.E4M3
 
     def test_create_fp8_recipe_e5m2(self):
-        """Test creating FP8 recipe with E5M2 format."""
-        recipe = create_fp8_recipe(format="e5m2")
-        assert recipe is not None
-        assert recipe.format == Fp8Format.E5M2
+        """Test creating FP8 recipe with E5M2 format raises error.
+
+        Pure E5M2 format is not supported by any Transformer Engine recipe type.
+        Only hybrid (e4m3 forward, e5m2 backward) or pure e4m3 are supported.
+        """
+        with pytest.raises(ValueError, match="Pure E5M2 format is not supported"):
+            create_fp8_recipe(format="e5m2")
 
     def test_create_fp8_recipe_with_config(self):
         """Test creating FP8 recipe from config dataclass."""
@@ -304,18 +307,6 @@ class TestFp8Recipe:
         # E5M2 is not supported by TE's DelayedScaling recipe
         with pytest.raises(ValueError, match="Pure E5M2 format is not supported"):
             create_fp8_recipe(format="e5m2")
-
-    def test_create_fp8_recipe_returns_none_without_te(self):
-        """Test that create_fp8_recipe returns None when TE is not available."""
-        # This test is a bit tricky since we're checking the opposite condition
-        # We'll just verify the function signature
-        result = create_fp8_recipe(format="hybrid")
-        # If TE is available, result should be FP8Recipe; if not, None
-        if is_transformer_engine_available():
-            assert result is not None
-            assert isinstance(result, FP8Recipe)
-        else:
-            assert result is None
 
 
 class TestFp8Integration:
@@ -500,7 +491,8 @@ class TestFp8ForwardBackward:
 
         device = torch.device("cuda")
 
-        for fmt in ["hybrid", "e4m3", "e5m2"]:
+        # Note: Pure E5M2 format is not supported by Transformer Engine, only hybrid and e4m3
+        for fmt in ["hybrid", "e4m3"]:
             recipe = create_fp8_recipe(format=fmt, amax_history_len=16)
             assert recipe is not None
 
@@ -517,6 +509,10 @@ class TestFp8ForwardBackward:
 
             assert model.weight.grad is not None
             assert output.shape == (3, 5)
+
+        # Verify that e5m2 raises an error
+        with pytest.raises(ValueError, match="Pure E5M2 format is not supported"):
+            create_fp8_recipe(format="e5m2", amax_history_len=16)
 
     def test_fp8_context_managers_are_entered(self):
         """Test that FP8 context managers can be entered and exited properly."""
@@ -567,3 +563,76 @@ class TestFp8ForwardBackward:
 
         # Verify outputs are consistent
         assert torch.allclose(output1, output2)
+
+    def test_fp8_utilization_with_te_linear(self):
+        """Test that FP8 is genuinely utilized by checking TE internal states."""
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available, FP8 requires CUDA")
+
+        from optimus_dl.modules.model_transforms.transformer_engine import TELinear
+
+        recipe = create_fp8_recipe(format="hybrid", amax_history_len=16)
+        assert recipe is not None
+
+        device = torch.device("cuda")
+
+        # Create TELinear directly to guarantee TE is used.
+        # Note: FP8 requires dims to be multiples of 16 (or 8 for inner dims)
+        model = TELinear(32, 64).to(device)
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+        x = torch.randn(16, 32, device=device)
+        y = torch.randn(16, 64, device=device)
+
+        te_layer = model._te_linear
+
+        # In newer TE versions, scaling_fwd is only populated on the first forward pass
+        if hasattr(te_layer, "fp8_meta"):
+            assert (
+                "scaling_fwd" not in te_layer.fp8_meta
+            ), "scaling_fwd should not be initialized yet"
+
+        # Forward pass with FP8
+        with recipe.autocast():
+            logits = model(x)
+            loss = torch.nn.functional.mse_loss(logits, y)
+
+        # Backward pass with FP8
+        with recipe.backward():
+            loss.backward()
+
+        optimizer.step()
+
+        for param in model.parameters():
+            assert param.grad is not None
+
+        # Verify that TE actually used FP8 and updated the amax_history
+        if hasattr(te_layer, "fp8_meta"):
+            fwd_meta = te_layer.fp8_meta["scaling_fwd"]
+            bwd_meta = te_layer.fp8_meta["scaling_bwd"]
+
+            def is_updated(meta):
+                tensors = (
+                    meta if isinstance(meta, list | tuple) else [meta.amax_history]
+                )
+                for t in tensors:
+                    # amax_history is a 2D tensor (e.g. [16, 3] or [16, 2])
+                    if hasattr(t, "dim") and t.dim() == 2:
+                        return torch.any(t > 0).item()
+                return False
+
+            assert is_updated(fwd_meta), "Forward FP8 amax history was not updated!"
+            assert is_updated(bwd_meta), "Backward FP8 amax history was not updated!"
+
+
+def test_create_fp8_recipe_returns_none_without_te():
+    """Test that create_fp8_recipe returns None when TE is not available."""
+    # This test is a bit tricky since we're checking the opposite condition
+    # We'll just verify the function signature
+    result = create_fp8_recipe(format="hybrid")
+    # If TE is available, result should be FP8Recipe; if not, None
+    if is_transformer_engine_available():
+        assert result is not None
+        assert isinstance(result, FP8Recipe)
+    else:
+        assert result is None

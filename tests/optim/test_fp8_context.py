@@ -125,7 +125,10 @@ class TestTrainingContextMixinFP8:
         reason="Transformer Engine not installed",
     )
     def test_setup_training_context_fp8_e5m2(self):
-        """Test setup with FP8 E5M2 mode."""
+        """Test setup with FP8 E5M2 mode raises error.
+
+        Pure E5M2 format is not supported by Transformer Engine's DelayedScaling recipe.
+        """
         optimization_config = OptimizationConfig(
             optimizer=RegistryConfig(_name="adamw"),
             amp=AmpConfig(
@@ -141,12 +144,10 @@ class TestTrainingContextMixinFP8:
 
         mixin = TrainingContextMixin(optimization_config)
         device = torch.device("cpu")
-        context = mixin.setup_training_context(device)
 
-        assert context["is_fp8_dtype"] is True
-        if is_transformer_engine_available():
-            assert context["fp8_enabled"] is True
-            assert context["fp8_recipe"].format == Fp8Format.E5M2
+        # Expect ValueError when trying to create FP8 recipe with pure e5m2
+        with pytest.raises(ValueError, match="Pure E5M2 format is not supported"):
+            mixin.setup_training_context(device)
 
     def test_setup_training_context_fp8_disabled(self):
         """Test setup with FP8 dtype but FP8 disabled."""
@@ -164,7 +165,13 @@ class TestTrainingContextMixinFP8:
         )
 
         mixin = TrainingContextMixin(optimization_config)
-        device = torch.device("cpu")
+
+        # Use a mock device with type "cuda" to bypass the CUDA-only check
+        class MockDevice:
+            type = "cuda"
+
+        device = MockDevice()
+
         context = mixin.setup_training_context(device)
 
         # FP8 dtype is set but FP8 is disabled
@@ -208,7 +215,13 @@ class TestTrainingContextMixinFP8:
         )
 
         mixin = TrainingContextMixin(optimization_config)
-        device = torch.device("cpu")
+
+        # Use a mock device with type "cuda" to bypass the CUDA-only check
+        class MockDevice:
+            type = "cuda"
+
+        device = MockDevice()
+
         context = mixin.setup_training_context(device)
 
         # Scaler should be disabled for FP8

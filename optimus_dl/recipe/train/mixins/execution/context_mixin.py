@@ -4,8 +4,6 @@ This module provides FP8 (Floating Point 8-bit) and standard AMP support for tra
 """
 
 import logging
-from collections.abc import Iterator
-from contextlib import contextmanager
 from typing import (
     Any,
 )
@@ -20,6 +18,7 @@ from optimus_dl.core.dtype import (
 from optimus_dl.modules.amp import (
     FP8Recipe,
     create_fp8_recipe,
+    fp8_autocast,
     is_transformer_engine_available,
 )
 from optimus_dl.recipe.train.config import OptimizationConfig
@@ -69,7 +68,12 @@ class TrainingContextMixin:
         # Check if FP8 is requested
         dtype = str_to_dtype(amp_cfg.dtype)
         is_fp8 = is_fp8_dtype(dtype)
-        get_fp8_format_from_dtype(dtype)
+        fp8_format = get_fp8_format_from_dtype(dtype) if is_fp8 else None
+        if fp8_format:
+            logger.info(f"FP8 format detected: {fp8_format}")
+
+        if is_fp8 and device.type != "cuda":
+            raise ValueError("FP8 training is only supported on CUDA devices.")
 
         # For FP8, disable gradient scaler (handled by Transformer Engine)
         enable_scaler = amp_cfg.enable_scaler and not is_fp8
@@ -98,6 +102,7 @@ class TrainingContextMixin:
             else:
                 # Create FP8 recipe from config
                 fp8_recipe = create_fp8_recipe(
+                    recipe_type=amp_cfg.fp8.recipe,
                     format=amp_cfg.fp8.format,
                     margin=amp_cfg.fp8.margin,
                     amax_history_len=amp_cfg.fp8.amax_history_len,
@@ -114,9 +119,22 @@ class TrainingContextMixin:
             # FP8 autocast via Transformer Engine
             amp_ctx = self._create_fp8_autocast(device, fp8_recipe)
         else:
-            # Standard AMP autocast
+            # Standard AMP autocast fallback
+            autocast_dtype = dtype
+            if is_fp8 and amp_cfg.enabled:
+                # If FP8 is requested but not enabled/available, fall back to BF16/FP16
+                if device.type == "cuda" and torch.cuda.is_bf16_supported():
+                    autocast_dtype = torch.bfloat16
+                elif device.type == "cpu":
+                    autocast_dtype = torch.bfloat16
+                else:
+                    autocast_dtype = torch.float16
+                logger.info(
+                    f"Falling back from FP8 to standard AMP with dtype={autocast_dtype}"
+                )
+
             amp_ctx = torch.autocast(
-                device.type, dtype=dtype, enabled=amp_cfg.enabled and not is_fp8
+                device.type, dtype=autocast_dtype, enabled=amp_cfg.enabled
             )
 
         return {
@@ -140,27 +158,24 @@ class TrainingContextMixin:
             fp8_recipe: The FP8Recipe instance.
 
         Returns:
-            A context manager for FP8 autocast.
+            A context manager for FP8 autocast (callable that returns a new context each time).
         """
+        if fp8_recipe is not None:
+            # Return a callable that creates a combined FP8 + standard AMP context each time
+            return lambda: fp8_autocast(device=device, fp8_recipe=fp8_recipe)
+        from contextlib import nullcontext
 
-        @contextmanager
-        def fp8_autocast_ctx() -> Iterator[None]:
-            if fp8_recipe is not None:
-                with fp8_recipe.autocast():
-                    yield
-            else:
-                yield
-
-        return fp8_autocast_ctx()
+        return nullcontext()
 
     def get_fp8_backward_ctx(self) -> Any:
         """Get FP8 backward context manager.
 
         Returns:
-            A context manager for FP8 backward pass, or nullcontext if not enabled.
+            A context manager (method) for FP8 backward pass, or nullcontext if not enabled.
         """
         if self._fp8_recipe is not None:
-            return self._fp8_recipe.backward()
+            # Return the method so a new context is created each time
+            return self._fp8_recipe.backward
         from contextlib import nullcontext
 
         return nullcontext()
