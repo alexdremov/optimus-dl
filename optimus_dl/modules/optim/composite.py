@@ -30,10 +30,10 @@ from optimus_dl.modules.optim import (
 
 @dataclass
 class CompositeOptimizerConfigEntry(RegistryConfig):
-    params_regexp: str = field(
+    params_regexp: str | None = field(
         default=".*",
         metadata={
-            "help": "Regular expression to match parameter names for this optimizer."
+            "help": "Regular expression to match parameter names for this optimizer. If None, matches all that's left"
         },
     )
     optimizer_config: RegistryConfig = field(
@@ -95,8 +95,17 @@ class CompositeOptimizer(Optimizer):
         #
         # changing parameter groups in self.param_groups will affect the original optimizers since they reference the same group dicts.
         super().__init__(groups, {})
+        self._cascade_state(self.state)
+
+    def _cascade_state(self, state: dict[torch.Tensor, Any]) -> None:
+        """
+        Recursively assigns the given state dictionary to all nested sub-optimizers
+        so they share the exact same state object.
+        """
         for opt in self.optimizers.values():
-            opt.state = self.state
+            opt.state = state
+            if isinstance(opt, CompositeOptimizer):
+                opt._cascade_state(state)
 
     def step(self, closure: Callable[[], float] | None = None) -> float | None:
         """
@@ -163,6 +172,7 @@ def get_subgroup(
     """
     if not isinstance(params, list):
         params = list(params)  # Ensure we can iterate multiple times
+
     is_single_group = False
     if any(isinstance(param, torch.Tensor) for param in params):
         raise ValueError(
@@ -235,14 +245,32 @@ def make_composite_optimizer(cfg, params: ParamsT, **kwargs):
                 all_params.add(id(param))
                 all_params_names[id(param)] = param_name
 
-    for name, entry in cfg.optimizers.items():
-        filtered_groups = get_subgroup(
-            params=params,
-            predicate=lambda param_name, _, entry=entry: re.match(
-                entry.params_regexp, param_name
+    none_matchers = [i for i in cfg.optimizers.values() if i.params_regexp is None]
+    assert (
+        len(none_matchers) <= 1
+    ), "Only one optimizer can have params_regexp set to None (match all remaining)."
+
+    optimizers_ordered = sorted(
+        cfg.optimizers.items(),
+        key=lambda item: (item[1].params_regexp is None, item[0]),
+    )
+
+    for name, entry in optimizers_ordered:
+        if entry.params_regexp is None:
+            # Match all remaining parameters that haven't been matched by previous optimizers
+            filtered_groups = get_subgroup(
+                params=params,
+                predicate=lambda param_name, param, used=used_params: id(param)
+                not in used,
             )
-            is not None,
-        )
+        else:
+            filtered_groups = get_subgroup(
+                params=params,
+                predicate=lambda param_name, _, entry=entry: re.match(
+                    entry.params_regexp, param_name
+                )
+                is not None,
+            )
         filtered_groups = list(filtered_groups)  # Ensure we can iterate multiple times
         has_parameters = len(filtered_groups) > 0
         if not has_parameters:

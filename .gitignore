@@ -175,10 +175,11 @@ _version.py
 .ruff_cache
 
 cache/
-\nsite/
+site/
 
 .geminiignore
 
 build
 
 mlflow.db
+.antigravitycli
