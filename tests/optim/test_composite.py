@@ -409,3 +409,79 @@ class TestCompositeOptimizer:
 
         inner_opt = nested_opt.optimizers["inner_opt"]
         assert inner_opt.param_groups[0]["lr"] == 1.0
+
+    def test_none_regexp_matches_all_remaining(self, weight_opt_cfg, bias_opt_cfg):
+        model = nn.Linear(10, 5)
+        config = CompositeOptimizerConfig(
+            optimizers={
+                "weight_opt": CompositeOptimizerConfigEntry(
+                    params_regexp=".*weight",
+                    optimizer_config=weight_opt_cfg,
+                ),
+                "bias_opt": CompositeOptimizerConfigEntry(
+                    params_regexp=None,  # Match remaining (bias)
+                    optimizer_config=bias_opt_cfg,
+                ),
+            }
+        )
+        optimizer = make_composite_optimizer(config, params=model.named_parameters())
+        assert "weight_opt" in optimizer.optimizers
+        assert "bias_opt" in optimizer.optimizers
+
+        # Verify weight_opt has weight and bias_opt has bias
+        weight_params = [
+            p
+            for group in optimizer.optimizers["weight_opt"].param_groups
+            for p in group["params"]
+        ]
+        bias_params = [
+            p
+            for group in optimizer.optimizers["bias_opt"].param_groups
+            for p in group["params"]
+        ]
+
+        assert len(weight_params) == 1
+        assert len(bias_params) == 1
+        assert any(p is model.weight for p in weight_params)
+        assert any(p is model.bias for p in bias_params)
+
+    def test_none_regexp_only_one_allowed(self, weight_opt_cfg):
+        model = nn.Linear(10, 5)
+        config = CompositeOptimizerConfig(
+            optimizers={
+                "opt1": CompositeOptimizerConfigEntry(
+                    params_regexp=None,
+                    optimizer_config=weight_opt_cfg,
+                ),
+                "opt2": CompositeOptimizerConfigEntry(
+                    params_regexp=None,
+                    optimizer_config=weight_opt_cfg,
+                ),
+            }
+        )
+        with pytest.raises(
+            AssertionError,
+            match="Only one optimizer can have params_regexp set to None",
+        ):
+            make_composite_optimizer(config, params=model.named_parameters())
+
+    def test_none_regexp_no_params_left(self, weight_opt_cfg, bias_opt_cfg):
+        model = nn.Linear(10, 5)
+        config = CompositeOptimizerConfig(
+            optimizers={
+                "all_opt": CompositeOptimizerConfigEntry(
+                    params_regexp=".*",
+                    optimizer_config=weight_opt_cfg,
+                ),
+                "none_opt": CompositeOptimizerConfigEntry(
+                    params_regexp=None,
+                    optimizer_config=bias_opt_cfg,
+                ),
+            }
+        )
+        # all_opt matches everything, none_opt matches nothing
+        with pytest.raises(
+            ValueError,
+            match="Optimizer 'none_opt' with regex 'None' did not match any parameters",
+        ):
+            make_composite_optimizer(config, params=model.named_parameters())
