@@ -485,3 +485,54 @@ class TestCompositeOptimizer:
             match="Optimizer 'none_opt' with regex 'None' did not match any parameters",
         ):
             make_composite_optimizer(config, params=model.named_parameters())
+
+    def test_recursive_state_sharing(self):
+        """
+        Verify that all nested optimizers share the exact same state object.
+        This is critical for Distributed Checkpoint (DCP) and general consistency.
+        """
+        model = nn.Sequential(nn.Linear(10, 10), nn.Linear(10, 10))
+
+        # Create a nested configuration
+        dict(
+            optimizers={
+                "inner_opt": dict(
+                    params_regexp=".*",
+                    optimizer_config=dict(_name="adamw"),
+                )
+            }
+        )
+
+        outer_cfg = CompositeOptimizerConfig(
+            optimizers={
+                "nested_opt": CompositeOptimizerConfigEntry(
+                    params_regexp=".*",
+                    optimizer_config={
+                        "_name": "composite",
+                        "optimizers": {
+                            "inner_opt": {
+                                "params_regexp": ".*",
+                                "optimizer_config": {"_name": "adamw", "lr": 1e-3},
+                            }
+                        },
+                    },
+                )
+            }
+        )
+
+        optimizer = make_composite_optimizer(outer_cfg, model.named_parameters())
+
+        # Initialize some state
+        loss = model(torch.randn(1, 10)).sum()
+        loss.backward()
+        optimizer.step()
+
+        # Verify state sharing
+        root_state = optimizer.state
+        assert len(root_state) > 0
+
+        nested_opt = optimizer.optimizers["nested_opt"]
+        assert nested_opt.state is root_state
+
+        inner_opt = nested_opt.optimizers["inner_opt"]
+        assert inner_opt.state is root_state

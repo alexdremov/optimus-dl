@@ -95,8 +95,17 @@ class CompositeOptimizer(Optimizer):
         #
         # changing parameter groups in self.param_groups will affect the original optimizers since they reference the same group dicts.
         super().__init__(groups, {})
+        self._cascade_state(self.state)
+
+    def _cascade_state(self, state: dict[torch.Tensor, Any]) -> None:
+        """
+        Recursively assigns the given state dictionary to all nested sub-optimizers
+        so they share the exact same state object.
+        """
         for opt in self.optimizers.values():
-            opt.state = self.state
+            opt.state = state
+            if isinstance(opt, CompositeOptimizer):
+                opt._cascade_state(state)
 
     def step(self, closure: Callable[[], float] | None = None) -> float | None:
         """
@@ -163,6 +172,7 @@ def get_subgroup(
     """
     if not isinstance(params, list):
         params = list(params)  # Ensure we can iterate multiple times
+
     is_single_group = False
     if any(isinstance(param, torch.Tensor) for param in params):
         raise ValueError(
