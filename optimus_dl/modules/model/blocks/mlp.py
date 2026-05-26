@@ -8,6 +8,8 @@ logger = logging.getLogger(__name__)
 try:
     from liger_kernel.transformers.functional import liger_swiglu
 
+    torch.compiler.allow_in_graph(liger_swiglu)
+
     LIGER_AVAILABLE = True
 except ImportError:
     LIGER_AVAILABLE = False

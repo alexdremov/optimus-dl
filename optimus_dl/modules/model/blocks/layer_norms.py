@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 try:
     from liger_kernel.transformers.functional import liger_rms_norm
 
+    torch.compiler.allow_in_graph(liger_rms_norm)
+
     LIGER_AVAILABLE = True
 except ImportError:
     LIGER_AVAILABLE = False
