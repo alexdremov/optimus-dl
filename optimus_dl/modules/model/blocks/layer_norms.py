@@ -79,6 +79,10 @@ class RMSNorm(nn.Module):
             )
             self.use_liger = False
 
+        self.liger_rms_norm = (
+            torch.compiler.disable(liger_rms_norm) if liger_rms_norm else None
+        )
+
     def _norm(self, x: torch.Tensor) -> torch.Tensor:
         """Compute the RMS normalization of the input."""
         assert x.dtype == torch.float32, "Accumulating in lower precision is dangerous"
@@ -95,10 +99,13 @@ class RMSNorm(nn.Module):
         """
         is_dtensor = isinstance(x, DTensor)
 
-        if self.use_liger and x.device.type != "cpu" and not is_dtensor:
-            return torch.compiler.disable(liger_rms_norm)(
-                x, self.weight, self.eps, casting_mode="gemma"
-            )
+        if (
+            self.use_liger
+            and self.liger_rms_norm is not None
+            and x.device.type != "cpu"
+            and not is_dtensor
+        ):
+            return self.liger_rms_norm(x, self.weight, self.eps, casting_mode="gemma")
 
         output = self._norm(x.float())
 

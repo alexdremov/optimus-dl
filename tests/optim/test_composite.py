@@ -493,16 +493,6 @@ class TestCompositeOptimizer:
         """
         model = nn.Sequential(nn.Linear(10, 10), nn.Linear(10, 10))
 
-        # Create a nested configuration
-        dict(
-            optimizers={
-                "inner_opt": dict(
-                    params_regexp=".*",
-                    optimizer_config=dict(_name="adamw"),
-                )
-            }
-        )
-
         outer_cfg = CompositeOptimizerConfig(
             optimizers={
                 "nested_opt": CompositeOptimizerConfigEntry(
