@@ -12,8 +12,6 @@ logger = logging.getLogger(__name__)
 try:
     from liger_kernel.transformers.functional import liger_rms_norm
 
-    torch.compiler.allow_in_graph(liger_rms_norm)
-
     LIGER_AVAILABLE = True
 except ImportError:
     LIGER_AVAILABLE = False
@@ -98,7 +96,9 @@ class RMSNorm(nn.Module):
         is_dtensor = isinstance(x, DTensor)
 
         if self.use_liger and x.device.type != "cpu" and not is_dtensor:
-            return liger_rms_norm(x, self.weight, self.eps, casting_mode="gemma")
+            return torch._dynamo.disallow_in_graph(liger_rms_norm)(
+                x, self.weight, self.eps, casting_mode="gemma"
+            )
 
         output = self._norm(x.float())
 
