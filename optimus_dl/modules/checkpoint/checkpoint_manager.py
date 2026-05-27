@@ -318,6 +318,10 @@ class CheckpointManager:
         checkpoint_path = checkpoint_path or self.checkpoint_path
         full_config = full_config if full_config is not None else self.full_config
 
+        logger_manager = kwargs.get("logger_manager", self.logger_manager)
+        if logger_manager is not None:
+            kwargs["logger_manager"] = logger_manager
+
         if checkpoint_path is None:
             raise ValueError("checkpoint_path must be provided or set in __init__")
 
@@ -596,6 +600,10 @@ class CheckpointManager:
         """Load training checkpoint using distributed checkpoint API."""
         load_strategy = load_strategy or LoadStrategy()
         checkpoint = self.get_checkpoint(checkpoint_path)
+
+        logger_manager = kwargs.get("logger_manager", self.logger_manager)
+        if logger_manager is not None:
+            kwargs["logger_manager"] = logger_manager
 
         if checkpoint is None:
             raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
