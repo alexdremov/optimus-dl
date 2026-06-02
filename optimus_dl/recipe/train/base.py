@@ -477,10 +477,15 @@ class TrainRecipe(
 
         # Setup training metric engine if config exists
         train_metric_engine = None
-        if self.cfg.metrics and "train" in self.cfg.metrics:
+
+        if self.cfg.metrics:
             from optimus_dl.modules.metrics.engine import MetricEngine
 
-            train_metric_engine = MetricEngine("train", self.cfg.metrics["train"])
+            train_metric_engine_config = self.cfg.metrics.get(
+                "train", self.cfg.metrics.get("_default")
+            )
+            if train_metric_engine_config is not None:
+                train_metric_engine = MetricEngine("train", train_metric_engine_config)
 
         logger.debug("Reaching pre-training barrier...")
         collective.barrier()

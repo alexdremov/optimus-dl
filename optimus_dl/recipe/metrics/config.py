@@ -85,7 +85,9 @@ class MetricsConfig(RegistryConfigStrict):
     # Metrics configuration for MetricEngine, mapped by dataset name
     metrics: dict[str, list[dict]] = field(
         default_factory=dict,
-        metadata={"description": "Metric configurations mapped by dataset name"},
+        metadata={
+            "description": "Metric configurations mapped by dataset name. If '_default' is used as a key, the corresponding metrics will be applied as default"
+        },
     )
 
     # Model transforms configuration

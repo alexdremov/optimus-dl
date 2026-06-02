@@ -316,7 +316,9 @@ class Evaluator:
 
             engine = None
             requested_protocols = None
-            dataset_metrics = all_metrics_configs_dict.get(eval_name)
+            dataset_metrics = all_metrics_configs_dict.get(
+                eval_name, all_metrics_configs_dict.get("_default")
+            )
             if dataset_metrics:
                 from optimus_dl.modules.metrics.engine import MetricEngine
 

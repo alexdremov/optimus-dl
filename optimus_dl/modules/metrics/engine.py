@@ -148,7 +148,11 @@ class MetricEngine:
         for group in self.groups:
             internal_provides = set()
             for source in group.sources.values():
+                assert (
+                    len(source.provides & source.requires) == 0
+                ), f"Source '{source}' has an invalid configuration: it provides and requires the same protocol(s) {source.provides & source.requires}. Please resolve this conflict."
                 internal_provides |= source.provides
+                external |= source.requires
 
             for metric in group.metrics:
                 external |= metric.requires - internal_provides
@@ -204,6 +208,10 @@ class MetricEngine:
             deps_data: dict[str, dict[str, Any]] = {}
 
             for req_protocol in source.requires:
+                if req_protocol in global_cache:
+                    deps_data[req_protocol] = global_cache[req_protocol]
+                    continue
+
                 try:
                     providers = protocols_to_sources[req_protocol]
                     if len(providers) == 0:
@@ -223,7 +231,7 @@ class MetricEngine:
                 except Exception as e:
                     # If a dependency fails, mark this as failed too
                     global_cache[h] = e
-                    raise e
+                    raise
 
             # Evaluate this source
             try:
@@ -232,7 +240,7 @@ class MetricEngine:
                 return result
             except Exception as e:
                 global_cache[h] = e
-                raise e
+                raise
         finally:
             _evaluating.remove(source_name)
 
@@ -247,9 +255,6 @@ class MetricEngine:
         with meters_group(self.group_name, force_recreate=False) as should_log:
             if not should_log:
                 return
-            # Global cache for the entire batch. Keys are source config hashes.
-            global_source_cache: dict[str, Any] = {}
-
             # Seed cache with computed data if provided
             computed_data = computed_data or {}
 
@@ -283,14 +288,14 @@ class MetricEngine:
                                 group=group,
                                 source_name=provider,
                                 data=data,
-                                global_cache=global_source_cache,
+                                global_cache=computed_data,
                             )[req_protocol]
                         except Exception as e:
                             logger.exception(
                                 f"Source execution failed for the metric {metric} in group '{group.prefix}': {e}"
                             )
                             execution_failed = True
-                            break
+                            raise
 
                     if execution_failed:
                         continue
@@ -301,7 +306,7 @@ class MetricEngine:
                         logger.exception(
                             f"Metric computation failed for '{metric_name}' in group '{group.prefix}': {e}"
                         )
-                        continue
+                        raise
 
                     for sub_name, log_kwargs in batch_results.items():
                         is_internal = sub_name.startswith("_")
@@ -387,7 +392,7 @@ class MetricEngine:
                     logger.exception(
                         f"Metric finalization failed for '{metric_name}' in group '{group.prefix}': {e}"
                     )
-                    continue
+                    raise
 
                 for k, v in finalized.items():
                     if k.startswith("_"):
