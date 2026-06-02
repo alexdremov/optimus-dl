@@ -94,6 +94,10 @@ class Evaluator:
         if output_path:
             self.eval_checkpoint_manager = EvaluationCheckpointManager(output_path)
 
+        # Cache for MetricEngine instances to avoid re-instantiating them on every evaluation run
+        # They may have processes that are expensive to set up, so we want to reuse them if the configuration is the same
+        self._cached_engines = {}
+
     @contextlib.contextmanager
     def forward_context(self, device: torch.device):
         """Context manager for evaluation forward pass.
@@ -322,7 +326,13 @@ class Evaluator:
             if dataset_metrics:
                 from optimus_dl.modules.metrics.engine import MetricEngine
 
-                engine = MetricEngine(f"{metrics_prefix}/{eval_name}", dataset_metrics)
+                engine_key = f"{metrics_prefix}/{eval_name}:{str(dataset_metrics)}"
+                if engine_key in self._cached_engines:
+                    engine = self._cached_engines[engine_key]
+                else:
+                    engine = MetricEngine(
+                        f"{metrics_prefix}/{eval_name}", dataset_metrics
+                    )
                 requested_protocols = engine.required_external_protocols
 
             group_name = f"{metrics_prefix}/{eval_name}"
