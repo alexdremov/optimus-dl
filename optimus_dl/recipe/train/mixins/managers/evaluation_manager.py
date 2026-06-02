@@ -331,6 +331,7 @@ class Evaluator:
                     engine = self._cached_engines[engine_key]
                 else:
                     engine = MetricEngine(dataset_metrics)
+                    self._cached_engines[engine_key] = engine
                 requested_protocols = engine.required_external_protocols
 
             group_name = f"{metrics_prefix}/{eval_name}"
