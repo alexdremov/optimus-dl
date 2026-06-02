@@ -522,7 +522,7 @@ class Evaluator:
                 ) * 1000
 
             logger.info(
-                f"Finished eval {eval_name}: {eval_metrics} in {total_time:.1f}s"
+                f"Finished eval {eval_name} in {total_time:.1f}s: {eval_metrics}"
             )
             total_metrics[f"{metrics_prefix}/{eval_name}"] = eval_metrics
         return total_metrics
