@@ -326,13 +326,11 @@ class Evaluator:
             if dataset_metrics:
                 from optimus_dl.modules.metrics.engine import MetricEngine
 
-                engine_key = f"{metrics_prefix}/{eval_name}:{str(dataset_metrics)}"
+                engine_key = f"{str(dataset_metrics)}"
                 if engine_key in self._cached_engines:
                     engine = self._cached_engines[engine_key]
                 else:
-                    engine = MetricEngine(
-                        f"{metrics_prefix}/{eval_name}", dataset_metrics
-                    )
+                    engine = MetricEngine(dataset_metrics)
                 requested_protocols = engine.required_external_protocols
 
             group_name = f"{metrics_prefix}/{eval_name}"

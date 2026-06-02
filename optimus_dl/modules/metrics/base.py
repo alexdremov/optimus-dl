@@ -757,3 +757,15 @@ def log_meter(
                 _priority=priority,
                 kwargs=evaluated_kwargs,
             )
+
+
+def active_group_names() -> list[str]:
+    """Return a list of currently active `MeterGroup` names.
+
+    This function provides insight into which metric groups are currently active
+    and will receive logged data when `log_meter` is called.
+
+    Returns:
+        A list of strings representing the names of active `MeterGroup`s.
+    """
+    return list(_active_meter_groups.keys())

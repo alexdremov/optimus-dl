@@ -90,7 +90,7 @@ The `MetricEngine` is typically initialized in the training recipe and updated i
 
 ```python
 # Initialization
-engine = MetricEngine("train", cfg.metrics.train)
+engine = MetricEngine(cfg.metrics.train)
 
 # In the loop
 engine.update(

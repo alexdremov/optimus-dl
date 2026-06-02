@@ -485,7 +485,7 @@ class TrainRecipe(
                 "train", self.cfg.metrics.get("_default")
             )
             if train_metric_engine_config is not None:
-                train_metric_engine = MetricEngine("train", train_metric_engine_config)
+                train_metric_engine = MetricEngine(train_metric_engine_config)
 
         logger.debug("Reaching pre-training barrier...")
         collective.barrier()

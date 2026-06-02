@@ -4,6 +4,7 @@ from .base import (
     BaseMeter,
     MeterEntry,
     MeterGroup,
+    active_group_names,
     compute_meters,
     load_state_dict,
     log_meter,
