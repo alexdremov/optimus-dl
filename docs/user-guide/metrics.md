@@ -93,11 +93,13 @@ The `MetricEngine` is typically initialized in the training recipe and updated i
 engine = MetricEngine(cfg.metrics.train)
 
 # In the loop
-engine.update(
-    data={"model": model, "batch": batch},
-    computed_data={"loss": loss} # Optional: pass already computed data
-)
+with meters_group("logging_group"):
+  engine.update(
+      data={"model": model, "batch": batch},
+      computed_data={"loss": loss} # Optional: pass already computed data
+  )
 
 # After aggregation
-final_metrics = engine.compute(raw_aggregated_results)
+raw_results = compute_meters("logging_group", aggregate=True, collective=collective)
+results = engine.compute(raw_results)
 ```
