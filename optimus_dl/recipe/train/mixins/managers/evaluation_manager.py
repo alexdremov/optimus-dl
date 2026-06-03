@@ -510,6 +510,18 @@ class Evaluator:
                         pbar.refresh()
                         pbar.close()
 
+                if self.eval_checkpoint_manager is not None and iteration is not None:
+                    self.eval_checkpoint_manager.save_iteration_state(
+                        iteration=iteration,
+                        eval_name=eval_name,
+                        dataloader_state=eval_iter.state_dict(),
+                        group_name=group_name,
+                        collective=collective,
+                        eval_iterations_processed=eval_iterations_processed,
+                    )
+                    logger.info(
+                        f"Saved evaluation metrics checkpoint at iteration {eval_iterations_processed} (final save)"
+                    )
                 total_time = time.perf_counter() - start_time
                 log_event_end("perf/total_run")
 
