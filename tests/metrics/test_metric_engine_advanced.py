@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from unittest.mock import MagicMock
 
 import torch
+import pytest
 
 from optimus_dl.modules.metrics.base import (
     _active_meter_groups,
@@ -224,7 +225,7 @@ class TestMetricEngineAdvanced:
         assert "accuracy_metric/accuracy" in results
         assert results["accuracy_metric/accuracy"] == 0.5
 
-    def test_cyclic_dependency_detection(self, caplog):
+    def test_cyclic_dependency_detection(self):
         @dataclass
         class CycleSourceConfig(MetricSourceConfig):
             _name: str = "cycle_source"
@@ -266,16 +267,15 @@ class TestMetricEngineAdvanced:
             def __call__(self, sources_data):
                 return {"cycle_metric": {"value": 1.0, "weight": 1.0}}
 
-        with meters_group("test_group"):
-            engine = MetricEngine(configs_cycle)
+        with pytest.raises(RuntimeError, match="Cyclic"):
+            with meters_group("test_group"):
+                engine = MetricEngine(configs_cycle)
 
-            model = MagicMock()
-            batch = {}
+                model = MagicMock()
+                batch = {}
 
-            # update should log the cyclic error and skip metric computation
-            engine.update({"model": model, "batch": batch})
-
-        assert "Cyclic dependency detected for source" in caplog.text
+                # update should log the cyclic error and skip metric computation
+                engine.update({"model": model, "batch": batch})
 
     def test_missing_protocol(self):
         configs = [
