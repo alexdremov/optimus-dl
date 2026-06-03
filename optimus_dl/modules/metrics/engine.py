@@ -266,7 +266,6 @@ class MetricEngine:
                 )
 
                 sources_data: dict[str, dict[str, Any]] = {}
-                execution_failed = False
 
                 for req_protocol in metric.requires:
                     # 1. Try precomputed data first
@@ -293,11 +292,7 @@ class MetricEngine:
                         logger.exception(
                             f"Source execution failed for the metric {metric} in group '{group.prefix}': {e}"
                         )
-                        execution_failed = True
                         raise
-
-                if execution_failed:
-                    continue
 
                 try:
                     batch_results = metric(sources_data)
