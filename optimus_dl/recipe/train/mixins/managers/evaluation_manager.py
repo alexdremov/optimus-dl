@@ -510,7 +510,17 @@ class Evaluator:
                         pbar.refresh()
                         pbar.close()
 
-                if self.eval_checkpoint_manager is not None and iteration is not None:
+                if (
+                    self.eval_checkpoint_manager is not None
+                    and iteration is not None
+                    and eval_checkpointing is not None
+                    and eval_checkpointing > 0
+                ):
+                    # Final save is useful if we are preempted over other eval slices.
+                    # This way, restart will not recompute already processed slice at all.
+                    # We do not want to initialize dataloaders etc in that case,
+                    # so we save state right after finishing processing the slice.
+
                     self.eval_checkpoint_manager.save_iteration_state(
                         iteration=iteration,
                         eval_name=eval_name,
