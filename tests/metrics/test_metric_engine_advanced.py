@@ -344,7 +344,7 @@ class TestMetricEngineAdvanced:
             }
         ]
 
-        with meters_group("test_group"):
+        with meters_group("finalize_group"):
             engine = MetricEngine(configs)
             model = MagicMock()
 
