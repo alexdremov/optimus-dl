@@ -184,8 +184,6 @@ class MetricEngine:
 
         # Cross-group cache hit
         if h in global_cache:
-            if isinstance(global_cache[h], Exception):
-                raise global_cache[h]
             return global_cache[h]
 
         if _evaluating is None:
@@ -209,35 +207,26 @@ class MetricEngine:
                     deps_data[req_protocol] = global_cache[req_protocol]
                     continue
 
-                try:
-                    providers = protocols_to_sources[req_protocol]
-                    if len(providers) == 0:
-                        raise ValueError(
-                            f"No source provides the required protocol {req_protocol}"
-                        )
+                providers = protocols_to_sources[req_protocol]
+                if len(providers) == 0:
+                    raise ValueError(
+                        f"No source provides the required protocol {req_protocol}"
+                    )
 
-                    provider = providers[0]
+                provider = providers[0]
 
-                    deps_data[req_protocol] = self._eval_source(
-                        group=group,
-                        source_name=provider,
-                        data=data,
-                        global_cache=global_cache,
-                        _evaluating=_evaluating,
-                    )[req_protocol]
-                except Exception as e:
-                    # If a dependency fails, mark this as failed too
-                    global_cache[h] = e
-                    raise
+                deps_data[req_protocol] = self._eval_source(
+                    group=group,
+                    source_name=provider,
+                    data=data,
+                    global_cache=global_cache,
+                    _evaluating=_evaluating,
+                )[req_protocol]
 
             # Evaluate this source
-            try:
-                result = source(deps_data, **data)
-                global_cache[h] = result
-                return result
-            except Exception as e:
-                global_cache[h] = e
-                raise
+            result = source(deps_data, **data)
+            global_cache[h] = result
+            return result
         finally:
             _evaluating.remove(source_name)
 
@@ -318,10 +307,9 @@ class MetricEngine:
 
                     acc_type = metric.accumulators.get(sub_name)
                     if acc_type is None:
-                        logger.warning(
+                        raise RuntimeError(
                             f"No accumulator defined for sub-metric '{sub_name}' in metric '{metric_name}'. Skipping."
                         )
-                        continue
 
                     factory = self._get_accumulator_factory(acc_type)
 
