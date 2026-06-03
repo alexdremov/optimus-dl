@@ -6,6 +6,7 @@ import torch
 from optimus_dl.modules.metrics.base import (
     _active_meter_groups,
     _meter_groups,
+    meters_group,
 )
 from optimus_dl.modules.metrics.engine import MetricEngine
 from optimus_dl.modules.metrics.metrics import (
@@ -125,15 +126,16 @@ class TestMetricEngineAdvanced:
             }
         ]
 
-        engine = MetricEngine("test_group", configs)
-        model = MagicMock()
-        batch = {}
+        with meters_group("test_group"):
+            engine = MetricEngine(configs)
+            model = MagicMock()
+            batch = {}
 
-        # Run update
-        engine.update({"model": model, "batch": batch})
+            # Run update
+            engine.update({"model": model, "batch": batch})
 
-        # Compute results
-        from optimus_dl.modules.metrics import compute_meters
+            # Compute results
+            from optimus_dl.modules.metrics import compute_meters
 
         raw_results = compute_meters("test_group", aggregate=False)
         results = engine.compute(raw_results)
@@ -167,14 +169,15 @@ class TestMetricEngineAdvanced:
             },
         ]
 
-        engine = MetricEngine("test_group", configs)
+        with meters_group("test_group"):
+            engine = MetricEngine(configs)
 
-        # Provide labels to avoid None comparison in AccuracyMetric
-        batch = {
-            "input_ids": torch.tensor([[1, 2, 3]]),
-            "labels": torch.tensor([[1, 2, 3]]),
-        }
-        engine.update({"model": model, "batch": batch})
+            # Provide labels to avoid None comparison in AccuracyMetric
+            batch = {
+                "input_ids": torch.tensor([[1, 2, 3]]),
+                "labels": torch.tensor([[1, 2, 3]]),
+            }
+            engine.update({"model": model, "batch": batch})
 
         # Even though there are two groups, they use the exact same source config.
         # The model should only be called once per batch.
@@ -190,25 +193,26 @@ class TestMetricEngineAdvanced:
             }
         ]
 
-        engine = MetricEngine("test_group", configs)
+        with meters_group("test_group"):
+            engine = MetricEngine(configs)
 
-        # Batch: 1 sequence, length 3. CausalLMSource will derive labels [2, 3]
-        # by shifting input_ids, so we don't need an explicit 'labels' field here.
-        batch = {
-            "input_ids": torch.tensor([[1, 2, 3]]),
-        }
+            # Batch: 1 sequence, length 3. CausalLMSource will derive labels [2, 3]
+            # by shifting input_ids, so we don't need an explicit 'labels' field here.
+            batch = {
+                "input_ids": torch.tensor([[1, 2, 3]]),
+            }
 
-        # Model predicts 2 for the first token (correct), 4 for the second (incorrect)
-        # CausalLMSource returns logits for length-1 sequence if we shift labels.
-        # Let's mock model to return logits already matching labels length.
-        logits = torch.zeros(1, 2, 10)
-        logits[0, 0, 2] = 10.0  # Pos 0 -> Target 2
-        logits[0, 1, 4] = 10.0  # Pos 1 -> Target 3 (so incorrect)
+            # Model predicts 2 for the first token (correct), 4 for the second (incorrect)
+            # CausalLMSource returns logits for length-1 sequence if we shift labels.
+            # Let's mock model to return logits already matching labels length.
+            logits = torch.zeros(1, 2, 10)
+            logits[0, 0, 2] = 10.0  # Pos 0 -> Target 2
+            logits[0, 1, 4] = 10.0  # Pos 1 -> Target 3 (so incorrect)
 
-        model = MagicMock()
-        model.return_value = {"logits": logits}
+            model = MagicMock()
+            model.return_value = {"logits": logits}
 
-        engine.update({"model": model, "batch": batch})
+            engine.update({"model": model, "batch": batch})
 
         from optimus_dl.modules.metrics import compute_meters
 
@@ -262,13 +266,14 @@ class TestMetricEngineAdvanced:
             def __call__(self, sources_data):
                 return {"cycle_metric": {"value": 1.0, "weight": 1.0}}
 
-        engine = MetricEngine("test_group", configs_cycle)
+        with meters_group("test_group"):
+            engine = MetricEngine(configs_cycle)
 
-        model = MagicMock()
-        batch = {}
+            model = MagicMock()
+            batch = {}
 
-        # update should log the cyclic error and skip metric computation
-        engine.update({"model": model, "batch": batch})
+            # update should log the cyclic error and skip metric computation
+            engine.update({"model": model, "batch": batch})
 
         assert "Cyclic dependency detected for source" in caplog.text
 
@@ -286,7 +291,7 @@ class TestMetricEngineAdvanced:
 
         # Use required_external_protocols check instead of just raises ValueError on init
         # because we changed init to only debug log missing protocols.
-        engine = MetricEngine("test_group", configs)
+        engine = MetricEngine(configs)
         assert "dep_proto" in engine.required_external_protocols
 
     def test_metric_finalize(self):
@@ -339,15 +344,16 @@ class TestMetricEngineAdvanced:
             }
         ]
 
-        engine = MetricEngine("finalize_group", configs)
-        model = MagicMock()
+        with meters_group("test_group"):
+            engine = MetricEngine(configs)
+            model = MagicMock()
 
-        # Batch 1: val=10 -> sum_a=10, sum_b=1
-        engine.update({"model": model, "batch": {"val": 10.0}})
-        # Batch 2: val=20 -> sum_a=30, sum_b=2
-        engine.update({"model": model, "batch": {"val": 20.0}})
+            # Batch 1: val=10 -> sum_a=10, sum_b=1
+            engine.update({"model": model, "batch": {"val": 10.0}})
+            # Batch 2: val=20 -> sum_a=30, sum_b=2
+            engine.update({"model": model, "batch": {"val": 20.0}})
 
-        from optimus_dl.modules.metrics import compute_meters
+            from optimus_dl.modules.metrics import compute_meters
 
         raw_results = compute_meters("finalize_group", aggregate=False)
 
@@ -399,9 +405,12 @@ class TestMetricEngineAdvanced:
             }
         ]
 
-        engine = MetricEngine("internal_group", configs)
-        model = MagicMock()
-        engine.update({"model": model, "batch": {}})
+        engine = MetricEngine(configs)
+        with meters_group(
+            "internal_group",
+        ):
+            model = MagicMock()
+            engine.update({"model": model, "batch": {}})
 
         from optimus_dl.modules.metrics import compute_meters
 

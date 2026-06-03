@@ -255,7 +255,7 @@ class MetricEngine:
         ), "No active metric groups found. Please ensure that your metric groups are properly configured and that you're calling update within the correct context."
 
         # Seed cache with computed data if provided
-        computed_data = computed_data or {}
+        computed_data = dict(computed_data or {})
 
         for group in self.groups:
             protocols_to_sources = group.protocols_to_sources
