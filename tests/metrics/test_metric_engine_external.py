@@ -95,7 +95,7 @@ def test_required_external_protocols():
         }
     ]
 
-    engine = MetricEngine("test_engine_handshake", configs)
+    engine = MetricEngine(configs)
 
     # external_test_metric requires {"ext_proto_1", "ext_proto_2", "int_proto"}
     # simple_internal_source provides {"int_proto"}
@@ -112,7 +112,7 @@ def test_engine_update_with_external_data_injection():
     """Test that data provided via 'computed_data' is correctly consumed by metrics."""
     configs = [{"_name": "ext_data_source"}]
 
-    engine = MetricEngine("test_engine_injection", configs)
+    engine = MetricEngine(configs)
 
     with meters_group("test_engine_injection", force_recreate=True):
         # Inject 'ext_data' which is required by 'ext_data_source'

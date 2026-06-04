@@ -7,8 +7,8 @@ from typing import Any
 
 from optimus_dl.modules.metrics.base import (
     BaseMeter,
+    active_group_names,
     log_meter,
-    meters_group,
 )
 from optimus_dl.modules.metrics.common import (
     AveragedExponentMeter,
@@ -63,16 +63,13 @@ class MetricEngine:
 
     def __init__(
         self,
-        group_name: str,
         configs: list[dict[str, Any]],
     ):
         """Initializes the MetricEngine.
 
         Args:
-            group_name: The name of the `MeterGroup` (logging namespace).
             configs: A list of configuration dicts.
         """
-        self.group_name = group_name
         self.groups: list[ParsedGroup] = []
 
         self._parse_and_validate_configs(configs)
@@ -148,7 +145,11 @@ class MetricEngine:
         for group in self.groups:
             internal_provides = set()
             for source in group.sources.values():
+                assert (
+                    len(source.provides & source.requires) == 0
+                ), f"Source '{source}' has an invalid configuration: it provides and requires the same protocol(s) {source.provides & source.requires}. Please resolve this conflict."
                 internal_provides |= source.provides
+                external |= source.requires
 
             for metric in group.metrics:
                 external |= metric.requires - internal_provides
@@ -183,8 +184,6 @@ class MetricEngine:
 
         # Cross-group cache hit
         if h in global_cache:
-            if isinstance(global_cache[h], Exception):
-                raise global_cache[h]
             return global_cache[h]
 
         if _evaluating is None:
@@ -204,35 +203,30 @@ class MetricEngine:
             deps_data: dict[str, dict[str, Any]] = {}
 
             for req_protocol in source.requires:
-                try:
-                    providers = protocols_to_sources[req_protocol]
-                    if len(providers) == 0:
-                        raise ValueError(
-                            f"No source provides the required protocol {req_protocol}"
-                        )
+                if req_protocol in global_cache:
+                    deps_data[req_protocol] = global_cache[req_protocol]
+                    continue
 
-                    provider = providers[0]
+                providers = protocols_to_sources[req_protocol]
+                if len(providers) == 0:
+                    raise ValueError(
+                        f"No source provides the required protocol {req_protocol}"
+                    )
 
-                    deps_data[req_protocol] = self._eval_source(
-                        group=group,
-                        source_name=provider,
-                        data=data,
-                        global_cache=global_cache,
-                        _evaluating=_evaluating,
-                    )[req_protocol]
-                except Exception as e:
-                    # If a dependency fails, mark this as failed too
-                    global_cache[h] = e
-                    raise e
+                provider = providers[0]
+
+                deps_data[req_protocol] = self._eval_source(
+                    group=group,
+                    source_name=provider,
+                    data=data,
+                    global_cache=global_cache,
+                    _evaluating=_evaluating,
+                )[req_protocol]
 
             # Evaluate this source
-            try:
-                result = source(deps_data, **data)
-                global_cache[h] = result
-                return result
-            except Exception as e:
-                global_cache[h] = e
-                raise e
+            result = source(deps_data, **data)
+            global_cache[h] = result
+            return result
         finally:
             _evaluating.remove(source_name)
 
@@ -244,93 +238,86 @@ class MetricEngine:
             computed_data: Optional dictionary mapping protocol names to already computed data.
                 This allows reusing results (like logits) to avoid redundant forward passes.
         """
-        with meters_group(self.group_name, force_recreate=False) as should_log:
-            if not should_log:
-                return
-            # Global cache for the entire batch. Keys are source config hashes.
-            global_source_cache: dict[str, Any] = {}
+        active_groups = active_group_names()
+        assert (
+            len(active_groups) >= 1
+        ), "No active metric groups found. Please ensure that your metric groups are properly configured and that you're calling update within the correct context."
 
-            # Seed cache with computed data if provided
-            computed_data = computed_data or {}
+        # Seed cache with computed data if provided
+        computed_data = dict(computed_data or {})
 
-            for group in self.groups:
-                protocols_to_sources = group.protocols_to_sources
+        for group in self.groups:
+            protocols_to_sources = group.protocols_to_sources
 
-                for i, metric in enumerate(group.metrics):
-                    metric_name = metric.nested_name or (
-                        getattr(metric.cfg, "_name", f"{i}") + "_metric"
-                    )
+            for i, metric in enumerate(group.metrics):
+                metric_name = metric.nested_name or (
+                    getattr(metric.cfg, "_name", f"{i}") + "_metric"
+                )
 
-                    sources_data: dict[str, dict[str, Any]] = {}
-                    execution_failed = False
+                sources_data: dict[str, dict[str, Any]] = {}
 
-                    for req_protocol in metric.requires:
-                        # 1. Try precomputed data first
-                        if req_protocol in computed_data:
-                            sources_data[req_protocol] = computed_data[req_protocol]
-                            continue
-
-                        # 2. Fallback to source evaluation
-                        try:
-                            providers = protocols_to_sources[req_protocol]
-                            if len(providers) == 0:
-                                raise ValueError(
-                                    f"No source provides the required protocol {req_protocol}"
-                                )
-
-                            provider = providers[0]
-                            sources_data[req_protocol] = self._eval_source(
-                                group=group,
-                                source_name=provider,
-                                data=data,
-                                global_cache=global_source_cache,
-                            )[req_protocol]
-                        except Exception as e:
-                            logger.exception(
-                                f"Source execution failed for the metric {metric} in group '{group.prefix}': {e}"
-                            )
-                            execution_failed = True
-                            break
-
-                    if execution_failed:
+                for req_protocol in metric.requires:
+                    # 1. Try precomputed data first
+                    if req_protocol in computed_data:
+                        sources_data[req_protocol] = computed_data[req_protocol]
                         continue
 
+                    # 2. Fallback to source evaluation
                     try:
-                        batch_results = metric(sources_data)
+                        providers = protocols_to_sources[req_protocol]
+                        if len(providers) == 0:
+                            raise ValueError(
+                                f"No source provides the required protocol {req_protocol}"
+                            )
+
+                        provider = providers[0]
+                        sources_data[req_protocol] = self._eval_source(
+                            group=group,
+                            source_name=provider,
+                            data=data,
+                            global_cache=computed_data,
+                        )[req_protocol]
                     except Exception as e:
                         logger.exception(
-                            f"Metric computation failed for '{metric_name}' in group '{group.prefix}': {e}"
+                            f"Source execution failed for the metric {metric} in group '{group.prefix}': {e}"
                         )
-                        continue
+                        raise
 
-                    for sub_name, log_kwargs in batch_results.items():
-                        is_internal = sub_name.startswith("_")
-                        base_name = (
-                            f"{metric_name}/{sub_name}"
-                            if metric_name != sub_name
-                            else metric_name
+                try:
+                    batch_results = metric(sources_data)
+                except Exception as e:
+                    logger.exception(
+                        f"Metric computation failed for '{metric_name}' in group '{group.prefix}': {e}"
+                    )
+                    raise
+
+                for sub_name, log_kwargs in batch_results.items():
+                    is_internal = sub_name.startswith("_")
+                    base_name = (
+                        f"{metric_name}/{sub_name}"
+                        if metric_name != sub_name
+                        else metric_name
+                    )
+                    full_name = (
+                        f"{group.prefix}/{base_name}" if group.prefix else base_name
+                    )
+
+                    if is_internal:
+                        full_name = f"_internal/{full_name}"
+
+                    acc_type = metric.accumulators.get(sub_name)
+                    if acc_type is None:
+                        raise RuntimeError(
+                            f"No accumulator defined for sub-metric '{sub_name}' in metric '{metric_name}'. Skipping."
                         )
-                        full_name = (
-                            f"{group.prefix}/{base_name}" if group.prefix else base_name
-                        )
 
-                        if is_internal:
-                            full_name = f"_internal/{full_name}"
+                    factory = self._get_accumulator_factory(acc_type)
 
-                        acc_type = metric.accumulators.get(sub_name)
-                        if acc_type is None:
-                            logger.warning(
-                                f"No accumulator defined for sub-metric '{sub_name}' in metric '{metric_name}'. Skipping."
-                            )
-                            continue
-
-                        factory = self._get_accumulator_factory(acc_type)
-
-                        log_meter(
-                            name=full_name,
-                            meter_factory=factory,
-                            **log_kwargs,
-                        )
+                    log_meter(
+                        name=full_name,
+                        meter_factory=factory,
+                        **log_kwargs,
+                    )
 
     def _get_accumulator_factory(self, acc_type: str) -> Callable[[], BaseMeter]:
         if acc_type == "average" or acc_type == "mean":
@@ -387,7 +374,7 @@ class MetricEngine:
                     logger.exception(
                         f"Metric finalization failed for '{metric_name}' in group '{group.prefix}': {e}"
                     )
-                    continue
+                    raise
 
                 for k, v in finalized.items():
                     if k.startswith("_"):

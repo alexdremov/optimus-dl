@@ -52,7 +52,12 @@ class CausalLMSource(MetricSource):
 
         output = model(**batch)
 
-        targets = input_ids[:, 1:]
+        if "labels" in batch:
+            targets = batch.pop("labels")
+        elif "targets" in batch:
+            targets = batch.pop("targets")
+        else:
+            targets = input_ids[:, 1:]
 
         # Handle different output types (dict, Namespace, or raw Tensor)
         if isinstance(output, dict):

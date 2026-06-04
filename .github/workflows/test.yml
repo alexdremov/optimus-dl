@@ -75,6 +75,7 @@ jobs:
 
     env:
       UV_CACHE_DIR: /tmp/.uv-cache
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
     permissions:
       contents: read  # Only read access needed for tests

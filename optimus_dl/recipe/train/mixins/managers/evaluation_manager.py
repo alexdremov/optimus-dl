@@ -94,6 +94,10 @@ class Evaluator:
         if output_path:
             self.eval_checkpoint_manager = EvaluationCheckpointManager(output_path)
 
+        # Cache for MetricEngine instances to avoid re-instantiating them on every evaluation run
+        # They may have processes that are expensive to set up, so we want to reuse them if the configuration is the same
+        self._cached_engines = {}
+
     @contextlib.contextmanager
     def forward_context(self, device: torch.device):
         """Context manager for evaluation forward pass.
@@ -316,11 +320,18 @@ class Evaluator:
 
             engine = None
             requested_protocols = None
-            dataset_metrics = all_metrics_configs_dict.get(eval_name)
+            dataset_metrics = all_metrics_configs_dict.get(
+                eval_name, all_metrics_configs_dict.get("_default")
+            )
             if dataset_metrics:
                 from optimus_dl.modules.metrics.engine import MetricEngine
 
-                engine = MetricEngine(f"{metrics_prefix}/{eval_name}", dataset_metrics)
+                engine_key = f"{str(dataset_metrics)}"
+                if engine_key in self._cached_engines:
+                    engine = self._cached_engines[engine_key]
+                else:
+                    engine = MetricEngine(dataset_metrics)
+                    self._cached_engines[engine_key] = engine
                 requested_protocols = engine.required_external_protocols
 
             group_name = f"{metrics_prefix}/{eval_name}"
@@ -499,6 +510,28 @@ class Evaluator:
                         pbar.refresh()
                         pbar.close()
 
+                if (
+                    self.eval_checkpoint_manager is not None
+                    and iteration is not None
+                    and eval_checkpointing is not None
+                    and eval_checkpointing > 0
+                ):
+                    # Final save is useful if we are preempted over other eval slices.
+                    # This way, restart will not recompute already processed slice at all.
+                    # We do not want to initialize dataloaders etc in that case,
+                    # so we save state right after finishing processing the slice.
+
+                    self.eval_checkpoint_manager.save_iteration_state(
+                        iteration=iteration,
+                        eval_name=eval_name,
+                        dataloader_state=eval_iter.state_dict(),
+                        group_name=group_name,
+                        collective=collective,
+                        eval_iterations_processed=eval_iterations_processed,
+                    )
+                    logger.info(
+                        f"Saved evaluation metrics checkpoint at iteration {eval_iterations_processed} (final save)"
+                    )
                 total_time = time.perf_counter() - start_time
                 log_event_end("perf/total_run")
 
@@ -520,7 +553,7 @@ class Evaluator:
                 ) * 1000
 
             logger.info(
-                f"Finished eval {eval_name}: {eval_metrics} in {total_time:.1f}s"
+                f"Finished eval {eval_name} in {total_time:.1f}s: {eval_metrics}"
             )
             total_metrics[f"{metrics_prefix}/{eval_name}"] = eval_metrics
         return total_metrics

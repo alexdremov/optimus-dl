@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 from optimus_dl.modules.metrics.base import (
     _active_meter_groups,
     _meter_groups,
+    meters_group,
 )
 from optimus_dl.modules.metrics.engine import MetricEngine
 from optimus_dl.modules.metrics.metrics import (
@@ -104,12 +105,13 @@ class TestMetricEngineExtended:
             }
         ]
 
-        engine = MetricEngine("test_group", configs)
-        model = MagicMock()
-        model.source_called = 0
-        batch = {}
+        with meters_group("test_group"):
+            engine = MetricEngine(configs)
+            model = MagicMock()
+            model.source_called = 0
+            batch = {}
 
-        engine.update({"model": model, "batch": batch})
+            engine.update({"model": model, "batch": batch})
 
         # Source should only be called once, despite being used by two metrics
         assert model.source_called == 1
@@ -148,11 +150,12 @@ class TestMetricEngineExtended:
             }
         ]
 
-        engine = MetricEngine("multi_group", configs)
-        model = MagicMock()
-        batch = {}
+        with meters_group("multi_group"):
+            engine = MetricEngine(configs)
+            model = MagicMock()
+            batch = {}
 
-        engine.update({"model": model, "batch": batch})
+            engine.update({"model": model, "batch": batch})
 
         from optimus_dl.modules.metrics import compute_meters
 
@@ -181,5 +184,5 @@ class TestMetricEngineExtended:
         ]
 
         # Init no longer raises ValueError, but identifies external requirements
-        engine = MetricEngine("fail_group", configs)
+        engine = MetricEngine(configs)
         assert "non_existent_proto" in engine.required_external_protocols
