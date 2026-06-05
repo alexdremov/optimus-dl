@@ -54,8 +54,8 @@ class EvaluatorConfig(RegistryConfig):
     amp: AmpConfig = field(default_factory=AmpConfig)
     ignore_eval_checkpointing_failures: bool = field(
         default=True,
-        metadata={
-            "description": "Whether to ignore failures when loading/saving evaluation checkpoints. "
+            "description": "Whether to ignore failures when loading evaluation checkpoints. "
+            "Useful as sometimes torchdata may generate invalid dataloader checkpoints that are unrecoverable."
             "Useful as sometimes torchdata may generate invalid checkpoints that are unrecoverable."
         },
     )
