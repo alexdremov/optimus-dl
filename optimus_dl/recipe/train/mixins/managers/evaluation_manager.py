@@ -322,6 +322,7 @@ class Evaluator:
 
             if (
                 guaranteed_same_batches_local
+                and iteration is not None
                 and eval_checkpointing is not None
                 and eval_checkpointing > 0
                 and self.eval_checkpoint_manager is not None
