@@ -89,6 +89,7 @@ class EvaluationCheckpointManager:
         group_name: str,
         eval_iter: Any,
         collective: Collective | None = None,
+        ignore_failures: bool = True,
     ) -> int:
         """Load the evaluation state for a specific rank if it exists.
 
@@ -148,6 +149,17 @@ class EvaluationCheckpointManager:
             logger.error(
                 f"Failed to load evaluation checkpoint from {checkpoint_path}: {e}"
             )
+            if ignore_failures:
+                logger.warning(
+                    f"Ignoring failure to load evaluation checkpoint and starting fresh: {e}"
+                )
+
+                meters_load_state_dict(
+                    {group_name: {}}
+                )  # Clear meters state for this group
+                eval_iter.reset()  # Reset dataloader to initial state
+
+                return 0
             raise
 
     def cleanup(
