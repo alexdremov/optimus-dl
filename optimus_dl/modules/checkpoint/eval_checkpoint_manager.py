@@ -8,6 +8,7 @@ import torch
 from optimus_dl.modules.distributed import Collective
 from optimus_dl.modules.metrics import (
     load_state_dict as meters_load_state_dict,
+    reset_meters,
     state_dict as meters_state_dict,
 )
 
@@ -154,9 +155,7 @@ class EvaluationCheckpointManager:
                     f"Ignoring failure to load evaluation checkpoint and starting fresh: {e}"
                 )
 
-                meters_load_state_dict(
-                    {group_name: {}}
-                )  # Clear meters state for this group
+                reset_meters(group_name)  # Clear meters state for this group
                 eval_iter.reset()  # Reset dataloader to initial state
 
                 return 0
