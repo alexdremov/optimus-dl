@@ -38,6 +38,7 @@ from optimus_dl.modules.metrics import (
     log_event_start,
     log_summed,
     meters_group,
+    reset_meters,
     step_meters,
 )
 from optimus_dl.modules.model.base import BaseModel
@@ -327,6 +328,8 @@ class Evaluator:
             ):
                 # Per-rank checkpoints are not guaranteed to be globally consistent,
                 # so some ranks may have more batches processed than others when resuming.
+                # Also, this ensures that all checkpoints are consistent,
+                # as they will be saved at the same iteration across ranks.
                 guaranteed_same_batches_local = False
                 logger.warning(
                     "Eval checkpointing is enabled but guaranteed_same_batches is True. "
@@ -376,6 +379,41 @@ class Evaluator:
                             ignore_failures=self.ignore_eval_checkpointing_failures,
                         )
                     )
+
+                if collective is not None:
+                    # Sync processed iterations across all ranks to ensure consistency.
+                    # This is critical because if ranks are inconsistent, some might think
+                    # they are finished while others are not, leading to deadlocks in
+                    # distributed collectives (like those in FSDP or TP).
+                    it_tensor = torch.tensor(
+                        [eval_iterations_processed],
+                        device=collective.default_device,
+                        dtype=torch.long,
+                    )
+                    it_min = it_tensor.clone()
+                    it_max = it_tensor.clone()
+                    collective.all_reduce(it_min, op=Collective.ReduceOp.MIN)
+                    collective.all_reduce(it_max, op=Collective.ReduceOp.MAX)
+
+                    if it_min.item() != it_max.item():
+                        logger.warning(
+                            f"Evaluation checkpoint inconsistency detected for {eval_name}: "
+                            f"min_processed={it_min.item()}, max_processed={it_max.item()}."
+                        )
+                        if self.ignore_eval_checkpointing_failures:
+                            logger.info(
+                                "Resetting all ranks to 0 processed iterations for consistency."
+                            )
+                            eval_iterations_processed = 0
+                            reset_meters(group_name)
+                            eval_iter.reset()
+                        else:
+                            raise RuntimeError(
+                                f"Inconsistent evaluation checkpoints across ranks for {eval_name}. "
+                                f"Ranks have processed between {it_min.item()} and {it_max.item()} iterations."
+                            )
+                    else:
+                        eval_iterations_processed = it_max.item()
 
                 log_event_start("perf/total_run")
                 start_time = time.perf_counter()
