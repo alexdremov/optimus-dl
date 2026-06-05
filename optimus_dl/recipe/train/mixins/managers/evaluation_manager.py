@@ -51,6 +51,13 @@ class EvaluatorConfig(RegistryConfig):
     """Configuration for the Evaluator."""
 
     amp: AmpConfig = field(default_factory=AmpConfig)
+    ignore_eval_checkpointing_failures: bool = field(
+        default=True,
+        metadata={
+            "description": "Whether to ignore failures when loading/saving evaluation checkpoints. "
+            "Useful as sometimes torchdata may generate invalid checkpoints that are unrecoverable."
+        },
+    )
 
 
 class Evaluator:
@@ -84,6 +91,7 @@ class Evaluator:
         **kwargs: Any,
     ):
         self.cfg = cfg
+        self.ignore_eval_checkpointing_failures = cfg.ignore_eval_checkpointing_failures
         self.eval_freq = eval_freq
         self.eval_iterations = eval_iterations
         self.eval_guaranteed_same_batches = eval_guaranteed_same_batches
@@ -311,6 +319,21 @@ class Evaluator:
                 else self.eval_checkpointing
             )
 
+            if (
+                guaranteed_same_batches_local
+                and eval_checkpointing is not None
+                and eval_checkpointing > 0
+                and self.eval_checkpoint_manager is not None
+            ):
+                # Per-rank checkpoints are not guaranteed to be globally consistent,
+                # so some ranks may have more batches processed than others when resuming.
+                guaranteed_same_batches_local = False
+                logger.warning(
+                    "Eval checkpointing is enabled but guaranteed_same_batches is True. "
+                    "This combination may lead to inconsistent evaluation states across ranks when resuming from checkpoints. "
+                    "Disabling guaranteed_same_batches for this evaluation run."
+                )
+
             logger.info(
                 f"Running evaluation {eval_name} for {max_iterations_local if max_iterations_local is not None else 'unlimited'} iterations (on each rank)"
             )
@@ -350,6 +373,7 @@ class Evaluator:
                             group_name=group_name,
                             eval_iter=eval_iter,
                             collective=collective,
+                            ignore_failures=self.ignore_eval_checkpointing_failures,
                         )
                     )
 
