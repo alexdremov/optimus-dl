@@ -33,3 +33,6 @@ jobs:
           
           CONFIG__MODEL: "mistral/mistral-small-latest"
           CONFIG__FALLBACK_MODELS: "mistral/mistral-medium-latest"
+
+          PR_CODE_SUGGESTIONS__COMMITABLE_CODE_SUGGESTIONS: "true"
+          PR_REVIEWER__INLINE_CODE_COMMENTS: "true"
