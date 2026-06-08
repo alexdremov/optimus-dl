@@ -1,0 +1,42 @@
+name: Mistral PR Agent
+
+on:
+  pull_request:
+    # Trigger when approved via label, or when new code is pushed to an already-approved PR
+    types: [labeled, synchronize]
+  issue_comment:
+    # Trigger manually via PR comments
+    types: [created, edited]
+
+jobs:
+  pr_agent_job:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: read
+
+    # SECURITY GATE: Prevents unauthorized execution
+    if: >
+      (
+        github.event_name == 'issue_comment' && 
+        contains(github.event.comment.body, '/') && 
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+      ) || (
+        github.event_name == 'pull_request' && 
+        (
+          (github.event.action == 'labeled' && github.event.label.name == 'ai-review-approved') ||
+          (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'ai-review-approved'))
+        )
+      )
+
+    steps:
+      - name: Run PR Agent
+        id: pragent
+        uses: the-pr-agent/pr-agent@ffe1f89a4dafc7d8e88b9cf010a3233e30b49f43
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          
+          config.model: "mistral/mistral-small-latest"
+          config.fallback_models: "mistral/mistral-medium-latest"
