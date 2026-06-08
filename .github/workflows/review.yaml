@@ -36,7 +36,10 @@ jobs:
         uses: the-pr-agent/pr-agent@ffe1f89a4dafc7d8e88b9cf010a3233e30b49f43
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          MISTRAL__KEY: ${{ secrets.MISTRAL_API_KEY }}
           
-          config.model: "mistral/mistral-small-latest"
-          config.fallback_models: "mistral/mistral-medium-latest"
+          CONFIG__MODEL: "mistral/mistral-small-latest"
+          CONFIG__FALLBACK_MODELS: "mistral/mistral-medium-latest"
+
+          github_action_config.auto_review: "true"
+          github_action_config.auto_describe: "true"
