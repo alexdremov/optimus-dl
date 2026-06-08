@@ -3832,7 +3832,7 @@ requires-dist = [
     { name = "seaborn", marker = "extra == 'notebook'", specifier = ">=0.13.0" },
     { name = "tiktoken", specifier = ">=0.9.0" },
     { name = "torch", specifier = ">=2.9.0" },
-    { name = "torchdata", git = "https://github.com/alexdremov/torchdata?rev=233d022d6affdc5a993cce86dc3a0689a24585e9" },
+    { name = "torchdata", git = "https://github.com/alexdremov/torchdata?rev=main" },
     { name = "torcheval", specifier = ">=0.0.7" },
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "transformer-engine", extras = ["pytorch"], marker = "extra == 'fp8'", specifier = ">=2.12.0" },
@@ -5676,7 +5676,7 @@ wheels = [
 [[package]]
 name = "torchdata"
 version = "0.12.0a0+233d022"
-source = { git = "https://github.com/alexdremov/torchdata?rev=233d022d6affdc5a993cce86dc3a0689a24585e9#233d022d6affdc5a993cce86dc3a0689a24585e9" }
+source = { git = "https://github.com/alexdremov/torchdata?rev=main#233d022d6affdc5a993cce86dc3a0689a24585e9" }
 dependencies = [
     { name = "fsspec" },
     { name = "requests" },
