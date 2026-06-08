@@ -1,12 +1,8 @@
 name: Mistral PR Agent
 
 on:
-  pull_request:
-    # Trigger when approved via label, or when new code is pushed to an already-approved PR
-    types: [labeled, synchronize]
   issue_comment:
-    # Trigger manually via PR comments
-    types: [created, edited]
+    types: [created]
 
 jobs:
   pr_agent_job:
@@ -16,19 +12,16 @@ jobs:
       pull-requests: write
       contents: read
 
-    # SECURITY GATE: Prevents unauthorized execution
+    # SECURITY GATE: 
+    # 1. Blocks bot comments.
+    # 2. Ensures the comment is on a Pull Request (not a standard Issue).
+    # 3. Verifies the commenter is an Owner, Member, or Collaborator.
+    # 4. Explicitly checks that the comment contains the "/review" command.
     if: >
-      (
-        github.event_name == 'issue_comment' && 
-        contains(github.event.comment.body, '/') && 
-        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
-      ) || (
-        github.event_name == 'pull_request' && 
-        (
-          (github.event.action == 'labeled' && github.event.label.name == 'ai-review-approved') ||
-          (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'ai-review-approved'))
-        )
-      )
+      github.event.sender.type != 'Bot' &&
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/review') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
 
     steps:
       - name: Run PR Agent
@@ -40,6 +33,3 @@ jobs:
           
           CONFIG__MODEL: "mistral/mistral-small-latest"
           CONFIG__FALLBACK_MODELS: "mistral/mistral-medium-latest"
-
-          github_action_config.auto_review: "true"
-          github_action_config.auto_describe: "true"
