@@ -183,3 +183,5 @@ build
 
 mlflow.db
 .antigravitycli
+
+.zed

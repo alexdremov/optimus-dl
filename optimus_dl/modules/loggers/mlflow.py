@@ -221,11 +221,22 @@ class MlflowLogger(BaseMetricsLogger):
             run_name = (
                 self.cfg.name or experiment_name or os.environ.get("MLFLOW_RUN_NAME")
             )
-            self.active_run = mlflow.start_run(
-                run_id=self.run_id,
-                run_name=run_name,
-                description=self.cfg.notes,
-            )
+            try:
+                self.active_run = mlflow.start_run(
+                    run_id=self.run_id,
+                    run_name=run_name,
+                    description=self.cfg.notes,
+                )
+            except mlflow.MlflowException as e:
+                if "not found" in str(e):
+                    logger.warning(f"Run not found: {e}. Starting a new run.")
+                    self.active_run = mlflow.start_run(
+                        run_name=run_name,
+                        description=self.cfg.notes,
+                    )
+                else:
+                    raise RuntimeError("Failed to start MLflow run") from e
+
             self.run_id = self.active_run.info.run_id
 
             # Apply user-defined tags after run start to ensure correct format

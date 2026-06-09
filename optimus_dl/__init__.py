@@ -22,8 +22,6 @@ Example:
     ```
 """
 
-import os
-
 import torch
 
 from optimus_dl.core.bootstrap import bootstrap_module
