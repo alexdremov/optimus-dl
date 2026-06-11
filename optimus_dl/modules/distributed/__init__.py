@@ -44,6 +44,25 @@ def build_best_collective(
         elif torch.cuda.is_available():
             device_type = "cuda"
 
+        if config.partitions:
+            from optimus_dl.modules.distributed.mesh_groups import (
+                MeshGroupConfig,
+                MeshGroupCoordinator,
+            )
+
+            coordinator = MeshGroupCoordinator(
+                config=MeshGroupConfig(partitions=config.partitions),
+                global_rank=int(os.environ["RANK"]),
+                world_size=int(os.environ["WORLD_SIZE"]),
+                local_rank=int(os.environ["LOCAL_RANK"]),
+                local_world_size=int(os.environ["LOCAL_WORLD_SIZE"]),
+                device_type=device_type,
+            )
+            _collective = coordinator.build_collective()
+            if _collective:
+                logger.info(f"Built partitioned collective: {_collective}")
+                return _collective
+
         _collective = MeshCollective(
             rank=int(os.environ["RANK"]),
             world_size=int(os.environ["WORLD_SIZE"]),

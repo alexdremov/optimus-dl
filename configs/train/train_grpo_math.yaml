@@ -1,0 +1,89 @@
+# @package _global_
+defaults:
+  - defaults
+  - _self_
+
+_name: grpo
+
+# GRPO Specific Parameters
+num_generations: 4
+
+generation_engine:
+  _name: native
+
+generation_config:
+  max_new_tokens: 128
+  temperature: 0.9
+  top_k: 50
+
+reward_functions:
+  - _name: gsm8k
+    reward_value: 1.0
+    penalty_value: 0.0
+
+loggers:
+  - _name: jsonl
+    output_dir: outputs/${common.exp_name}/logs
+    filename: metrics.jsonl
+    enabled: true
+
+common:
+  distributed:
+    partitions: null
+  use_gpu: true
+  exp_name: "grpo-math-smollm2-135m"
+
+ref_model_transforms: null
+
+criterion:
+  _name: grpo
+  eps: 0.2
+  kl_coeff: 0.01
+
+model:
+  _name: preset_hfllama2
+  hf_model_name: "HuggingFaceTB/SmolLM2-135M-Instruct"
+  load_weights: true
+  # SmolLM2-135M Dimensions
+  n_layer: 30
+  n_head: 9
+  n_kv_head: 3
+  n_embd: 576
+  intermediate_size: 1536
+  vocab_size: 49152
+
+optimization:
+  iterations: 100
+  acc_steps: 1
+  optimizer:
+    _name: adamw
+    lr: 1e-5
+  amp:
+    enabled: false
+    dtype: bfloat16
+
+lr_scheduler:
+  _name: cosine_annealing
+  learning_rate: 1e-5
+
+data:
+  train_datasets:
+    source:
+      _name: preset_gsm8k
+      dataset_load_kwargs:
+        split: train
+    transform:
+      _name: compose
+      transforms:
+        - _name: format
+          # Use ChatML format for SmolLM2 Instruct
+          template: "<|im_start|>user\n{question}<|im_end|>\n<|im_start|>assistant\n"
+          output_field: "text"
+        - _name: tokenize
+          tokenizer_config:
+            _name: transformers
+            name: "HuggingFaceTB/SmolLM2-135M-Instruct"
+        - _name: basic_batcher
+          batch_size: 2
+          pad_token_id: 0
+        - _name: to_device

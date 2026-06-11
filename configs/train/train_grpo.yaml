@@ -1,0 +1,85 @@
+# @package _global_
+defaults:
+  - defaults
+  - _self_
+
+_name: grpo
+
+# GRPO Specific Parameters
+num_generations: 8
+
+generation_engine:
+  _name: native
+
+generation_config:
+  max_new_tokens: 128
+  temperature: 0.9
+  top_k: 50
+
+reward_functions:
+  - _name: gsm8k
+    reward_value: 1.0
+    penalty_value: 0.0
+
+# Partitioning: 4 GPUs total.
+# Actor group: Ranks 0, 1
+# Reference group: Ranks 2, 3
+common:
+  distributed:
+    partitions:
+      - name: actor_group
+        ranks: [0, 1]
+        tp_size: 1
+      - name: ref_group
+        ranks: [2, 3]
+        tp_size: 1
+
+# Reference model optimization (aggressive CPU offloading)
+ref_model_transforms:
+  - _name: fully_shard
+    cpu_offload: True
+    mixed_precision:
+      param_dtype: bfloat16
+
+criterion:
+  _name: grpo
+  eps: 0.2
+  kl_coeff: 0.01
+
+model:
+  _name: llama2
+  # Use an ultra-small model (~1M params) for debugging
+  n_layer: 4
+  n_head: 4
+  n_embd: 128
+  intermediate_size: 256
+
+optimization:
+  iterations: 1000
+  acc_steps: 1
+  optimizer:
+    _name: adamw
+    lr: 1e-5
+  amp:
+    enabled: false
+    dtype: bfloat16
+
+lr_scheduler:
+  _name: cosine_annealing
+  learning_rate: 1e-5
+
+data:
+  train_datasets:
+    source:
+      _name: preset_tinyshakespeare
+    transform:
+      _name: compose
+      transforms:
+        - _name: tokenize
+          tokenizer_config: {_name: tiktoken, name: gpt2}
+        - _name: chunk_tokens
+          max_seq_len: 128
+        - _name: flat_batcher
+          batch_size: 2
+          seq_len: 128
+        - _name: to_device
