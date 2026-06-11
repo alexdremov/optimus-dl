@@ -107,6 +107,8 @@ class MetricsRecipe:
             model = self.model_builder.build_model(
                 model_config=self.cfg.model,
                 collective=collective,
+                checkpoint_manager=self.checkpoint_manager,
+                is_restart=False,
             )
 
         model.eval()
@@ -159,6 +161,7 @@ class MetricsRecipe:
                 metrics_prefix="metrics",
                 show_progress=True,
                 device=device,
+                iteration=0,
             )
 
             # 6. Log results to loggers
