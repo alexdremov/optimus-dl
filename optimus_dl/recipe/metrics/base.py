@@ -77,6 +77,7 @@ class MetricsRecipe:
         self.evaluator: Evaluator = build_evaluator(
             cfg.evaluator,
             eval_iterations=cfg.common.max_iterations,
+            eval_checkpointing=cfg.common.eval_checkpointing,
         )
         self.tokenizer = None
 
