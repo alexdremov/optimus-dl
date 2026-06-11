@@ -78,6 +78,7 @@ class MetricsRecipe:
             cfg.evaluator,
             eval_iterations=cfg.common.max_iterations,
             eval_checkpointing=cfg.common.eval_checkpointing,
+            output_path=cfg.common.output_path,
         )
         self.tokenizer = None
 
