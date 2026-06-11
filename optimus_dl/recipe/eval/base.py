@@ -74,6 +74,8 @@ class EvalRecipe:
                 base_model = self.model_builder.build_model(
                     model_config=self.cfg.common.model,
                     collective=collective,
+                    checkpoint_manager=self.checkpoint_manager,
+                    is_restart=False,
                 )
 
             # Build tokenizer directly

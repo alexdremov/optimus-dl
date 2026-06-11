@@ -262,6 +262,8 @@ class ServeRecipe:
             self.model = self.model_builder.build_model(
                 model_config=self.cfg.common.model,
                 collective=collective,
+                checkpoint_manager=self.checkpoint_manager,
+                is_restart=False,
             )
 
         self.model.to(self.device)
