@@ -32,6 +32,8 @@ common:
     partitions: null
   use_gpu: true
   exp_name: "grpo-math-smollm2-135m"
+  log_freq: 1
+  eval_freq: 10
 
 ref_model_transforms: null
 
@@ -51,6 +53,9 @@ model:
   n_embd: 576
   intermediate_size: 1536
   vocab_size: 49152
+
+model_transforms:
+  - _name: compile
 
 optimization:
   iterations: 100

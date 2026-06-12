@@ -2,9 +2,7 @@
 
 import logging
 from dataclasses import dataclass
-from typing import (
-    Any,
-)
+from typing import Any
 
 import torch
 import torch.nn.functional as F
@@ -25,8 +23,8 @@ class GRPOCriterionConfig(RegistryConfigStrict):
     """Configuration for GRPO criterion.
 
     Attributes:
-        eps: PPO clipping parameter.
-        kl_coeff: Coefficient for KL divergence penalty.
+        eps: PPO clipping parameter (ε in the surrogate objective).
+        kl_coeff: Coefficient for the per-token KL divergence penalty.
     """
 
     eps: float = 0.2
@@ -37,8 +35,15 @@ class GRPOCriterionConfig(RegistryConfigStrict):
 class GRPOCriterion(BaseCriterion):
     """Group Relative Policy Optimization (GRPO) Criterion.
 
-    Computes the clipped PPO policy loss and KL divergence penalty using
-    group-relative advantages.
+    Loss = -E[ min(r·A, clip(r, 1-ε, 1+ε)·A) ] + kl_coeff · KL(π_θ ‖ π_ref)
+
+    where:
+      r      = π_θ(a|s) / π_old(a|s)  — token-level policy ratio
+      A      — group-relative advantage (pre-computed in the rollout phase)
+      KL     — DeepSeek-style approximation: exp(log_ref - log_θ) - (log_ref - log_θ) - 1
+
+    All quantities are masked to completion tokens only; prompt tokens are
+    excluded from the loss.
     """
 
     def __init__(
@@ -55,12 +60,13 @@ class GRPOCriterion(BaseCriterion):
     ) -> tuple[torch.Tensor, dict[str, Any]]:
         """Compute GRPO loss.
 
-        Expected batch keys:
-            - input_ids: Tokens (prompts + completions).
-            - completion_mask: Mask for completion tokens.
-            - old_logprobs: Logprobs from the rollout policy.
-            - ref_logprobs: Logprobs from the reference model.
-            - advantages: Group-relative advantages.
+               Expected batch keys:
+                   input_ids       : (B*G, T)   — prompt + completion token
+        IDs.
+                   completion_mask : (B*G, T)   — 1 for completion tokens, 0 for prompt.
+                   old_logprobs    : (B*G, T-1) — log-probs from the rollout policy.
+                   ref_logprobs    : (B*G, T-1) — log-probs from the frozen reference model.
+                   advantages      : (B*G,)     — group-relative normalised advantages.
         """
         input_ids = batch["input_ids"]
         completion_mask = batch["completion_mask"]
@@ -68,60 +74,52 @@ class GRPOCriterion(BaseCriterion):
         ref_logprobs = batch["ref_logprobs"]
         advantages = batch["advantages"]
 
-        # Forward pass to get current log-probabilities
+        # --- Current policy log-probs ---
+        # Standard next-token-prediction shift: logit at position t predicts token t+1.
         outputs = model(input_ids)
-        logits = outputs["logits"]
-
-        # Compute logprobs for the completions
-        # Shift logits and targets for next-token prediction
-        shift_logits = logits[:, :-1, :].contiguous()
+        shift_logits = outputs["logits"][:, :-1, :].contiguous()
         shift_labels = input_ids[:, 1:].contiguous()
+        # shift_mask: (B*G, T-1) — 1 for completion positions, 0 for prompt positions
         shift_mask = completion_mask[:, 1:].contiguous()
 
         log_probs = F.log_softmax(shift_logits, dim=-1)
         per_token_logprobs = torch.gather(
             log_probs, dim=-1, index=shift_labels.unsqueeze(-1)
         ).squeeze(-1)
+        # per_token_logprobs: (B*G, T-1) — NOT pre-masked; masking is applied below.
 
-        # Apply mask
-        per_token_logprobs = per_token_logprobs * shift_mask
-
-        # We need to sum logprobs over the completion length for the policy ratio?
-        # Actually, PPO can be done per token or per sequence.
-        # Standard GRPO/PPO for LLMs often does it per completion.
-
-        # Policy Ratio
-        # Only compute ratio where mask is 1 to avoid exp(0) or exp(-logprob) artifacts
-        # Note: logprobs are typically negative, so -masked_logprob is positive.
+        # --- Policy ratio (completion positions only) ---
+        # log_ratio is 0 at prompt positions because shift_mask = 0 there.
         log_ratio = (per_token_logprobs - old_logprobs) * shift_mask
-        ratio = torch.exp(log_ratio)
+        ratio = torch.exp(log_ratio)  # = 1 at prompt positions
 
-        # Clipped PPO Loss
-        # advantages is (B*G), expand to (B*G, T-1)
-        surr1 = ratio * advantages.unsqueeze(1)
-        surr2 = torch.clamp(
-            ratio, 1.0 - self.cfg.eps, 1.0 + self.cfg.eps
-        ) * advantages.unsqueeze(1)
+        # --- Clipped PPO surrogate loss ---
+        # advantages: (B*G,) → broadcast over (B*G, T-1)
+        adv = advantages.unsqueeze(1)
+        surr1 = ratio * adv
+        surr2 = torch.clamp(ratio, 1.0 - self.cfg.eps, 1.0 + self.cfg.eps) * adv
         policy_loss = -torch.min(surr1, surr2)
+        # policy_loss: (B*G, T-1) — non-zero values at completion positions only
+        # (ratio = 1 and clamp(1, …) = 1 at prompt positions, but the outer
+        # shift_mask in total_loss zeroes them out anyway).
 
-        # KL Penalty (log pi_theta - log pi_ref)
-        # DeepSeek uses: kl = exp(log_ref - log_theta) - (log_ref - log_theta) - 1
-        kl = (
-            torch.exp((ref_logprobs - per_token_logprobs) * shift_mask)
-            - ((ref_logprobs - per_token_logprobs) * shift_mask)
-            - 1
-        )
+        # --- KL divergence penalty (DeepSeek approximation) ---
+        # KL(π_θ ‖ π_ref) ≈ exp(log_ref - log_θ) - (log_ref - log_θ) - 1
+        # Masking inside keeps KL = 0 at prompt positions without relying solely
+        # on the outer shift_mask multiplication.
+        delta = (ref_logprobs - per_token_logprobs) * shift_mask
+        kl = torch.exp(delta) - delta - 1  # (B*G, T-1), = 0 at prompt positions
 
+        # --- Total loss, normalised by completion token count ---
         total_loss = (policy_loss + self.cfg.kl_coeff * kl) * shift_mask
 
-        # Normalize by number of active tokens
-        num_tokens = shift_mask.sum()
+        num_tokens = shift_mask.sum().clamp(min=1)  # avoid division by zero
         mean_loss = total_loss.sum() / num_tokens
         mean_policy_loss = (policy_loss * shift_mask).sum() / num_tokens
         mean_kl = (kl * shift_mask).sum() / num_tokens
         mean_ratio = (ratio * shift_mask).sum() / num_tokens
 
-        # Log metrics
+        # --- Metrics ---
         weight = input_ids.size(0)
         log_averaged("loss", lambda: mean_loss.item(), weight=weight, round=4)
         log_averaged(
@@ -129,6 +127,12 @@ class GRPOCriterion(BaseCriterion):
         )
         log_averaged("kl_div", lambda: mean_kl.item(), weight=weight, round=4)
         log_averaged("ratio", lambda: mean_ratio.item(), weight=weight, round=4)
+        log_averaged(
+            "num_tokens_per_step",
+            lambda: num_tokens.item(),
+            weight=weight,
+            round=0,
+        )
 
         exposed = {
             "policy_loss": mean_policy_loss,
