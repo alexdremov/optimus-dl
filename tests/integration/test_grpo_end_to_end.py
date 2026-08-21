@@ -90,6 +90,10 @@ def _make_recipe_stub(G: int, V: int, max_new: int):
     stub._generate_experience = GRPORecipe._generate_experience.__get__(stub)
     stub._get_per_token_logprobs = GRPORecipe._get_per_token_logprobs
     stub._build_completion_mask = GRPORecipe._build_completion_mask
+    stub._truncate_after_stop = GRPORecipe._truncate_after_stop
+    stub._get_prompt_lengths = GRPORecipe._get_prompt_lengths
+    stub._compute_batch_logprobs = GRPORecipe._compute_batch_logprobs.__get__(stub)
+    stub._split_experience = GRPORecipe._split_experience
     stub._decode_batch = GRPORecipe._decode_batch.__get__(stub)
     return stub
 

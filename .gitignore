@@ -169,7 +169,7 @@ bolt-cache
 .DS_Store
 
 .claude
-GEMINI.md
+GEMINI.md display
 
 _version.py
 .ruff_cache
@@ -185,3 +185,5 @@ mlflow.db
 .antigravitycli
 
 .zed
+
+GEMINI.md

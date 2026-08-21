@@ -305,11 +305,17 @@ class TrainingIterationMixin:
         training_context: dict[str, Any],
         lr_scheduler: Any | None = None,
         metric_engine: Any | None = None,
+        acc_steps_override: int | None = None,
     ) -> None:
         """Execute one full training iteration, including gradient accumulation.
 
-        This is the main driver for a training step. It loops `acc_steps` times
-        to accumulate gradients before performing a single optimizer update.
+        This is the main driver for a training step. It loops ``acc_steps``
+        times to accumulate gradients before performing a single optimizer update.
+
+        Micro-batches are fetched up front so data errors degrade gracefully
+        and *correctly*: the loss is normalized by the number of batches that
+        were actually retrieved, and if none were, the optimizer step is
+        skipped entirely for this iteration.
 
         Args:
             model: The model to train.
@@ -319,7 +325,13 @@ class TrainingIterationMixin:
             training_context: Dict with scaler, amp_ctx, etc.
             lr_scheduler: Optional learning rate scheduler.
             metric_engine: Optional MetricEngine for training metrics.
+            acc_steps_override: Number of micro-batches to accumulate over;
+                defaults to ``optimization_config.acc_steps``. RL recipes use
+                this when the number of experience micro-batches differs from
+                the configured accumulation depth (loss scaling must match the
+                actual micro-batch count).
         """
+        acc_steps = acc_steps_override or self.optimization_config.acc_steps
         with meters_group("train", log_freq=self.log_freq) as should_log:
             optimizer.zero_grad()
             model.train()
@@ -328,18 +340,17 @@ class TrainingIterationMixin:
             if metric_engine and should_log:
                 requested_protocols = metric_engine.required_external_protocols
 
-            # Gradient accumulation loop
-            for microbatch_idx in range(self.optimization_config.acc_steps):
-                is_last_microbatch = (
-                    microbatch_idx == self.optimization_config.acc_steps - 1
-                )
-
+            # Fetch all micro-batches up front so data errors are handled
+            # BEFORE any gradient work. Loss scaling must match the number of
+            # batches that were actually retrieved — otherwise a failed fetch
+            # would silently produce under-scaled updates.
+            fetched: list[tuple[float, Any]] = []
+            for microbatch_idx in range(acc_steps):
                 try:
-                    logger.debug(
-                        f"Fetching microbatch {microbatch_idx+1}/{self.optimization_config.acc_steps}"
-                    )
+                    logger.debug(f"Fetching microbatch {microbatch_idx+1}/{acc_steps}")
                     elapsed_batch_get, batch = measured_next(train_data_iter)
                     info_once(logger, f"Batch has keys {batch.keys()}")
+                    fetched.append((elapsed_batch_get, batch))
                 except StopIteration:
                     logger.error("Training data iterator exhausted unexpectedly")
                     break
@@ -347,9 +358,32 @@ class TrainingIterationMixin:
                     logger.error(f"Error getting batch: {e}")
                     continue
 
+            dropped = acc_steps - len(fetched)
+            if dropped > 0:
+                logger.warning(
+                    f"Only {len(fetched)}/{acc_steps} micro-batches retrieved; "
+                    "loss is normalized by the actual micro-batch count."
+                )
+                log_summed("microbatch_fetch_failures", dropped, reset=False)
+
+            if not fetched:
+                logger.error(
+                    "No micro-batches retrieved; skipping forward/backward "
+                    "and optimizer step for this iteration."
+                )
+                log_summed("optimizer_step_skipped", 1, reset=False)
+                return
+
+            # Gradient accumulation loop over successfully fetched batches.
+            # ``effective_acc`` (not the configured acc_steps) drives both the
+            # loss normalization and the DDP sync boundary.
+            effective_acc = len(fetched)
+            for microbatch_idx, (elapsed_batch_get, batch) in enumerate(fetched):
+                is_last_microbatch = microbatch_idx == effective_acc - 1
+
                 with self.accumulation_context(model, is_last_microbatch):
                     logger.debug(
-                        f"Starting forward pass for microbatch {microbatch_idx+1}"
+                        f"Starting forward pass for microbatch {microbatch_idx+1}/{effective_acc}"
                     )
                     forward_result = self.execute_forward_pass(
                         model,
@@ -358,7 +392,7 @@ class TrainingIterationMixin:
                         training_context["amp_ctx"],
                         requested_protocols=requested_protocols,
                     )
-                    loss = forward_result.loss / self.optimization_config.acc_steps
+                    loss = forward_result.loss / effective_acc
 
                     if metric_engine and should_log:
                         # Pass computed data (loss, logits, etc.) to avoid redundant work in engine
@@ -385,7 +419,7 @@ class TrainingIterationMixin:
                     elapsed_batch_get,
                     forward_result.elapsed_time,
                     elapsed_backward,
-                    self.optimization_config.acc_steps,
+                    effective_acc,
                 )
 
             # Optimizer step

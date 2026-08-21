@@ -79,6 +79,10 @@ def _make_grpo_recipe_stub(G: int = 4, vocab_size: int = 32):
     stub._decode_batch = GRPORecipe._decode_batch.__get__(stub)
     stub._get_per_token_logprobs = GRPORecipe._get_per_token_logprobs
     stub._build_completion_mask = GRPORecipe._build_completion_mask
+    stub._truncate_after_stop = GRPORecipe._truncate_after_stop
+    stub._get_prompt_lengths = GRPORecipe._get_prompt_lengths
+    stub._compute_batch_logprobs = GRPORecipe._compute_batch_logprobs.__get__(stub)
+    stub._split_experience = GRPORecipe._split_experience
 
     return stub
 
@@ -226,35 +230,78 @@ class TestBuildCompletionMask:
 
         B, T, prompt_len, G = 2, 10, 3, 1
         all_ids = torch.zeros(B * G, T, dtype=torch.long)
-        prompt_ids = torch.zeros(B, prompt_len, dtype=torch.long)
-        mask = GRPORecipe._build_completion_mask(all_ids, prompt_ids, None, G)
+        prompt_lengths = torch.full((B * G,), prompt_len, dtype=torch.long)
+        total_lengths = torch.full((B * G,), T, dtype=torch.long)
+        mask = GRPORecipe._build_completion_mask(all_ids, prompt_lengths, total_lengths)
         assert mask.shape == (B * G, T)
         assert (mask[:, :prompt_len] == 0).all()
         assert (mask[:, prompt_len:] == 1).all()
 
-    def test_variable_prompt_length_via_attention_mask(self):
+    def test_variable_prompt_length(self):
         from optimus_dl.recipe.train.grpo import GRPORecipe
 
         B, T, G = 2, 10, 1
-        attn = torch.tensor(
-            [[1, 1, 1, 1, 0, 0, 0, 0, 0, 0], [1, 1, 1, 1, 1, 1, 0, 0, 0, 0]]
-        )
         all_ids = torch.zeros(B * G, T, dtype=torch.long)
-        mask = GRPORecipe._build_completion_mask(all_ids, all_ids, attn, G)
+        prompt_lengths = torch.tensor([4, 6], dtype=torch.long)
+        total_lengths = torch.full((B * G,), T, dtype=torch.long)
+        mask = GRPORecipe._build_completion_mask(all_ids, prompt_lengths, total_lengths)
         assert (mask[0, :4] == 0).all() and (mask[0, 4:] == 1).all()
         assert (mask[1, :6] == 0).all() and (mask[1, 6:] == 1).all()
+
+    def test_total_length_excludes_trailing_padding(self):
+        """Positions at or beyond total_lengths must be masked out (padding)."""
+        from optimus_dl.recipe.train.grpo import GRPORecipe
+
+        B, T = 2, 10
+        all_ids = torch.zeros(B, T, dtype=torch.long)
+        prompt_lengths = torch.tensor([3, 5], dtype=torch.long)
+        total_lengths = torch.tensor([8, 7], dtype=torch.long)  # trailing pads
+        mask = GRPORecipe._build_completion_mask(all_ids, prompt_lengths, total_lengths)
+        assert (mask[0, 8:] == 0).all(), "trailing pad must be excluded"
+        assert (mask[0, 3:8] == 1).all()
+        assert (mask[1, 7:] == 0).all(), "trailing pad must be excluded"
+        assert (mask[1, 5:7] == 1).all()
 
     def test_g_generations_expand_correctly(self):
         from optimus_dl.recipe.train.grpo import GRPORecipe
 
         B, T, prompt_len, G = 2, 8, 3, 3
         all_ids = torch.zeros(B * G, T, dtype=torch.long)
-        prompt_ids = torch.zeros(B, prompt_len, dtype=torch.long)
-        mask = GRPORecipe._build_completion_mask(all_ids, prompt_ids, None, G)
+        prompt_lengths = torch.full((B * G,), prompt_len, dtype=torch.long)
+        total_lengths = torch.full((B * G,), T, dtype=torch.long)
+        mask = GRPORecipe._build_completion_mask(all_ids, prompt_lengths, total_lengths)
         assert mask.shape == (B * G, T)
         for row in range(B * G):
             assert (mask[row, :prompt_len] == 0).all()
             assert (mask[row, prompt_len:] == 1).all()
+
+
+class TestTruncateAfterStop:
+    def test_truncates_after_first_stop_token(self):
+        from optimus_dl.recipe.train.grpo import GRPORecipe
+
+        # row: [P P C C EOS C C] — keep up to & incl EOS, zero after
+        all_ids = torch.tensor([[9, 9, 1, 2, 5, 3, 4]])
+        completion_mask = torch.tensor([[0, 0, 1, 1, 1, 1, 1]])
+        out = GRPORecipe._truncate_after_stop(all_ids, completion_mask, stop_token_id=5)
+        assert out.tolist() == [[0, 0, 1, 1, 1, 0, 0]]
+
+    def test_stop_token_in_prompt_is_ignored(self):
+        """A stop token inside the prompt region must not truncate anything."""
+        from optimus_dl.recipe.train.grpo import GRPORecipe
+
+        all_ids = torch.tensor([[5, 1, 2, 3]])  # stop id in prompt position 0
+        completion_mask = torch.tensor([[0, 1, 1, 1]])
+        out = GRPORecipe._truncate_after_stop(all_ids, completion_mask, stop_token_id=5)
+        assert out.tolist() == [[0, 1, 1, 1]]
+
+    def test_no_stop_token_keeps_mask(self):
+        from optimus_dl.recipe.train.grpo import GRPORecipe
+
+        all_ids = torch.tensor([[1, 2, 3, 4]])
+        completion_mask = torch.tensor([[0, 1, 1, 1]])
+        out = GRPORecipe._truncate_after_stop(all_ids, completion_mask, stop_token_id=9)
+        assert out.tolist() == [[0, 1, 1, 1]]
 
 
 # ---------------------------------------------------------------------------
@@ -269,13 +316,14 @@ class TestDecodeBatch:
         stub.tokenizer = type("Tok", (), {"decode": lambda self, ids: "text"})()
 
         prompt_ids = torch.zeros(B, 4, dtype=torch.long)
+        prompt_lengths = torch.full((B,), 4, dtype=torch.long)
         all_ids = torch.zeros(B * G, T, dtype=torch.long)
         mask = torch.ones(B * G, T, dtype=torch.long)
         mask[:, :4] = 0
         batch = {"answer": ["a"] * B}
 
         prompts, completions, answers = stub._decode_batch(
-            prompt_ids, all_ids, mask, batch, B, G, None
+            prompt_ids, prompt_lengths, all_ids, mask, batch, B, G
         )
         assert len(prompts) == len(completions) == len(answers) == B * G
 
@@ -286,12 +334,15 @@ class TestDecodeBatch:
 
         T = 6
         prompt_ids = torch.zeros(B, 2, dtype=torch.long)
+        prompt_lengths = torch.full((B,), 2, dtype=torch.long)
         all_ids = torch.zeros(B * G, T, dtype=torch.long)
         mask = torch.ones(B * G, T, dtype=torch.long)
         mask[:, :2] = 0
         batch = {"answer": ["A", "B"]}
 
-        _, _, answers = stub._decode_batch(prompt_ids, all_ids, mask, batch, B, G, None)
+        _, _, answers = stub._decode_batch(
+            prompt_ids, prompt_lengths, all_ids, mask, batch, B, G
+        )
         assert answers[:G] == ["A"] * G
         assert answers[G:] == ["B"] * G
 
@@ -301,20 +352,21 @@ class TestDecodeBatch:
         stub.tokenizer = None  # explicitly no tokenizer
 
         prompt_ids = torch.zeros(B, 3, dtype=torch.long)
+        prompt_lengths = torch.full((B,), 3, dtype=torch.long)
         all_ids = torch.zeros(B * G, T, dtype=torch.long)
         mask = torch.ones(B * G, T, dtype=torch.long)
         mask[:, :3] = 0
         batch = {}
 
         prompts, completions, answers = stub._decode_batch(
-            prompt_ids, all_ids, mask, batch, B, G, None
+            prompt_ids, prompt_lengths, all_ids, mask, batch, B, G
         )
         assert all(p == "" for p in prompts)
         assert all(c == "" for c in completions)
 
-    def test_attention_mask_trims_padding_before_decode(self):
+    def test_prompt_lengths_trim_padding_before_decode(self):
         """Decoded prompt must contain only the non-pad tokens."""
-        B, G, T = 1, 1, 8
+        B, G = 1, 1
         stub = _make_grpo_recipe_stub(G=G)
 
         decoded_prompts = []
@@ -326,12 +378,12 @@ class TestDecodeBatch:
 
         stub.tokenizer = CaptureTok()
         prompt_ids = torch.tensor([[10, 20, 30, 0, 0]])  # 3 real + 2 pad
-        attn = torch.tensor([[1, 1, 1, 0, 0]])
-        all_ids = torch.zeros(B * G, T, dtype=torch.long)
-        mask = torch.ones(B * G, T, dtype=torch.long)
+        prompt_lengths = torch.tensor([3], dtype=torch.long)
+        all_ids = torch.zeros(B * G, 8, dtype=torch.long)
+        mask = torch.ones(B * G, 8, dtype=torch.long)
         mask[:, :3] = 0
 
-        stub._decode_batch(prompt_ids, all_ids, mask, {}, B, G, attn)
+        stub._decode_batch(prompt_ids, prompt_lengths, all_ids, mask, {}, B, G)
 
         assert decoded_prompts[0] == [10, 20, 30]
 
@@ -429,6 +481,7 @@ class TestGenerateExperience:
         assert {
             "input_ids",
             "completion_mask",
+            "seq_lens",
             "old_logprobs",
             "ref_logprobs",
             "advantages",

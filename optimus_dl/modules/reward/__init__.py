@@ -154,3 +154,4 @@ class GSM8kReward(BaseReward):
 
 
 register_reward_function("gsm8k", GSM8kRewardConfig)(GSM8kReward)
+register_reward_function("rule_based", RuleBasedRewardConfig)(RuleBasedReward)

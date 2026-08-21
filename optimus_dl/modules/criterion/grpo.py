@@ -76,7 +76,11 @@ class GRPOCriterion(BaseCriterion):
 
         # --- Current policy log-probs ---
         # Standard next-token-prediction shift: logit at position t predicts token t+1.
-        outputs = model(input_ids)
+        # seq_lens masks right-padding out of attention when provided.
+        forward_kwargs: dict[str, Any] = {}
+        if batch.get("seq_lens") is not None:
+            forward_kwargs["seq_lens"] = batch["seq_lens"]
+        outputs = model(input_ids, **forward_kwargs)
         shift_logits = outputs["logits"][:, :-1, :].contiguous()
         shift_labels = input_ids[:, 1:].contiguous()
         # shift_mask: (B*G, T-1) — 1 for completion positions, 0 for prompt positions

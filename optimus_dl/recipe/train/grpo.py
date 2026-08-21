@@ -52,6 +52,7 @@ class GRPOConfig(TrainConfig):
     reward_functions: list[Any] = field(default_factory=list)
     ref_model_transforms: Any = None
     tokenizer_config: Any = None
+    logprob_micro_batch_size: int | None = None
 
 
 @register_train_recipe("grpo", GRPOConfig)
@@ -107,112 +108,122 @@ class GRPORecipe(TrainRecipe, AsyncExperienceManager):
             # Determine per-rank role
             self.role = self._determine_role(collective)
             logger.info(f"Rank {collective.rank} assigned role: {self.role}")
-
-            if self.role == "idle":
-                logger.info("Rank idle, waiting for others...")
-                collective.barrier()
-                return
+            is_idle = self.role == "idle"
 
             # 2. Policy model
-            logger.info(f"Building Policy model on {device}...")
-            model = self.build_model(
-                model_config=self.cfg.model,
-                collective=collective,
-                is_restart=is_restart,
-                checkpoint_manager=self.checkpoint_manager,
-            ).to(device)
+            model = optimizer = lr_scheduler = criterion = None
+            ref_model = train_datapipeline = eval_datapipeline = None
+            training_context = common_chkp_kwargs = metadata = None
+            start_iteration = 0
+            finished_run = False
 
-            # 3. Frozen reference model (only needed on rollout / unified ranks)
-            ref_model = None
-            if self.role in ("rollout", "unified"):
-                logger.info("Building Reference model...")
-                ref_transforms = (
-                    self.cfg.ref_model_transforms or self.cfg.model_transforms
-                )
-                ref_model = self.model_builder.build_model(
+            if not is_idle:
+                logger.info(f"Building Policy model on {device}...")
+                model = self.build_model(
                     model_config=self.cfg.model,
                     collective=collective,
-                    model_transforms=ref_transforms,
+                    is_restart=is_restart,
+                    checkpoint_manager=self.checkpoint_manager,
                 ).to(device)
-                ref_model.eval()
-                for p in ref_model.parameters():
-                    p.requires_grad_(False)
 
-            # 4. Training components (trainer / unified ranks only)
-            optimizer = lr_scheduler = criterion = None
-            if self.role in ("trainer", "unified"):
-                optimizer = self.build_optimizer(model.make_parameter_groups())
-                criterion = self.build_criterion(collective=collective)
-                lr_scheduler = self.build_lr_scheduler(optimizer)
-
-            training_context = self.setup_training_context(device)
-
-            # 5. Data pipelines
-            try:
-                train_datapipeline = self.build_train_data(
-                    device=device, collective=collective
-                )
-                assert (
-                    train_datapipeline is not None
-                ), "Train data pipeline not initialized"
-                eval_datapipeline = self.build_eval_data(
-                    device=device, collective=collective
-                )
-            except Exception as e:
-                logger.error(f"Failed to build data pipelines: {e}")
-                raise
-
-            # 6. Tokenizer for reward text decoding
-            self.tokenizer = self._build_tokenizer()
-
-            # 7. Checkpoint resume (trainer / unified ranks only)
-            common_chkp_kwargs: dict[str, Any] = {}
-            start_iteration = 0
-            metadata = None
-            if self.role in ("trainer", "unified"):
-                data_loaders = {"train": train_datapipeline.dataloader}
-                common_chkp_kwargs = {
-                    "model": model,
-                    "optimizer": optimizer,
-                    "collective": collective,
-                    "lr_scheduler": lr_scheduler,
-                    "data_loaders": data_loaders,
-                    "data_sources": train_datapipeline.datasets,
-                    "grad_scaler": training_context["scaler"],
-                }
-                start_iteration, metadata, finished_run, common_chkp_kwargs = (
-                    self._init_checkpointing(
-                        model,
-                        optimizer,
-                        lr_scheduler,
-                        training_context,
-                        train_datapipeline,
-                        collective,
-                        is_restart,
+                # 3. Frozen reference model (only needed on rollout / unified ranks)
+                if self.role in ("rollout", "unified"):
+                    logger.info("Building Reference model...")
+                    ref_transforms = (
+                        self.cfg.ref_model_transforms or self.cfg.model_transforms
                     )
-                )
+                    ref_model = self.model_builder.build_model(
+                        model_config=self.cfg.model,
+                        collective=collective,
+                        model_transforms=ref_transforms,
+                    ).to(device)
+                    ref_model.eval()
+                    for p in ref_model.parameters():
+                        p.requires_grad_(False)
 
-            # 8. Loggers (master only)
-            if self.role in ("trainer", "unified"):
-                self._init_loggers(collective, logs_parent_path, start_iteration)
+                # 4. Training components (trainer / unified ranks only)
+                if self.role in ("trainer", "unified"):
+                    optimizer = self.build_optimizer(model.make_parameter_groups())
+                    criterion = self.build_criterion(collective=collective)
+                    lr_scheduler = self.build_lr_scheduler(optimizer)
+
+                training_context = self.setup_training_context(device)
+
+                # 5. Data pipelines
+                try:
+                    train_datapipeline = self.build_train_data(
+                        device=device, collective=collective
+                    )
+                    assert (
+                        train_datapipeline is not None
+                    ), "Train data pipeline not initialized"
+                    eval_datapipeline = self.build_eval_data(
+                        device=device, collective=collective
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to build data pipelines: {e}")
+                    raise
+
+                # 6. Tokenizer for reward text decoding
+                self.tokenizer = self._build_tokenizer()
+
+                # 7. Checkpoint resume (trainer / unified ranks only)
+                if self.role in ("trainer", "unified"):
+                    data_loaders = {"train": train_datapipeline.dataloader}
+                    common_chkp_kwargs = {
+                        "model": model,
+                        "optimizer": optimizer,
+                        "collective": collective,
+                        "lr_scheduler": lr_scheduler,
+                        "data_loaders": data_loaders,
+                        "data_sources": train_datapipeline.datasets,
+                        "grad_scaler": training_context["scaler"],
+                    }
+                    start_iteration, metadata, finished_run, common_chkp_kwargs = (
+                        self._init_checkpointing(
+                            model,
+                            optimizer,
+                            lr_scheduler,
+                            training_context,
+                            train_datapipeline,
+                            collective,
+                            is_restart,
+                        )
+                    )
+
+                # 8. Loggers (master only)
+                if self.role in ("trainer", "unified"):
+                    self._init_loggers(collective, logs_parent_path, start_iteration)
 
             log_event_end("perf/init")
 
         # Log init metrics
         init_metrics = compute_meters("init", aggregate=True, collective=collective)
-        if collective.is_local_master:
+        if collective.is_local_master and not is_idle:
             self.log_metrics_to_loggers(init_metrics, start_iteration, "init")
 
         # 9. Build generation engine and reward functions
-        gen_engine = build_component("generation_engine", self.cfg.generation_engine)
-        reward_fns = [
-            build_component("reward_function", r) for r in self.cfg.reward_functions
-        ]
+        gen_engine = reward_fns = None
+        if not is_idle:
+            gen_engine = build_component(
+                "generation_engine", self.cfg.generation_engine
+            )
+            reward_fns = [
+                build_component("reward_function", r) for r in self.cfg.reward_functions
+            ]
 
-        # 10. Pre-training barrier — all ranks ready
+        # 10. Pre-training barrier — all ranks ready.
+        # Every rank (including idle ones) must participate: barriers are
+        # collective operations and skipping them desynchronizes the group.
         logger.debug("Reaching pre-training barrier...")
         collective.barrier()
         logger.info("All ranks are ready")
+
+        if is_idle:
+            logger.info("Rank idle; exiting after synchronization barrier.")
+            gc.collect()
+            collective.close()
+            return
 
         # 11. Execute training loop
         try:
@@ -356,17 +367,20 @@ class GRPORecipe(TrainRecipe, AsyncExperienceManager):
                     )
 
                 # 3. Policy optimisation on the generated experience.
-                #    Repeat the experience tensor acc_steps times so gradient
-                #    accumulation inside run_training_iteration works correctly.
+                #    Split the experience into acc_steps micro-batches so
+                #    gradient accumulation runs over *distinct* data slices
+                #    instead of repeating the same tensors.
                 acc_steps = self.cfg.optimization.acc_steps
+                micro_batches = self._split_experience(experience, acc_steps)
                 self.run_training_iteration(
                     model=model,
                     optimizer=optimizer,
                     criterion=criterion,
-                    train_data_iter=iter([experience] * acc_steps),
+                    train_data_iter=iter(micro_batches),
                     training_context=training_context,
                     lr_scheduler=lr_scheduler,
                     metric_engine=train_metric_engine,
+                    acc_steps_override=len(micro_batches),
                 )
 
                 # 4. Metrics logging, evaluation, and checkpointing
@@ -421,6 +435,76 @@ class GRPORecipe(TrainRecipe, AsyncExperienceManager):
     # Experience generation                                                #
     # ------------------------------------------------------------------ #
 
+    @staticmethod
+    def _split_experience(
+        experience: dict[str, Any], n_chunks: int
+    ) -> list[dict[str, Any]]:
+        """Split an experience batch along the sequence dimension.
+
+        Every tensor-valued entry is chunked on dim 0 into ``n_chunks``
+        (or fewer if the batch is smaller); non-tensor entries are copied
+        into every chunk.
+        """
+        n = experience["input_ids"].size(0)
+        k = max(1, min(n_chunks, n))
+        chunks = []
+        for i in range(k):
+            part = {}
+            for key, value in experience.items():
+                if isinstance(value, torch.Tensor):
+                    part[key] = value.chunk(k, dim=0)[i]
+                else:
+                    part[key] = value
+            chunks.append(part)
+        return chunks
+
+    @staticmethod
+    def _get_prompt_lengths(
+        batch: dict[str, Any], prompt_ids: torch.Tensor, device: torch.device
+    ) -> torch.Tensor:
+        """True (unpadded) prompt length per row.
+
+        Prefers ``seq_lens`` (emitted by the batchers), falls back to an
+        ``attention_mask`` if present, and finally to the full padded width.
+        """
+        if "seq_lens" in batch:
+            return batch["seq_lens"].to(device).long()
+        if "attention_mask" in batch:
+            return batch["attention_mask"].to(device).long().sum(dim=1)
+        return torch.full(
+            (prompt_ids.size(0),), prompt_ids.size(1), dtype=torch.long, device=device
+        )
+
+    def _compute_batch_logprobs(
+        self,
+        model,
+        all_ids: torch.Tensor,
+        seq_lens: torch.Tensor,
+        temperature: float = 1.0,
+    ) -> torch.Tensor:
+        """Per-token logprobs over a batch, optionally in row-chunks.
+
+        Chunking bounds peak memory of the full-vocab logits tensor
+        (``(B, T, V)`` dominates GRPO memory at scale).
+        """
+        chunk = getattr(self.cfg, "logprob_micro_batch_size", None)
+        n = all_ids.size(0)
+        if not chunk or chunk >= n:
+            logits = model(all_ids, seq_lens=seq_lens)["logits"]
+            return self._get_per_token_logprobs(
+                logits, all_ids, temperature=temperature
+            )
+        parts = []
+        for start in range(0, n, chunk):
+            sl = slice(start, min(start + chunk, n))
+            logits = model(all_ids[sl], seq_lens=seq_lens[sl])["logits"]
+            parts.append(
+                self._get_per_token_logprobs(
+                    logits, all_ids[sl], temperature=temperature
+                )
+            )
+        return torch.cat(parts, dim=0)
+
     def _generate_experience(
         self,
         model,
@@ -433,19 +517,26 @@ class GRPORecipe(TrainRecipe, AsyncExperienceManager):
         """Generate rollouts, score rewards, and compute per-token log-probs.
 
         Returns a dict suitable for ``GRPOCriterion.__call__`` with keys:
-        ``input_ids``, ``completion_mask``, ``old_logprobs``, ``ref_logprobs``,
-        ``advantages``.
+        ``input_ids``, ``completion_mask``, ``seq_lens``, ``old_logprobs``,
+        ``ref_logprobs``, ``advantages``.
         """
         prompt_ids: torch.Tensor = batch["input_ids"].to(device)
-        # attention_mask marks real (non-pad) tokens; shape (B, L)
-        attention_mask: torch.Tensor | None = (
-            batch["attention_mask"].to(device) if "attention_mask" in batch else None
-        )
         batch_size = prompt_ids.size(0)
         G = self.cfg.num_generations
 
+        # True prompt lengths — variable-length prompts are handled exactly:
+        # generation continues right after each prompt's last real token.
+        prompt_lengths = self._get_prompt_lengths(batch, prompt_ids, device)
+        max_prompt_len = int(prompt_lengths.max().item())
+
+        # Truncate padded columns; real tokens are right-packed at [0, len),
+        # so slicing keeps them contiguous. Residual pads inside the slice are
+        # masked out of attention via seq_lens during generation.
+        compact_prompt_ids = prompt_ids[:, :max_prompt_len]
+
         # Expand prompts: (B, L) → (B*G, L)
-        expanded_prompt_ids = prompt_ids.repeat_interleave(G, dim=0)
+        expanded_prompt_ids = compact_prompt_ids.repeat_interleave(G, dim=0)
+        expanded_lengths = prompt_lengths.repeat_interleave(G)  # (B*G,)
 
         with torch.no_grad():
             # --- Generate completions ---
@@ -454,7 +545,10 @@ class GRPORecipe(TrainRecipe, AsyncExperienceManager):
                 f"({expanded_prompt_ids.shape[0]} total sequences)"
             )
             all_ids = gen_engine.generate(
-                model, expanded_prompt_ids, self.cfg.generation_config
+                model,
+                expanded_prompt_ids,
+                self.cfg.generation_config,
+                seq_lens=expanded_lengths,
             )
             logger.debug(
                 f"Rollout: generation complete. all_ids shape: {all_ids.shape}"
@@ -463,11 +557,22 @@ class GRPORecipe(TrainRecipe, AsyncExperienceManager):
             # Restore training mode; NativeEngine calls model.eval() internally.
             model.train()
 
-            # --- Build completion mask ---
-            # Respect variable prompt lengths via attention_mask when available.
+            num_new_tokens = all_ids.size(1) - max_prompt_len
+            total_lengths = expanded_lengths + num_new_tokens
+
+            # --- Build completion mask (1 = completion token) ---
             completion_mask = self._build_completion_mask(
-                all_ids, prompt_ids, attention_mask, G
+                all_ids, expanded_lengths, total_lengths
             )
+            # Truncate everything after (and including nothing before) the
+            # first stop token: post-EOS tokens must not enter the loss, KL,
+            # or reward text. The first EOS itself stays included.
+            stop_token_id = getattr(self.cfg.generation_config, "stop_token_id", None)
+            if stop_token_id is not None:
+                completion_mask = self._truncate_after_stop(
+                    all_ids, completion_mask, stop_token_id
+                )
+
             num_completion_tokens = completion_mask.sum().item()
             log_averaged(
                 "num_completion_tokens",
@@ -476,27 +581,32 @@ class GRPORecipe(TrainRecipe, AsyncExperienceManager):
                 round=1,
             )
 
-            # --- Reference log-probs (frozen model) ---
+            # --- Reference log-probs (frozen model, temperature 1) ---
             logger.debug("Rollout: computing reference log-probs...")
-            ref_logprobs = self._get_per_token_logprobs(
-                ref_model(all_ids)["logits"], all_ids
+            ref_logprobs = self._compute_batch_logprobs(
+                ref_model, all_ids, total_lengths, temperature=1.0
             )
 
-            # --- Old-policy log-probs (same model that generated) ---
+            # --- Old-policy log-probs ---
+            # Must match the sampling temperature, otherwise the PPO ratio
+            # π_θ/π_old is biased off-policy from the very first step.
+            sampling_temperature = getattr(
+                self.cfg.generation_config, "temperature", 1.0
+            )
             logger.debug("Rollout: computing old-policy log-probs...")
-            old_logprobs = self._get_per_token_logprobs(
-                model(all_ids)["logits"], all_ids
+            old_logprobs = self._compute_batch_logprobs(
+                model, all_ids, total_lengths, temperature=sampling_temperature
             )
 
             # --- Text decoding for reward functions ---
             prompts, completions, answers = self._decode_batch(
                 prompt_ids,
+                prompt_lengths,
                 all_ids,
                 completion_mask,
                 batch,
                 batch_size,
                 G,
-                attention_mask,
             )
 
             # --- Compute and aggregate rewards ---
@@ -537,6 +647,7 @@ class GRPORecipe(TrainRecipe, AsyncExperienceManager):
         return {
             "input_ids": all_ids,
             "completion_mask": completion_mask,
+            "seq_lens": total_lengths,
             "old_logprobs": old_logprobs,
             "ref_logprobs": ref_logprobs,
             "advantages": advantages,
@@ -548,18 +659,23 @@ class GRPORecipe(TrainRecipe, AsyncExperienceManager):
 
     @staticmethod
     def _get_per_token_logprobs(
-        logits: torch.Tensor, tokens: torch.Tensor
+        logits: torch.Tensor,
+        tokens: torch.Tensor,
+        temperature: float = 1.0,
     ) -> torch.Tensor:
         """Per-token log-probabilities for sampled tokens.
 
         Args:
             logits: ``(B, T, V)`` model output logits.
             tokens: ``(B, T)`` token IDs.
+            temperature: Softmax temperature used when the tokens were
+                sampled. Pass the sampling temperature so that old-policy
+                logprobs are consistent with the rollout distribution.
 
         Returns:
             ``(B, T-1)`` — ``log p(token_t | token_{<t})`` for every position.
         """
-        log_probs = torch.log_softmax(logits[:, :-1, :], dim=-1)
+        log_probs = torch.log_softmax(logits[:, :-1, :] / temperature, dim=-1)
         return torch.gather(
             log_probs, dim=-1, index=tokens[:, 1:].unsqueeze(-1)
         ).squeeze(-1)
@@ -567,51 +683,74 @@ class GRPORecipe(TrainRecipe, AsyncExperienceManager):
     @staticmethod
     def _build_completion_mask(
         all_ids: torch.Tensor,
-        prompt_ids: torch.Tensor,
-        attention_mask: torch.Tensor | None,
-        G: int,
+        prompt_lengths: torch.Tensor,
+        total_lengths: torch.Tensor,
     ) -> torch.Tensor:
-        """Build a binary mask (0=prompt, 1=completion) for every token in ``all_ids``.
+        """Build a binary mask (0=prompt, 1=completion) for every row.
 
-        Supports variable-length prompts via ``attention_mask`` if provided;
-        falls back to the padded prompt length otherwise.
+        Args:
+            all_ids: ``(B*G, T)`` sequence tensor.
+            prompt_lengths: ``(B*G,)`` true prompt length per row.
+            total_lengths: ``(B*G,)`` prompt + generated length per row
+                (positions ≥ total_lengths are trailing padding).
+
+        Returns:
+            ``(B*G, T)`` mask, 1 exactly on ``[prompt_lengths, total_lengths)``.
         """
-        mask = torch.zeros_like(all_ids)
-        if attention_mask is not None:
-            # prompt_lengths[i] = number of real (non-pad) prompt tokens
-            prompt_lengths = attention_mask.sum(dim=1).long()  # (B,)
-            expanded_lengths = prompt_lengths.repeat_interleave(G)  # (B*G,)
-            for idx, plen in enumerate(expanded_lengths.tolist()):
-                mask[idx, plen:] = 1
-        else:
-            prompt_len = prompt_ids.size(1)
-            mask[:, prompt_len:] = 1
-        return mask
+        device = all_ids.device
+        positions = torch.arange(all_ids.size(1), device=device).unsqueeze(0)
+        return (
+            (positions >= prompt_lengths.unsqueeze(1))
+            & (positions < total_lengths.unsqueeze(1))
+        ).long()
+
+    @staticmethod
+    def _truncate_after_stop(
+        all_ids: torch.Tensor,
+        completion_mask: torch.Tensor,
+        stop_token_id: int,
+    ) -> torch.Tensor:
+        """Zero the completion mask after (not including) the first stop token.
+
+        The first stop token itself remains in the loss; everything sampled
+        after it is padding-by-construction and must be excluded.
+        """
+        eos = (all_ids == stop_token_id) & (completion_mask == 1)
+        has_eos = eos.any(dim=1)
+        first_eos = torch.where(
+            has_eos,
+            eos.int().argmax(dim=1),
+            torch.full_like(eos.int().argmax(dim=1), -1),
+        )
+        positions = torch.arange(all_ids.size(1), device=all_ids.device).unsqueeze(0)
+        keep = (first_eos.unsqueeze(1) < 0) | (positions <= first_eos.unsqueeze(1))
+        return completion_mask * keep.long()
 
     def _decode_batch(
         self,
         prompt_ids: torch.Tensor,
+        prompt_lengths: torch.Tensor,
         all_ids: torch.Tensor,
         completion_mask: torch.Tensor,
         batch: dict[str, Any],
         batch_size: int,
         G: int,
-        attention_mask: torch.Tensor | None,
     ) -> tuple[list[str], list[str], list[str]]:
-        """Decode token tensors into text strings for reward computation."""
+        """Decode token tensors into text strings for reward computation.
+
+        Only real (non-pad) prompt tokens and masked completion tokens are
+        decoded, so pad/EOS-truncated tokens never leak into reward text.
+        """
         has_answers = "answer" in batch
         prompts: list[str] = []
         completions: list[str] = []
         answers: list[str] = []
 
         if self.tokenizer is not None:
+            prompt_lengths_list = prompt_lengths.tolist()
             for i in range(batch_size):
                 # Decode only non-padded prompt tokens
-                if attention_mask is not None:
-                    real_len = int(attention_mask[i].sum().item())
-                    p_ids = prompt_ids[i, :real_len].tolist()
-                else:
-                    p_ids = prompt_ids[i].tolist()
+                p_ids = prompt_ids[i, : prompt_lengths_list[i]].tolist()
                 p_text = self.tokenizer.decode(p_ids)
                 ans_text = batch["answer"][i] if has_answers else ""
 
