@@ -13,6 +13,7 @@ from optimus_dl.core.log import (
     info_once,
     warn_once,
 )
+from optimus_dl.modules.model.blocks.kv_cache import KVCacheLayer
 from optimus_dl.modules.model.blocks.layer_norms import RMSNorm
 from optimus_dl.modules.model.blocks.rope import apply_rotary_emb
 
@@ -254,6 +255,7 @@ class BaseSelfAttention(nn.Module):
         position_ids: torch.Tensor | None = None,
         cu_seqlens: torch.Tensor | None = None,
         max_seqlen: int | None = None,
+        kv_cache: KVCacheLayer | None = None,
     ) -> torch.Tensor:
         """Perform the forward pass with support for GQA, QK-Norm, and flexible masking.
 
@@ -261,10 +263,21 @@ class BaseSelfAttention(nn.Module):
             x: Input tensor of shape (B, T, C).
             freqs_cis: Optional frequencies for positional embeddings.
             seq_lens: Optional 1D tensor of sequence lengths to mask out padding.
+                In cached decode mode (``kv_cache`` given, T == 1) this holds
+                the number of *valid* cache entries per row including the
+                current token, doubling as the key-padding mask.
             document_ids: Optional 2D tensor of document IDs for packed/flat batching.
             position_ids: Optional 2D tensor of position IDs.
             cu_seqlens: Optional 1D tensor of cumulative sequence lengths for Flash Attention varlen.
             max_seqlen: Optional maximum sequence length in the packed batch.
+            kv_cache: Optional per-layer KV cache. When provided:
+
+                - **Prefill** (T > 1): keys/values are written into the cache
+                  at ``[0, T)`` and the normal attention backends run unchanged.
+                - **Decode** (T == 1): the new token's k/v is appended at the
+                  cursor and attention runs via SDPA over the cache prefix,
+                  masked by ``seq_lens``. This is the incremental-generation
+                  fast path used by the generation engine.
 
         Returns:
             Output tensor after attention and projection.
@@ -345,6 +358,63 @@ class BaseSelfAttention(nn.Module):
 
         enable_gqa = self.n_rep > 1
 
+        used_backend = ""
+        y = None
+
+        # --- KV-cache handling (see docstring) ---
+        if kv_cache is not None:
+            if is_dtensor or is_sp:
+                raise RuntimeError(
+                    "KV caching is not supported with tensor/sequence parallelism"
+                )
+
+            if T == 1:
+                # Cached decode step: each row appends its k/v at its own
+                # length slot (right-packed, derived from ``seq_lens`` =
+                # inclusive valid count) and attends over the cache with a
+                # key-padding mask. This keeps per-row slots contiguous even
+                # when rows have different lengths. Without ``seq_lens``, a
+                # uniform cursor is used (all rows assumed equal length).
+                b_idx = torch.arange(B, device=x.device)
+                if seq_lens is not None:
+                    valid_len = seq_lens.to(x.device).long()
+                    slot = valid_len - 1
+                else:
+                    slot = torch.full(
+                        (B,), kv_cache.cursor, dtype=torch.long, device=x.device
+                    )
+                    valid_len = slot + 1
+                kv_cache.k[b_idx, :, slot, :] = xk.squeeze(1)
+                kv_cache.v[b_idx, :, slot, :] = xv.squeeze(1)
+                # Track the cursor only in the uniform-cursor mode where it is
+                # actually read. Updating it from a device ``seq_lens`` would
+                # force a GPU sync on every layer of every decode step.
+                if seq_lens is None:
+                    kv_cache.cursor += 1
+
+                # Attend over the full buffer; the mask zeroes invalid slots.
+                # (Avoids a GPU sync from reading the max slot on device.)
+                width = kv_cache.k.shape[2]
+                key_mask = (
+                    torch.arange(width, device=x.device)[None, :] < valid_len[:, None]
+                )[:, None, None, :]
+                used_backend = "Cached SDPA Decode"
+                y = nn.functional.scaled_dot_product_attention(
+                    xq.transpose(1, 2),
+                    kv_cache.k,
+                    kv_cache.v,
+                    attn_mask=key_mask,
+                    enable_gqa=enable_gqa,
+                )
+                # Falls through to the shared output tail below (skips the
+                # regular backend selection because ``y`` is already set).
+
+            else:
+                # Prefill: store the prompt's k/v, then run the normal paths.
+                kv_cache.k[:, :, :T] = xk.transpose(1, 2)
+                kv_cache.v[:, :, :T] = xv.transpose(1, 2)
+                kv_cache.cursor = T
+
         info_once(
             logger,
             f"{FLASH_ATTENTION_AVAILABLE = }, {FLEX_ATTENTION_AVAILABLE = }, {xq.device = }",
@@ -354,10 +424,7 @@ class BaseSelfAttention(nn.Module):
             f"{cu_seqlens is None = }, {seq_lens is None = }, {document_ids is None = }, {max_seqlen is None = }",
         )
 
-        used_backend = ""
-
-        y = None
-        if cu_seqlens is not None:
+        if y is None and cu_seqlens is not None:
             # Use optimized variable-length kernels on CUDA
             if FLASH_ATTENTION_AVAILABLE and xq.is_cuda and document_ids is None:
                 assert flash_attn_varlen_func is not None

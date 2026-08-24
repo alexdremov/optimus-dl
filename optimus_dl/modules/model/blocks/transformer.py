@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 
 from optimus_dl.modules.model.blocks.attention import RotarySelfAttention
+from optimus_dl.modules.model.blocks.kv_cache import KVCacheLayer
 from optimus_dl.modules.model.blocks.layer_norms import RMSNorm
 from optimus_dl.modules.model.blocks.mlp import (
     GELUMLP,
@@ -86,6 +87,7 @@ class RotaryTransformerBlock(nn.Module):
         position_ids: torch.Tensor | None = None,
         cu_seqlens: torch.Tensor | None = None,
         max_seqlen: int | None = None,
+        kv_cache: KVCacheLayer | None = None,
     ) -> torch.Tensor:
         """Compute the forward pass for the transformer block (pre-norm residual)."""
         ln_1 = self.ln_1(x)
@@ -97,6 +99,7 @@ class RotaryTransformerBlock(nn.Module):
             position_ids=position_ids,
             cu_seqlens=cu_seqlens,
             max_seqlen=max_seqlen,
+            kv_cache=kv_cache,
         )
 
         x = x + attn_out

@@ -31,6 +31,7 @@ from torch.distributed.tensor.placement_types import (
 
 from optimus_dl.core.log import info_once
 from optimus_dl.modules.model import register_model
+from optimus_dl.modules.model.blocks.kv_cache import KVCacheLayer
 from optimus_dl.modules.model.blocks.layer_norms import RMSNorm
 from optimus_dl.modules.model.blocks.rope import precompute_freqs_cis
 from optimus_dl.modules.model.blocks.transformer import RotaryTransformerBlock
@@ -334,6 +335,7 @@ class Llama(GPT):
         position_ids: torch.Tensor | None = None,
         cu_seqlens: torch.Tensor | None = None,
         max_seqlen: int | None = None,
+        kv_caches: list[KVCacheLayer] | None = None,
         **kwargs,
     ):
         """Perform the forward pass, handling rotary frequency lookup and optional masking.
@@ -345,6 +347,8 @@ class Llama(GPT):
             position_ids: Optional 2D tensor of position IDs (for RoPE).
             cu_seqlens: Optional 1D tensor of cumulative sequence lengths (for varlen attention).
             max_seqlen: Optional maximum sequence length in the packed batch.
+            kv_caches: Optional list of per-layer KV caches (one per block) for
+                incremental generation. See ``get_kv_caches``.
             **kwargs: Extra arguments.
 
         Returns:
@@ -371,7 +375,7 @@ class Llama(GPT):
         tok_emb = self.transformer.wte(idx)
         x = self.transformer.drop(tok_emb)
 
-        for block in self.transformer.h:
+        for layer_idx, block in enumerate(self.transformer.h):
             block_kwargs = {
                 "x": x,
                 "freqs_cis": freqs_cis,
@@ -380,6 +384,7 @@ class Llama(GPT):
                 "position_ids": position_ids,
                 "cu_seqlens": cu_seqlens,
                 "max_seqlen": max_seqlen,
+                "kv_cache": kv_caches[layer_idx] if kv_caches is not None else None,
             }
             # Filter out None values to avoid triggering TP input preparation on None inputs
             block_kwargs = {k: v for k, v in block_kwargs.items() if v is not None}
@@ -391,6 +396,48 @@ class Llama(GPT):
         return {
             "logits": logits,
         }
+
+    def get_kv_caches(
+        self,
+        batch_size: int,
+        max_len: int,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> list[KVCacheLayer] | None:
+        """Allocate per-layer KV caches for incremental generation.
+
+        Returns ``None`` when the architecture cannot use a KV cache
+        (e.g. sliding-window attention is enabled), in which case callers
+        should fall back to full-sequence generation.
+
+        Args:
+            batch_size: Number of sequences to generate for.
+            max_len: Maximum total sequence length (prompt + generated).
+            device: Device for the cache buffers (defaults to the model's).
+            dtype: Cache dtype (defaults to the model parameter dtype).
+        """
+        blocks = self.transformer.h
+        if any(getattr(b.attn, "sliding_window", None) is not None for b in blocks):
+            logger.debug("KV cache unavailable: sliding-window attention enabled")
+            return None
+
+        param = next(self.parameters())
+        if device is None:
+            device = param.device
+        if dtype is None:
+            dtype = param.dtype
+
+        caches = []
+        for block in blocks:
+            attn = block.attn
+            shape = (batch_size, attn.n_kv_head, max_len, attn.head_dim)
+            caches.append(
+                KVCacheLayer(
+                    k=torch.zeros(shape, dtype=dtype, device=device),
+                    v=torch.zeros(shape, dtype=dtype, device=device),
+                )
+            )
+        return caches
 
 
 @Llama.register_arch("7b")
