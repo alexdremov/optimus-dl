@@ -29,7 +29,7 @@ from optimus_dl.modules.metrics import (
     meters_group,
     reset_meters,
 )
-from optimus_dl.modules.reward import (
+from optimus_dl.modules.reward.implementations.rule_based import (
     RuleBasedReward,
     RuleBasedRewardConfig,
 )

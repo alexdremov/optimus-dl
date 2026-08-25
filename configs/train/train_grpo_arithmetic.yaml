@@ -1,0 +1,64 @@
+# @package _global_
+# GRPO on a synthetic arithmetic environment, tuned for Apple Silicon (MPS).
+#
+# Task: complete expressions like "7+5=" with the exact sum. The model is
+# trained fully offline from random initialization using a byte-level
+# tokenizer. Expected behaviour: mean reward climbs from ~0.05 to ~0.8 over
+# the 1500 iterations (~6 min on an M-series Mac with compile); see
+# outputs/${common.exp_name}/logs/metrics.jsonl.
+#
+# Notes on the recipe (found empirically, keep in mind when scaling up):
+#   - Single-digit curriculum (max_result=9) is what makes from-scratch RL
+#     bootstrap: with only 8 possible answers, sampled groups almost always
+#     contain an exact hit, so advantages are informative from step 1.
+#   - kl_coeff=0: the reference model is a random init, so anchoring to it
+#     only fights learning. Revisit for pretrained models.
+#   - Short completions (max_new_tokens=4): answers fit in 2-3 tokens and
+#     rollouts stay cheap; long budgets let junk tokens dilute the reward.
+#   - digit_shaping rewards place-value progress but cannot be exploited by
+#     a constant guess (unlike distance-based shaping).
+#   - torch.compile gives a ~6x end-to-end speedup on MPS (measured 0.21
+#     vs 1.36 s/iter): kernels fuse AND rollouts route around the KV-cache
+#     path, which is slow on MPS for tiny models. Requires torch >= 2.13.
+#
+# Run:  python scripts/train.py --config-name=train_grpo_arithmetic
+defaults:
+  - train_grpo_arithmetic_base
+  - _self_
+
+common:
+  exp_name: "grpo-arithmetic-mps"
+
+generation_config:
+  max_new_tokens: 4
+  stop_token_id: 257 # char_tokenize EOS
+
+criterion:
+  kl_coeff: 0.0
+
+model:
+  _name: llama2
+  n_layer: 4
+  n_head: 4
+  n_embd: 128
+  intermediate_size: 256
+  vocab_size: 258 # char_tokenize: 256 bytes + BOS + EOS
+  sequence_length: 64
+
+optimization:
+  iterations: 1500
+  optimizer:
+    lr: 2e-4
+
+lr_scheduler:
+  learning_rate: 2e-4
+
+data:
+  train_datasets:
+    source:
+      # Stage 1 curriculum: sums up to 9, so every answer is a single digit.
+      # To scale up later, raise max_result together with model size /
+      # training length.
+      min_digits: 1
+      max_digits: 1
+      max_result: 9

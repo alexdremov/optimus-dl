@@ -1,0 +1,93 @@
+# @package _global_
+# Several-digit arithmetic with a small PRETRAINED model: SmolLM2-135M-Instruct.
+#
+# Rationale: the from-scratch byte-level curriculum struggles to bootstrap
+# two-digit addition. A pretrained LM already understands digits, "=" and
+# number tokens (SmolLM2 tokenizes every digit as a single token), so GRPO
+# starts from a policy that can emit plausible answers immediately.
+#
+# Also enables bfloat16 AMP autocast for the training forward/backward
+# (supported on Apple Silicon MPS; no grad scaler needed for bf16).
+#
+# Empirical notes (400-iteration runs, easy-sum stage):
+#   - Dense token-level rewards (arithmetic_token) + G=16 + kl_coeff=0.05 +
+#     lr=1e-5 PRESERVES the pretrained policy (eval reward 0.129 vs 0.128
+#     base). The earlier recipe (G=8, kl=0.01, lr=2e-5) drifted to KL~2.8
+#     and destroyed it (reward 0.088, exact hits 0/96).
+#   - Base pass rates on sums<=18: pass@8=33%, pass@16=62% -> G=16 gives
+#     most groups a positive exemplar for GRPO to amplify.
+#
+# Run:  python scripts/train.py --config-name=train_grpo_arithmetic_smollm
+defaults:
+  - train_grpo_arithmetic_base
+  - _self_
+
+common:
+  exp_name: "grpo-arithmetic-smollm"
+
+num_generations: 16
+
+generation_config:
+  max_new_tokens: 6 # answers up to "18" + <|im_end|>
+  stop_token_id: 2 # <|im_end|>
+
+model_transforms: [] # keep KV-cache rollouts (worth it for 30 layers)
+
+reward_functions:
+  - _name: arithmetic_token # dense GRPO: per-token credit on answer digits
+
+criterion:
+  kl_coeff: 0.05 # strong anchor: weak anchors let the policy drift and
+  # destroy pretrained ability (see notes above)
+
+model:
+  _name: preset_hfllama2
+  hf_model_name: "HuggingFaceTB/SmolLM2-135M-Instruct"
+  load_weights: true
+  # SmolLM2-135M dimensions
+  n_layer: 30
+  n_head: 9
+  n_kv_head: 3
+  n_embd: 576
+  intermediate_size: 1536
+  vocab_size: 49152
+
+optimization:
+  iterations: 400
+  optimizer:
+    lr: 1e-5 # gentle: sparse reward + big steps degrade the policy
+  amp:
+    enabled: true # bf16 autocast on MPS (scaler stays off)
+
+lr_scheduler:
+  learning_rate: 1e-5
+
+tokenizer_config:
+  _name: transformers
+  name: "HuggingFaceTB/SmolLM2-135M-Instruct"
+  add_bos: false # the ChatML prompt already carries the special tokens
+  add_eos: false # EOS must not be baked into prompts
+
+data:
+  train_datasets:
+    source:
+      # Stage A curriculum: sums up to 18. Base pass@16 is ~62% here, so
+      # most sampled groups contain an exact hit. Widen later.
+      min_digits: 1
+      max_digits: 1
+      max_result: 18
+    transform:
+      _name: compose
+      transforms:
+        - _name: format
+          # 3-shot prompt: zero-shot, SmolLM2-135M rambles instead of
+          # answering; the examples elicit clean "number + <|im_end|>"
+          # responses, which gives GRPO a well-formed policy to improve.
+          template: "<|im_start|>user\n23+45=<|im_end|>\n<|im_start|>assistant\n68<|im_end|>\n<|im_start|>user\n11+77=<|im_end|>\n<|im_start|>assistant\n88<|im_end|>\n<|im_start|>user\n34+52=<|im_end|>\n<|im_start|>assistant\n86<|im_end|>\n<|im_start|>user\n{question}=<|im_end|>\n<|im_start|>assistant\n"
+          output_field: "text"
+        - _name: tokenize
+          tokenizer_config: ${tokenizer_config}
+        - _name: basic_batcher
+          batch_size: 2 # prompts; G=16 keeps rollouts at 32 seqs/iter
+          pad_token_id: 2
+        - _name: to_device

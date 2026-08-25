@@ -67,12 +67,20 @@ class GRPOCriterion(BaseCriterion):
                    old_logprobs    : (B*G, T-1) — log-probs from the rollout policy.
                    ref_logprobs    : (B*G, T-1) — log-probs from the frozen reference model.
                    advantages      : (B*G,)     — group-relative normalised advantages.
+                       A (B*G, T-1) per-token tensor is also accepted for dense
+                       (token-level) reward variants; it must be zero outside
+                       completion positions.
+                   sampling_temperature : float — temperature used during
+                       rollout sampling. The policy logits are divided by it
+                       before the log-softmax so that ``ratio == 1`` when the
+                       policy equals the rollout policy even for T != 1.
         """
         input_ids = batch["input_ids"]
         completion_mask = batch["completion_mask"]
         old_logprobs = batch["old_logprobs"]
         ref_logprobs = batch["ref_logprobs"]
         advantages = batch["advantages"]
+        sampling_temperature = float(batch.get("sampling_temperature", 1.0))
 
         # --- Current policy log-probs ---
         # Standard next-token-prediction shift: logit at position t predicts token t+1.
@@ -86,7 +94,7 @@ class GRPOCriterion(BaseCriterion):
         # shift_mask: (B*G, T-1) — 1 for completion positions, 0 for prompt positions
         shift_mask = completion_mask[:, 1:].contiguous()
 
-        log_probs = F.log_softmax(shift_logits, dim=-1)
+        log_probs = F.log_softmax(shift_logits / sampling_temperature, dim=-1)
         per_token_logprobs = torch.gather(
             log_probs, dim=-1, index=shift_labels.unsqueeze(-1)
         ).squeeze(-1)
@@ -98,8 +106,9 @@ class GRPOCriterion(BaseCriterion):
         ratio = torch.exp(log_ratio)  # = 1 at prompt positions
 
         # --- Clipped PPO surrogate loss ---
-        # advantages: (B*G,) → broadcast over (B*G, T-1)
-        adv = advantages.unsqueeze(1)
+        # advantages: (B*G,) broadcast over tokens, or (B*G, T-1) per-token
+        # advantages for dense-reward variants.
+        adv = advantages if advantages.dim() == 2 else advantages.unsqueeze(1)
         surr1 = ratio * adv
         surr2 = torch.clamp(ratio, 1.0 - self.cfg.eps, 1.0 + self.cfg.eps) * adv
         policy_loss = -torch.min(surr1, surr2)

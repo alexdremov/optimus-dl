@@ -165,6 +165,47 @@ class TestStopTokenHandling:
         assert out[0].tolist() == [1, 2, 3, 5]
         assert out[1].tolist() == [4, 5, 6, 5]
 
+    def test_final_stop_token_kept_when_batch_finishes_together(self):
+        """Regression: rows finishing on the SAME step must keep their stop token.
+
+        The cached loop used to break before advancing ``cur_lens``, so the
+        trim bound excluded the just-written stop token of last-finishing rows.
+        """
+
+        class FillThenEosModel(torch.nn.Module):
+            """Emits `fill` for `steps` steps, then EOS for every row."""
+
+            def __init__(self, fill, eos, steps, vocab_size=32):
+                super().__init__()
+                self.fill, self.eos, self.steps = fill, eos, steps
+                self.vocab_size = vocab_size
+                self.calls = 0
+
+            def forward(self, input_ids, seq_lens=None, **kw):
+                token = self.fill if self.calls < self.steps else self.eos
+                self.calls += 1
+                logits = torch.full(
+                    (*input_ids.shape, self.vocab_size),
+                    -100.0,
+                    dtype=torch.float32,
+                )
+                logits[..., token] = 100.0
+                return {"logits": logits}
+
+        model = FillThenEosModel(fill=7, eos=9, steps=2)
+        engine = NativeEngine(NativeEngineConfig())
+        prompts = torch.tensor([[1, 2], [3, 4]])
+        seq_lens = torch.tensor([2, 2])
+        cfg = GenerationConfig(max_new_tokens=4, temperature=0.0, stop_token_id=9)
+
+        out = engine.generate(model, prompts, cfg, seq_lens=seq_lens)
+
+        # Both rows emit two fill tokens then EOS on step 3; that final stop
+        # token must survive the width trim.
+        assert out.shape == (2, 5)
+        assert out[0].tolist() == [1, 2, 7, 7, 9]
+        assert out[1].tolist() == [3, 4, 7, 7, 9]
+
 
 class TestSamplingModes:
     def test_greedy_is_deterministic(self):

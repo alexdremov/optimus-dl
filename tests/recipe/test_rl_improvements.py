@@ -30,7 +30,7 @@ from optimus_dl.modules.criterion.grpo import (
     GRPOCriterion,
     GRPOCriterionConfig,
 )
-from optimus_dl.modules.reward import (
+from optimus_dl.modules.reward.implementations.rule_based import (
     RuleBasedReward,
     RuleBasedRewardConfig,
 )
@@ -439,9 +439,9 @@ class TestCriterionSeqLensPassthrough:
 
 class TestRuleBasedRegistry:
     def test_buildable_from_registry(self):
-        from optimus_dl.modules.reward import (
+        from optimus_dl.modules.reward import build_reward_function
+        from optimus_dl.modules.reward.implementations.rule_based import (
             RuleBasedRewardConfig,
-            build_reward_function,
         )
 
         fn = build_reward_function(

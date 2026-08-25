@@ -558,7 +558,13 @@ class GRPORecipe(TrainRecipe, AsyncExperienceManager):
             model.train()
 
             num_new_tokens = all_ids.size(1) - max_prompt_len
-            total_lengths = expanded_lengths + num_new_tokens
+            # Per-row true length, clamped to the returned width. Rows whose
+            # prompt is shorter than ``max_prompt_len`` would otherwise have
+            # trailing pad columns counted as completion tokens.
+            total_lengths = torch.minimum(
+                expanded_lengths + num_new_tokens,
+                torch.full_like(expanded_lengths, all_ids.size(1)),
+            )
 
             # --- Build completion mask (1 = completion token) ---
             completion_mask = self._build_completion_mask(
@@ -618,6 +624,42 @@ class GRPORecipe(TrainRecipe, AsyncExperienceManager):
             ]
             total_rewards = torch.stack(reward_tensors).sum(dim=0)  # (B*G,)
 
+            # --- Dense (token-level) rewards ---
+            # Reward functions that implement the token-level protocol return
+            # one 1-D tensor per sample, aligned with that sample's completion
+            # tokens (same order as ``completion_ids``). They are combined
+            # additively; their per-token sum participates in the group
+            # statistics together with any scalar rewards.
+            token_reward_rows: list[torch.Tensor] | None = None
+            dense_fns = [
+                fn
+                for fn in reward_fns
+                if callable(getattr(fn, "supports_token_level", None))
+                and fn.supports_token_level()
+            ]
+            if dense_fns:
+                completion_ids = [
+                    all_ids[row][completion_mask[row].bool()].tolist()
+                    for row in range(all_ids.size(0))
+                ]
+                per_fn_rows = [
+                    fn.token_rewards(
+                        prompts=prompts,
+                        completions=completions,
+                        answers=answers,
+                        completion_ids=completion_ids,
+                        tokenizer=self.tokenizer,
+                    )
+                    for fn in dense_fns
+                ]
+                token_reward_rows = [
+                    torch.stack(rows_per_sample).sum(dim=0)
+                    for rows_per_sample in zip(*per_fn_rows, strict=True)
+                ]
+                total_rewards = total_rewards + torch.stack(
+                    [rows.sum() for rows in token_reward_rows]
+                ).to(device)
+
             log_averaged(
                 "reward",
                 lambda: total_rewards.mean().item(),
@@ -629,7 +671,37 @@ class GRPORecipe(TrainRecipe, AsyncExperienceManager):
             grouped_rewards = total_rewards.view(batch_size, G)
             group_mean = grouped_rewards.mean(dim=1, keepdim=True)
             group_std = grouped_rewards.std(dim=1, keepdim=True) + 1e-8
-            advantages = ((grouped_rewards - group_mean) / group_std).view(-1)  # (B*G,)
+
+            if token_reward_rows is not None:
+                # Dense advantages: each row's scalar-GRPO advantage
+                #   (total_i - group_mean) / group_std
+                # is distributed over its completion tokens, shaped by the
+                # per-token rewards. Uniform parts (scalar rewards, the mean
+                # subtraction) are spread evenly; dense parts keep their
+                # per-token shape. Summing over a row recovers exactly the
+                # scalar-GRPO advantage.
+                seq_lens_rows = completion_mask.sum(dim=1).clamp(min=1)  # (B*G,)
+                scalar_part = (
+                    torch.stack(reward_tensors).sum(dim=0) if reward_tensors else None
+                )
+                adv_2d = torch.zeros_like(old_logprobs)  # (B*G, T-1)
+                means = group_mean.expand(-1, G).reshape(-1)  # (B*G,)
+                stds = group_std.expand(-1, G).reshape(-1)  # (B*G,)
+                for row in range(all_ids.size(0)):
+                    cols = (completion_mask[row] == 1).nonzero(as_tuple=True)[0] - 1
+                    uniform = (
+                        scalar_part[row] / seq_lens_rows[row]
+                        if scalar_part is not None
+                        else 0.0
+                    ) - means[row] / seq_lens_rows[row]
+                    adv_2d[row, cols] = (
+                        token_reward_rows[row].to(device) + uniform
+                    ) / stds[row]
+                advantages = adv_2d
+            else:
+                advantages = ((grouped_rewards - group_mean) / group_std).view(
+                    -1
+                )  # (B*G,)
 
             log_averaged(
                 "advantage_max",
@@ -651,6 +723,7 @@ class GRPORecipe(TrainRecipe, AsyncExperienceManager):
             "old_logprobs": old_logprobs,
             "ref_logprobs": ref_logprobs,
             "advantages": advantages,
+            "sampling_temperature": sampling_temperature,
         }
 
     # ------------------------------------------------------------------ #

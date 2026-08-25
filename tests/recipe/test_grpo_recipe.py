@@ -18,9 +18,11 @@ from optimus_dl.core.generation import (
     NativeEngine,
     NativeEngineConfig,
 )
-from optimus_dl.modules.reward import (
+from optimus_dl.modules.reward.implementations.gsm8k import (
     GSM8kReward,
     GSM8kRewardConfig,
+)
+from optimus_dl.modules.reward.implementations.rule_based import (
     RuleBasedReward,
     RuleBasedRewardConfig,
 )
@@ -485,6 +487,7 @@ class TestGenerateExperience:
             "old_logprobs",
             "ref_logprobs",
             "advantages",
+            "sampling_temperature",
         } == set(exp)
 
     def test_output_shapes(self):

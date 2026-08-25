@@ -258,6 +258,11 @@ class NativeEngine(GenerationEngine):
         logits = outputs["logits"][rows, cur_lens - 1]
 
         # --- Decode steps ---
+        # ``max_written`` tracks the highest buffer position ever written so
+        # that a stop token written on the very step that finishes the batch
+        # (early ``break`` below, before ``cur_lens`` catches up) is still
+        # included in the returned slice.
+        max_written = 0
         for _ in range(gen_config.max_new_tokens):
             active = ~finished
 
@@ -273,6 +278,8 @@ class NativeEngine(GenerationEngine):
 
             # Write sampled tokens at each active sequence's cursor.
             all_ids[rows[active], cur_lens[active]] = next_tokens.squeeze(-1)[active]
+            if bool(active.any()):
+                max_written = max(max_written, int(cur_lens[active].max().item()) + 1)
 
             if finished.all():
                 break
@@ -292,7 +299,7 @@ class NativeEngine(GenerationEngine):
             cur_lens += active.long()
 
         # Trim trailing pad columns that no sequence reached.
-        return all_ids[:, : int(cur_lens.max().item())]
+        return all_ids[:, : int(max(cur_lens.max().item(), max_written))]
 
 
 (
