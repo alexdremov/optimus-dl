@@ -1,0 +1,97 @@
+# @package _global_
+# Shared base for the synthetic-arithmetic GRPO experiment family.
+#
+# Do not run directly: inherit from this config and override the deltas
+# (model, dataset difficulty, schedule). See the train_grpo_arithmetic*
+# configs for concrete examples.
+#
+# Conventions baked in here:
+#   - ${tokenizer_config} is reused by the data pipeline's tokenize step, so
+#     rollout decoding and prompt tokenization can never drift apart.
+#   - MLflow logs into the local sqlite store under the "grpo" experiment,
+#     with one run per exp_name.
+defaults:
+  - defaults
+  - _self_
+
+_name: grpo
+
+num_generations: 16
+
+generation_engine:
+  _name: native
+
+generation_config:
+  temperature: 1.0
+
+model_transforms:
+  - _name: compile # ~6x end-to-end speedup on MPS for small models
+
+reward_functions:
+  - _name: arithmetic
+    reward_value: 1.0
+    penalty_value: 0.0
+    digit_shaping: true
+    digit_weight: 0.5
+
+loggers:
+  - _name: jsonl
+    output_dir: outputs/${common.exp_name}/logs
+    filename: metrics.jsonl
+    enabled: true
+  - _name: mlflow
+    project: grpo # MLflow experiment name
+    name: ${common.exp_name} # MLflow run name
+    tracking_uri: "sqlite:///mlflow.db"
+    log_system_metrics: true
+
+common:
+  distributed:
+    partitions: null # unified single-process loop
+  use_gpu: true # -> MPS on Apple Silicon
+  exp_name: "grpo-arithmetic" # overridden by concrete experiments
+  log_freq: 1
+  eval_freq: 50
+
+ref_model_transforms: null
+
+criterion:
+  _name: grpo
+  eps: 0.2
+
+optimization:
+  acc_steps: 1
+  optimizer:
+    _name: adamw
+    fused: false # fused AdamW is not supported on MPS
+  amp:
+    enabled: false
+    dtype: bfloat16
+
+lr_scheduler:
+  _name: cosine_annealing
+
+tokenizer_config:
+  _name: char_tokenize
+  add_bos: true
+  add_eos: false # keep EOS out of prompts; it is the completion stop token
+
+data:
+  train_datasets:
+    source:
+      _name: preset_arithmetic
+      operations: ["+"]
+      num_operands: 2
+      seed: 42
+    transform:
+      _name: compose
+      transforms:
+        - _name: format
+          template: "{question}="
+          output_field: "text"
+        - _name: tokenize
+          tokenizer_config: ${tokenizer_config}
+        - _name: basic_batcher
+          batch_size: 8
+          pad_token_id: 0
+        - _name: to_device

@@ -125,6 +125,28 @@ class BasicBatcherNode(BaseNode):
         seqs = [item[self.cfg.field] for item in batch_items]
         batch_size = len(seqs)
 
+        # Handle other fields
+        other_fields = {}
+        if batch_items:
+            for key in batch_items[0].keys():
+                if key == self.cfg.field:
+                    continue
+
+                values = [item[key] for item in batch_items]
+
+                # If they are all tensors of same shape, we can stack them?
+                # For strings, just keep as list.
+                if isinstance(values[0], torch.Tensor | np.ndarray):
+                    try:
+                        if isinstance(values[0], torch.Tensor):
+                            other_fields[key] = torch.stack(values)
+                        else:
+                            other_fields[key] = np.stack(values)
+                    except Exception:
+                        other_fields[key] = values
+                else:
+                    other_fields[key] = values
+
         if self.cfg.flatten:
             # Pack all sequences into one flat 1D sequence with causal shifting
             if isinstance(seqs[0], torch.Tensor):
@@ -144,7 +166,7 @@ class BasicBatcherNode(BaseNode):
                     ]
                 )
 
-                return {
+                res = {
                     self.cfg.field: input_ids[None, :],
                     "labels": labels[None, :],
                     "position_ids": position_ids[None, :],
@@ -157,6 +179,8 @@ class BasicBatcherNode(BaseNode):
                     ).to(torch.int32),
                     "max_seqlen": int(max(shifted_lengths)),
                 }
+                res.update(other_fields)
+                return res
             else:
                 input_ids = np.concatenate([s[:-1] for s in seqs])
                 labels = np.concatenate([s[1:] for s in seqs])
@@ -169,7 +193,7 @@ class BasicBatcherNode(BaseNode):
                     [np.full(length, i) for i, length in enumerate(shifted_lengths)]
                 )
 
-                return {
+                res = {
                     self.cfg.field: input_ids[None, :].astype(np.int64),
                     "labels": labels[None, :].astype(np.int64),
                     "position_ids": position_ids[None, :].astype(np.int64),
@@ -182,6 +206,8 @@ class BasicBatcherNode(BaseNode):
                     "cu_seqlens": np.cumsum([0] + shifted_lengths).astype(np.int32),
                     "max_seqlen": int(max(shifted_lengths)),
                 }
+                res.update(other_fields)
+                return res
 
         # Determine the maximum sequence length in this specific batch
         max_len = max(lengths)
@@ -237,12 +263,14 @@ class BasicBatcherNode(BaseNode):
                 (1, max_len), dtype=np.int64
             )
 
-        return {
+        res = {
             self.cfg.field: batched_seqs,
             "seq_lens": batched_lens,
             "position_ids": batched_pos,
             "document_ids": batched_docs if self.cfg.add_document_ids else None,
         }
+        res.update(other_fields)
+        return res
 
 
 @register_transform("basic_batcher", BasicBatcherConfig)

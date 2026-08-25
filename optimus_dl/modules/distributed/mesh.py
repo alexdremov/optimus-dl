@@ -74,6 +74,7 @@ class MeshCollective(Collective):
         process_group: torch.distributed.ProcessGroup | None = None,
         tp_size: int = 1,
         sharding_world_size: int | None = None,
+        mesh_ranks: list[int] | None = None,
     ) -> None:
         super().__init__(rank, world_size)
         assert world_size % local_world_size == 0
@@ -142,22 +143,71 @@ class MeshCollective(Collective):
                 )
                 logger.debug("Default process group initialized successfully")
 
+            # Handle sub-group mesh initialization by providing explicit ranks
+            reshaped_mesh_ranks = None
+            if mesh_ranks is not None:
+                reshaped_mesh_ranks = (
+                    torch.tensor(mesh_ranks, dtype=torch.int)
+                    .reshape(mesh_dims)
+                    .tolist()
+                )
+
             logger.info(
-                f"Initializing mesh with {mesh_device_type=}, shape={mesh_dims}, names={mesh_names}"
+                f"Initializing mesh with {mesh_device_type=}, shape={mesh_dims}, names={mesh_names}, mesh={reshaped_mesh_ranks}"
             )
             logger.debug("Calling init_device_mesh for parallel_mesh")
-            parallel_mesh = init_device_mesh(
-                device_type=mesh_device_type,
-                mesh_shape=mesh_dims,
-                mesh_dim_names=mesh_names,
-            )
+            if reshaped_mesh_ranks is not None:
+                # Sub-group mesh over an explicit subset of global ranks.
+                # ``init_device_mesh`` always spans the whole default group,
+                # so build the DeviceMesh directly from the rank layout.
+                parallel_mesh = DeviceMesh(
+                    device_type=mesh_device_type,
+                    mesh=torch.tensor(reshaped_mesh_ranks, dtype=torch.int),
+                    mesh_dim_names=mesh_names,
+                )
+            else:
+                parallel_mesh = init_device_mesh(
+                    device_type=mesh_device_type,
+                    mesh_shape=mesh_dims,
+                    mesh_dim_names=mesh_names,
+                )
             logger.debug("parallel_mesh initialized successfully")
 
             logger.debug("Calling init_device_mesh for physical_mesh")
-            physical_mesh = init_device_mesh(
-                device_type=mesh_device_type,
-                mesh_shape=(world_size // local_world_size, local_world_size),
-                mesh_dim_names=("nodes", "local_ranks"),
+
+            # Physical mesh is for (nodes, local_ranks)
+            # If we are in a sub-group, physical_mesh might be less meaningful
+            # unless we also partition nodes cleanly.
+            # For now, we'll try to build it but handle the case where it might fail
+            # or be redundant.
+            physical_mesh_ranks = None
+            if mesh_ranks is not None:
+                # This assumes local_world_size is consistent within the group
+                # which might NOT be true if groups are not node-aligned.
+                # However, for SOTA GRPO we usually align them.
+                try:
+                    physical_mesh_ranks = (
+                        torch.tensor(mesh_ranks, dtype=torch.int)
+                        .reshape((world_size // local_world_size, local_world_size))
+                        .tolist()
+                    )
+                except Exception:
+                    logger.warning(
+                        "Could not build physical mesh for sub-group. Node-local collectives may fail."
+                    )
+
+            physical_mesh = (
+                DeviceMesh(
+                    device_type=mesh_device_type,
+                    mesh=torch.tensor(physical_mesh_ranks, dtype=torch.int),
+                    mesh_dim_names=("nodes", "local_ranks"),
+                )
+                if physical_mesh_ranks is not None
+                else init_device_mesh(
+                    device_type=mesh_device_type,
+                    mesh_shape=(world_size // local_world_size, local_world_size),
+                    mesh_dim_names=("nodes", "local_ranks"),
+                )
             )
             logger.debug("physical_mesh initialized successfully")
             mesh = Meshes(parallel_mesh, physical_mesh)

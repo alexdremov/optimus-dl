@@ -1,0 +1,61 @@
+# @package _global_
+# Stage 2 of the from-scratch arithmetic curriculum: wider sums.
+#
+# Resumes the stage-1 policy (train_grpo_arithmetic, checkpoint_000001500)
+# and widens the task. The pretrained digit knowledge transfers: GRPO only
+# has to learn carrying on top of an already digit-emitting policy.
+#
+# Prerequisite: a completed stage-1 run (outputs/grpo-arithmetic-mps/
+# checkpoint_000001500). The model architecture must stay identical to
+# stage 1 so the weights load.
+#
+# Run:  python scripts/train.py --config-name=train_grpo_arithmetic_multidigit
+defaults:
+  - train_grpo_arithmetic_base
+  - _self_
+
+common:
+  exp_name: "grpo-arithmetic-multidigit"
+  load_checkpoint: outputs/grpo-arithmetic-mps/checkpoint_000001500
+  # Cross-config curriculum resume: transfer ONLY the policy weights.
+  # Optimizer/scheduler state would import stage-1's annealed-to-zero LR,
+  # metrics clash with live meters, and the dataloader position belongs to
+  # a different task distribution.
+  load_checkpoint_strategy:
+    load_model: true
+    load_optimizer: false
+    load_scheduler: false
+    load_metrics: false
+    load_data_sources: false
+    load_dataloaders: false
+
+generation_config:
+  max_new_tokens: 6 # answers up to "18" + EOS
+  stop_token_id: 257 # char_tokenize EOS
+
+model: # keep identical to stage 1 (checkpoint compatibility)
+  _name: llama2
+  n_layer: 4
+  n_head: 4
+  n_embd: 128
+  intermediate_size: 256
+  vocab_size: 258
+  sequence_length: 64
+
+optimization:
+  iterations: 4500 # absolute; resumes from the loaded iteration 1500
+  optimizer:
+    lr: 2e-4
+
+lr_scheduler:
+  learning_rate: 2e-4
+
+data:
+  train_datasets:
+    source:
+      # Bridge curriculum: answers up to 18 overlap the stage-1 distribution
+      # while introducing two-digit results, so the loaded policy keeps
+      # earning reward while it learns place values.
+      min_digits: 1
+      max_digits: 2
+      max_result: 18

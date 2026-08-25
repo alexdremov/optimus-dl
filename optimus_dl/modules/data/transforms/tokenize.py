@@ -91,6 +91,7 @@ class TokenizeTransform(BaseTransform):
             logger.info(f"Debugging tokenizer sample: \n{tokens_debug}\n=======")
 
         return {
+            **sample,
             "input_ids": ids,
         }
 

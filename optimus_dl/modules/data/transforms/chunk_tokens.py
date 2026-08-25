@@ -67,7 +67,11 @@ class ChunkTransformNode(BaseNode):
         """Yield the next chunk of tokens, refilling the buffer if empty."""
         max_chunk_size = self.cfg.max_seq_len + (1 if self.cfg.add_one_for_shift else 0)
         if len(self.buffer) == 0:
-            self.buffer = next(self.node)["input_ids"]
+            sample = next(self.node)
+            self.buffer = sample["input_ids"]
+            # Store other fields to preserve them
+            self.other_fields = {k: v for k, v in sample.items() if k != "input_ids"}
+
             if self.cfg.max_chunks is not None:
                 self.buffer = self.buffer[: self.cfg.max_chunks * max_chunk_size]
 
@@ -77,7 +81,10 @@ class ChunkTransformNode(BaseNode):
         )
         return_buff = self.buffer[:taken]
         self.buffer = self.buffer[taken:]
-        return {"input_ids": return_buff}
+
+        res = {"input_ids": return_buff}
+        res.update(self.other_fields)
+        return res
 
 
 @register_transform("chunk_tokens", ChunkTransformConfig)
